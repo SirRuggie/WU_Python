@@ -114,6 +114,7 @@ def test_shared_staff_button_opens_private_controls_for_each_tester(monkeypatch)
                         user=SimpleNamespace(id=3),guild_id=10,channel_id=20,member=object())
     doc={'_id':'ticket_1','mode':'test','location':{'staff_space_id':20}}
     monkeypatch.setattr(console.perms,'is_recruiter',AsyncMock(return_value=True))
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(console.store,'find_one',AsyncMock(return_value=doc))
     panel=AsyncMock(return_value=['private panel'])
     monkeypatch.setattr(console,'_ticket_detail_panel',panel)

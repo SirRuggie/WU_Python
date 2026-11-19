@@ -19,6 +19,7 @@ def test_menu_routes_to_confirmation_or_reason_modal(monkeypatch, choice):
         deny = AsyncMock()
         monkeypatch.setattr(console, "ticket_hub_approve", approve)
         monkeypatch.setattr(console, "ticket_hub_deny", deny)
+        monkeypatch.setattr(console.store, "find_one", AsyncMock(return_value=None))
         await console.ticket_hub_closure(ctx, "ticket_1", mongo=NS())
         if choice == "approve":
             ctx.defer.assert_awaited_once_with(edit=True)

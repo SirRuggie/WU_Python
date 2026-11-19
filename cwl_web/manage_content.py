@@ -23,7 +23,7 @@ def catalog():
         result.append(dict(id=f'{prefix}--{key}', label=label, permission=permission, group=group, description=description))
     for key, doc in gauntlet.DOCUMENTS.items():
         add('gauntlet', key, doc.label, 'recruit', 'Welcome messages', 'Preview and edit this private ticket message.' if key == 'rite-of-passage' else 'Preview, edit and publish this message.')
-        if key not in {'apply', 'rite-of-passage'}:
+        if key not in {*gauntlet.BOUND_PANELS, 'rite-of-passage'}:
             add('destination', key, f'{doc.label}: posting channel', 'recruit', 'Welcome messages', "Select the channel used by Discord /manage when posting this message.")
     for group in questions.GROUPS.values():
         for key in group['variants']:

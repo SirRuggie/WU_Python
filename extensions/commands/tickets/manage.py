@@ -80,9 +80,14 @@ class ListTickets(
 
         # Check if user is a recruiter
         user_roles = ctx.member.role_ids
+        desk_roles = (
+            config.get("account_thread_recruiter_role"),
+            config.get("staff_thread_recruiter_role"),
+        )
         is_recruiter = (
                 (main_role and main_role in user_roles) or
                 (fwa_role and fwa_role in user_roles) or
+                any(role and role in user_roles for role in desk_roles) or
                 ctx.member.permissions & hikari.Permissions.ADMINISTRATOR
         )
 

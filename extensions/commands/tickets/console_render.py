@@ -210,7 +210,7 @@ def render_overview_sync(counts: OverviewCounts) -> bytes:
     fwa_total = sum(type_counts["fwa"].values())
 
     icon_bars(left, 58, APPROVED)
-    text(left + 40, 26, "Ticket Console — overview", _font(27, bold=True), INK)
+    text(left + 40, 26, "Ticket Command — overview", _font(27, bold=True), INK)
     text(
         left + 40,
         64,

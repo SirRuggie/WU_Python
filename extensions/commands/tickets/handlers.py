@@ -19,6 +19,7 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.tickets import loader, thread_intake_ready, ticket
 from extensions.commands.tickets import resolve
+from extensions.commands.tickets import schema
 from extensions.commands.tickets import store
 from extensions.commands.tickets import thread_service, testing_service
 from extensions.commands import ticket_runtime
@@ -65,11 +66,16 @@ async def _show_created_ticket(ctx, ticket, *, resumed=False):
     kind = str(ticket.get("ticket_type") or "main").upper()
     wording = "already open" if resumed else "created"
     number = f" #{ticket['ticket_number']}" if ticket.get("ticket_number") is not None else ""
+    desk = kind.lower() in schema.DESK_TICKET_TYPES
     row = hikari.impl.MessageActionRowBuilder().add_link_button(
-        f"https://discord.com/channels/{guild_id}/{location_id}", label="Open your ticket"
+        f"https://discord.com/channels/{guild_id}/{location_id}",
+        label="Open your request" if desk else "Open your ticket",
     )
     await ctx.interaction.edit_initial_response(
-        content=f"✅ Your {kind} ticket{number} is {wording}.",
+        content=(
+            f"✅ Your request{number} is {wording}."
+            if desk else f"✅ Your {kind} ticket{number} is {wording}."
+        ),
         components=[row], user_mentions=False, role_mentions=False, mentions_everyone=False,
     )
 
@@ -330,10 +336,11 @@ async def handle_create_ticket(
     """Create or safely resume a private candidate/public staff thread pair."""
     await ctx.defer(ephemeral=True)
 
+    noun = "request" if action_id.rpartition(":")[2] in schema.DESK_TICKET_TYPES else "ticket"
     if not thread_intake_ready():
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ Tickets are not ready yet. No ticket was created. Try again soon."
+                f"❌ {noun.capitalize()}s are not ready yet. No {noun} was created. Try again soon."
             )
         )
         return
@@ -341,10 +348,10 @@ async def handle_create_ticket(
     intake_surface, separator, ticket_type = action_id.partition(":")
     if separator != ":" or intake_surface not in {"pilot", "public"}:
         await edit_error(ctx, rest=bot.rest,
-            content="❌ This ticket panel is unavailable. Ask staff for the current panel."
+            content=f"❌ This {'panel' if noun == 'request' else 'ticket panel'} is unavailable. Ask staff for the current panel."
         )
         return
-    if ticket_type not in {"main", "fwa"}:
+    if ticket_type not in schema.TICKET_TYPES:
         await edit_error(ctx, rest=bot.rest,
             content="❌ That ticket type is not available."
         )
@@ -374,7 +381,9 @@ async def handle_create_ticket(
             f"message={message_id} error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Tickets are not available now. No ticket was created."
+            content="❌ Requests are not available now. No request was created."
+            if noun == "request" else
+            "❌ Tickets are not available now. No ticket was created."
         )
         return
     if not route.allowed or route.route != ticket_runtime.ROUTE_THREAD:
@@ -382,7 +391,9 @@ async def handle_create_ticket(
             "❌ This test panel is not active for you. "
             "Use the current public ticket panel or ask a recruiter."
             if intake_surface == "pilot"
-            else "❌ This ticket panel is not active. Use the current panel or ask a recruiter."
+            else "❌ This panel is not active. Use the current panel or ask staff."
+            if noun == "request" else
+            "❌ This ticket panel is not active. Use the current panel or ask a recruiter."
         )
         await edit_error(ctx, rest=bot.rest, content=message)
         return
@@ -402,7 +413,7 @@ async def handle_create_ticket(
                 content=f"⏳ You can try again <t:{retry_at}:R>."
             )
             return
-    await ctx.interaction.edit_initial_response(content="🎫 Creating your ticket…")
+    await ctx.interaction.edit_initial_response(content=f"🎫 Creating your {noun}…")
     workflow_id = f"thread:{user_id}:{ticket_type}"
     try:
         slot_claim = await ticket_runtime.claim_open_slot(
@@ -439,13 +450,15 @@ async def handle_create_ticket(
             f"error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Tickets are not available now. No ticket was created."
+            content="❌ Requests are not available now. No request was created."
+            if noun == "request" else
+            "❌ Tickets are not available now. No ticket was created."
         )
         return
     if not slot_claim.won:
         location_id = store.as_int(slot_claim.slot.get("location_id"))
         if slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
-            sentences = ["⚠️ A recruiter still needs to finish your earlier ticket."]
+            sentences = [f"⚠️ A recruiter still needs to finish your earlier {noun}."]
             if location_id:
                 # A bare <#id> mention only resolves in the channel's own
                 # guild, and this slot's channel is not necessarily in
@@ -474,7 +487,7 @@ async def handle_create_ticket(
             ):
                 await _release_slot_for_missing_thread(mongo, existing_ticket["_id"])
                 message = (
-                    "⚠️ Your earlier ticket's thread was removed. "
+                    f"⚠️ Your earlier {noun}'s thread was removed. "
                     "Select the button again to start a new one."
                 )
             else:
@@ -497,12 +510,13 @@ async def handle_create_ticket(
                     store.as_int(existing_ticket.get("guild_id"))
                     if existing_ticket is not None else None
                 ) or int(ctx.guild_id)
+                noun = "request" if ticket_type in schema.DESK_TICKET_TYPES else "ticket"
                 message = (
-                    f"✅ You already have an open {ticket_type.upper()} ticket: "
+                    f"✅ You already have an open {ticket_type.upper()} {noun}: "
                     f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
                 )
         else:
-            message = "⏳ We are already creating your ticket. Try again in a moment."
+            message = f"⏳ We are already creating your {noun}. Try again in a moment."
         await ctx.interaction.edit_initial_response(content=message)
         return
     user_cooldowns[user_id] = now
@@ -550,19 +564,19 @@ async def handle_create_ticket(
     except thread_service.ThreadCreationBusy:
         user_cooldowns.pop(user_id, None)
         await ctx.interaction.edit_initial_response(
-            content="⏳ We are already creating your ticket. Try again in a moment."
+            content=f"⏳ We are already creating your {noun}. Try again in a moment."
         )
         return
     except thread_service.ThreadConfigurationError as error:
         user_cooldowns.pop(user_id, None)
         await edit_error(ctx, rest=bot.rest,
-            content=f"❌ Tickets are not ready: {error}. Ask an administrator."
+            content=f"❌ {noun.capitalize()}s are not ready: {error}. Ask an administrator."
         )
         return
     except hikari.RateLimitTooLongError:
         user_cooldowns[user_id] = now + timedelta(seconds=RATE_LIMIT_BACKOFF)
         await edit_error(ctx, rest=bot.rest,
-            content="⏰ Discord is rate-limiting ticket creation. Please try again in a few minutes."
+            content=f"⏰ Discord is rate-limiting {noun} creation. Please try again in a few minutes."
         )
         return
     except Exception as error:
@@ -575,8 +589,8 @@ async def handle_create_ticket(
             return
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ We could not finish your ticket. We saved your attempt. Try again. "
-                "We will not make a second ticket. If it fails again, ask an administrator."
+                f"❌ We could not finish your {noun}. We saved your attempt. Try again. "
+                f"We will not make a second {noun}. If it fails again, ask an administrator."
             )
         )
         return
@@ -591,7 +605,9 @@ MAX_MY_TICKET_HISTORY = 5
 
 def _my_ticket_history_line(prior: dict) -> str:
     """One "My ticket" history row. Applicant-facing only: no flags or notes."""
-    kind = "FWA" if str(prior.get("ticket_type") or "").casefold() == "fwa" else "Main"
+    kind = {"fwa": "FWA", "account": "Account", "staff": "Staff"}.get(
+        str(prior.get("ticket_type") or "").casefold(), "Main"
+    )
     try:
         number = int(prior.get("ticket_number"))
     except (TypeError, ValueError):
