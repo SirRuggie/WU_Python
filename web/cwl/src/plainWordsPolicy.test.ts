@@ -46,7 +46,7 @@ it("retains linking context and rejects obsolete visible labels without renaming
     "Already linked but missing here?",
   );
   expect(read("AccountLinkHelp.tsx")).toContain(
-    "If the bots show different owners",
+    "If ClashKing and ClashPerk show different owners",
   );
   expect(read("MemberAssignments.tsx")).not.toMatch(
     /Published clan assignments|Not published yet|Published · your accounts/,
@@ -64,19 +64,46 @@ it("keeps internal feature names out of visible dashboard words", () => {
   function scan(folder: URL) {
     for (const entry of readdirSync(folder, { withFileTypes: true })) {
       const url = new URL(entry.name, folder);
-      if (entry.isDirectory()) { scan(new URL(entry.name + "/", folder)); continue; }
-      if (!/\.tsx?$/.test(entry.name) || /\.(test|spec)\./.test(entry.name)) continue;
+      if (entry.isDirectory()) {
+        scan(new URL(entry.name + "/", folder));
+        continue;
+      }
+      if (!/\.tsx?$/.test(entry.name) || /\.(test|spec)\./.test(entry.name))
+        continue;
       const source = readFileSync(url, "utf8");
-      const tree = ts.createSourceFile(url.pathname, source, ts.ScriptTarget.Latest, true);
+      const tree = ts.createSourceFile(
+        url.pathname,
+        source,
+        ts.ScriptTarget.Latest,
+        true,
+      );
       function visit(node: ts.Node) {
-        if (ts.isJsxText(node) || ts.isStringLiteral(node) || ts.isNoSubstitutionTemplateLiteral(node) || ts.isTemplateHead(node) || ts.isTemplateMiddle(node) || ts.isTemplateTail(node)) {
+        if (
+          ts.isJsxText(node) ||
+          ts.isStringLiteral(node) ||
+          ts.isNoSubstitutionTemplateLiteral(node) ||
+          ts.isTemplateHead(node) ||
+          ts.isTemplateMiddle(node) ||
+          ts.isTemplateTail(node)
+        ) {
           // Exempt syntax positions for keys, never exact text used as a label.
           const parent = node.parent;
           if (ts.isPropertyAssignment(parent) && parent.name === node) return;
           if (ts.isPropertySignature(parent) && parent.name === node) return;
-          if (ts.isElementAccessExpression(parent) && parent.argumentExpression === node) return;
-          if (ts.isCallExpression(parent) && parent.arguments[0] === node && ts.isPropertyAccessExpression(parent.expression) && ["get", "set", "delete"].includes(parent.expression.name.text)) return;
-          if (bannedWords.test(node.text)) violations.push(`${entry.name}: ${node.text}`);
+          if (
+            ts.isElementAccessExpression(parent) &&
+            parent.argumentExpression === node
+          )
+            return;
+          if (
+            ts.isCallExpression(parent) &&
+            parent.arguments[0] === node &&
+            ts.isPropertyAccessExpression(parent.expression) &&
+            ["get", "set", "delete"].includes(parent.expression.name.text)
+          )
+            return;
+          if (bannedWords.test(node.text))
+            violations.push(`${entry.name}: ${node.text}`);
         } else ts.forEachChild(node, visit);
       }
       visit(tree);

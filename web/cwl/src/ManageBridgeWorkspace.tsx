@@ -651,7 +651,8 @@ export default function ManageBridgeWorkspace({
           />
           {bridge.cycle && !bridge.worker_ready && (
             <p className="notice error" role="alert">
-              The bot is restarting or offline. Refresh status in a minute.
+              Discord actions are restarting or offline. Refresh status in a
+              minute.
             </p>
           )}
           {bridge.cycle && (
@@ -736,12 +737,12 @@ export default function ManageBridgeWorkspace({
                                 channels.find(
                                   (channel) =>
                                     channel.id === drafts[pool].channel_id,
-                                )?.name || drafts[pool].channel_id
+                                )?.name || "Unknown channel"
                               }
                               roleNames={entry.role_ids.map(
                                 (id) =>
                                   roles.items.find((role) => role.id === id)
-                                    ?.name || `Role ${id}`,
+                                    ?.name || "Deleted role",
                               )}
                               clans={
                                 entry.sequence?.published_clans?.map(
@@ -808,7 +809,9 @@ export default function ManageBridgeWorkspace({
                         )?.name
                           ? `#${channels.find((channel) => channel.id === drafts[pool].channel_id)!.name}`
                           : channelsError
-                            ? drafts[pool].channel_id || "No channel"
+                            ? drafts[pool].channel_id
+                              ? "Unknown channel"
+                              : "No channel"
                             : "Checking channel…"
                       }
                       roles={
@@ -820,7 +823,7 @@ export default function ManageBridgeWorkspace({
                                     roles.items.find((role) => role.id === id)
                                       ?.name ||
                                     (roles.error
-                                      ? `Role ${id}`
+                                      ? "Deleted role"
                                       : "Checking role…"),
                                 )
                                 .join(", ")
@@ -933,11 +936,11 @@ export default function ManageBridgeWorkspace({
             label: poolLabel(pool),
             destination:
               channels.find((channel) => channel.id === drafts[pool].channel_id)
-                ?.name || drafts[pool].channel_id,
+                ?.name || "Unknown channel",
             roleNames: bridge.pools[pool].role_ids.map(
               (id) =>
                 roles.items.find((role) => role.id === id)?.name ||
-                `Role ${id}`,
+                "Deleted role",
             ),
             clans: bridge.pools[pool].sequence?.published_clans,
             preview: preview(pool),
@@ -1004,7 +1007,7 @@ export default function ManageBridgeWorkspace({
           text={
             confirmation === "refresh"
               ? "Discard unsaved announcement edits and reload?"
-              : `Send a ${confirmation === "main" ? "Main" : "Lazy"} test to #${channels.find((channel) => channel.id === testChannel)?.name || testChannel}? No roles are pinged and the real announcement stays unsent.`
+              : `Send a ${confirmation === "main" ? "Main" : "Lazy"} test to #${channels.find((channel) => channel.id === testChannel)?.name || "Unknown channel"}? No roles are pinged and the real announcement stays unsent.`
           }
           disabled={busy || loading}
           onCancel={() => setConfirmation(null)}

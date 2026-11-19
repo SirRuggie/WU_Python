@@ -3,8 +3,7 @@ import type { PublicationDraft } from "./publication";
 import { publicationDate, hiddenPublicationStatus } from "./publicationStatus";
 export function announcementPublicationStatus(
   publication:
-    | Pick<PublicationDraft, "published" | "last_publication">
-    | undefined,
+    Pick<PublicationDraft, "published" | "last_publication"> | undefined,
 ): string {
   if (!publication) return "Checking publication status…";
   if (publication.published)
@@ -20,7 +19,7 @@ export function announcementDeliveryStatus(
   if (!delivery) return "Not announced yet";
   switch (delivery.status) {
     case "pending":
-      return "Queued · waiting for the bot";
+      return "Queued · waiting for Discord";
     case "sending":
       return "Sending…";
     case "failed":

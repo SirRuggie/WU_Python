@@ -228,3 +228,68 @@ it("joins exact summary rows to App metadata by id without fetching again or cha
     host.remove();
   }
 });
+
+it("labels every staff destination and return reminders from the shared navigation, omitting unknown tools", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const areas = [
+    "weight-trial",
+    "clan-management",
+    "text-commands",
+    "roster",
+    "applications-settings",
+    "members-settings",
+    "fwa-settings",
+    "connections-settings",
+    "cwl-returns",
+  ] as const;
+  vi.mocked(api).mockResolvedValue({
+    checked_at: 1,
+    seasons: [],
+    tickets: null,
+    failures_count: 1,
+    failures: [
+      {
+        id: "one",
+        action: "Send",
+        status: "uncertain",
+        at: 1,
+        destination: "cwl-returns",
+      },
+    ],
+    warnings: [],
+    areas: [...areas, "unknown-destination"],
+  });
+  const host = document.createElement("div"),
+    root = createRoot(host),
+    onNavigate = vi.fn();
+  document.body.append(host);
+  try {
+    await act(async () =>
+      root.render(<StaffOverview onNavigate={onNavigate} />),
+    );
+    const buttons = [
+      ...host.querySelectorAll<HTMLButtonElement>(
+        ".staff-overview-shortcuts button",
+      ),
+    ];
+    expect(buttons.map((button) => button.textContent?.trim())).toEqual([
+      "Clan weights →",
+      "Family clans →",
+      "Command triggers →",
+      "Build roster →",
+      "Ticket settings →",
+      "Members →",
+      "FWA tools →",
+      "Band monitor →",
+      "Return reminders →",
+    ]);
+    expect(host.querySelector(".staff-overview-row strong")?.textContent).toBe(
+      "Return reminders · Send",
+    );
+    for (const button of buttons) await act(async () => button.click());
+    expect(onNavigate.mock.calls).toEqual(areas.map((area) => [area]));
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});

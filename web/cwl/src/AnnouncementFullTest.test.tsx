@@ -13,7 +13,7 @@ vi.mock("./api", async (original) => ({
       : api(...args),
 }));
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
-async function mount(allowed = true) {
+async function mount(allowed = true, missingChannel = false) {
   await act(async () =>
     root.render(
       <AnnouncementFullTest
@@ -26,7 +26,11 @@ async function mount(allowed = true) {
           roster_url: "https://example.test/",
           channel_id: "123456789012345678",
         }}
-        channels={[{ id: "123456789012345678", name: "test-room", type: 0 }]}
+        channels={
+          missingChannel
+            ? []
+            : [{ id: "123456789012345678", name: "test-room", type: 0 }]
+        }
         allowed={allowed}
         clanNames={["Lazy.128", "Lazy.127"]}
       />,
@@ -191,4 +195,21 @@ it("shows uncertain delivery without offering an automatic retry", async () => {
     "Response lost",
   );
   expect(api).toHaveBeenCalledTimes(1);
+});
+
+it("replaces the result destination with Unknown channel when its name disappears", async () => {
+  await mount();
+  await choose();
+  await click("Test full post");
+  await click("Send full test");
+  expect(document.querySelector("dialog")?.textContent).toContain("test-room");
+  const count = api.mock.calls.length;
+  await mount(true, true);
+  expect(document.querySelector("dialog")?.textContent).toContain(
+    "Unknown channel",
+  );
+  expect(document.querySelector("dialog")?.textContent).not.toMatch(
+    /\b\d{17,20}\b/,
+  );
+  expect(api.mock.calls).toHaveLength(count);
 });

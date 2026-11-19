@@ -7,7 +7,11 @@ import VisitorSummary from "./VisitorSummary";
 import DashboardIcon from "./DashboardIcon";
 import { useEffect, useState } from "react";
 import { api, ApiError, type Season } from "./api";
-import type { DashboardView } from "./SidebarNavigation";
+import {
+  dashboardViews,
+  navigationLabel,
+  type DashboardView,
+} from "./SidebarNavigation";
 import "./StaffOverview.css";
 type Snapshot = {
   checked_at: number;
@@ -23,15 +27,6 @@ type Snapshot = {
   }[];
   warnings: string[];
   areas: DashboardView[];
-};
-const names: Partial<Record<DashboardView, string>> = {
-  "clan-management": "Family clans",
-  "text-commands": "Command triggers",
-  roster: "Build roster",
-  "applications-settings": "Ticket settings",
-  "members-settings": "Members",
-  "fwa-settings": "FWA tools",
-  "connections-settings": "Band monitor",
 };
 export default function StaffOverview({
   onNavigate,
@@ -197,7 +192,7 @@ export default function StaffOverview({
                       <div className="staff-overview-row" key={f.id}>
                         <div>
                           <strong>
-                            {names[f.destination]} · {f.action}
+                            {navigationLabel(f.destination)} · {f.action}
                           </strong>
                           <p>
                             {f.status === "uncertain"
@@ -206,10 +201,13 @@ export default function StaffOverview({
                             · {formatDateTime(new Date(f.at * 1000))}
                           </p>
                         </div>
-                        <button onClick={() => onNavigate(f.destination)}>
-                          Review area{" "}
-                          <ArrowRight size={16} aria-hidden="true" />
-                        </button>
+                        {dashboardViews.includes(f.destination) &&
+                          navigationLabel(f.destination) && (
+                            <button onClick={() => onNavigate(f.destination)}>
+                              Review area{" "}
+                              <ArrowRight size={16} aria-hidden="true" />
+                            </button>
+                          )}
                       </div>
                     ))}
                   </div>
@@ -230,11 +228,16 @@ export default function StaffOverview({
           <section className="card">
             <h2>Your tools</h2>
             <div className="staff-overview-shortcuts">
-              {[...new Set(data.areas)].map((area) => (
-                <button key={area} onClick={() => onNavigate(area)}>
-                  {names[area]} →
-                </button>
-              ))}
+              {[...new Set(data.areas)]
+                .filter(
+                  (area) =>
+                    dashboardViews.includes(area) && navigationLabel(area),
+                )
+                .map((area) => (
+                  <button key={area} onClick={() => onNavigate(area)}>
+                    {navigationLabel(area)} →
+                  </button>
+                ))}
             </div>
           </section>
         </>

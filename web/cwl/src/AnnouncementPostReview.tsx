@@ -52,8 +52,8 @@ export default function AnnouncementPostReview({
           {!review.worker_ready && (
             <>
               <p role="status">
-                The bot editor is reconnecting. Check the preview again before
-                updating.
+                The Discord connection is reconnecting. Check the preview again
+                before updating.
               </p>
               <button type="button" onClick={onRefresh}>
                 Refresh status

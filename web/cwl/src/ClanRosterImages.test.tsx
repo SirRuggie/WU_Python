@@ -22,7 +22,14 @@ vi.mock("./ActionPanel", () => ({
   ),
 }));
 vi.mock("./ConfirmDialog", () => ({
-  default: ({ text, onCancel, onConfirm, children, confirmLabel = "Confirm", hideCancel = false }: any) => (
+  default: ({
+    text,
+    onCancel,
+    onConfirm,
+    children,
+    confirmLabel = "Confirm",
+    hideCancel = false,
+  }: any) => (
     <div role="dialog">
       {text}
       {children}
@@ -221,7 +228,9 @@ it.each(["post", "update", "drop"])(
       expect(writes()[0][2]).toHaveProperty("confirm_duplicate", true);
     else expect(writes()[0][2]).not.toHaveProperty("confirm_duplicate");
     if (operation !== "post") expect(writes()[0][0]).toContain("/update");
-    expect(host.querySelector('[role="dialog"]')?.textContent).toContain("Images updated · 1 clan messages");
+    expect(host.querySelector('[role="dialog"]')?.textContent).toContain(
+      "Images updated · 1 clan messages",
+    );
     expect(button("Close")).toBeDefined();
     expect(button("Confirm")).toBeUndefined();
   },
@@ -303,7 +312,9 @@ it("checks an existing closing note only after the reviewed image updates finish
   };
   await render();
   await act(async () => button("Retry failed").click());
-  expect(document.body.textContent).toContain("The closing note will also be checked");
+  expect(document.body.textContent).toContain(
+    "The closing note will also be checked",
+  );
   expect(document.body.textContent).toContain("reposted without pings");
   await act(async () => button("Confirm").click());
   expect(writes()).toHaveLength(2);
@@ -313,4 +324,28 @@ it("checks an existing closing note only after the reviewed image updates finish
     "POST",
     state.data.closings.main,
   ]);
+});
+
+it("keeps deleted roster-image destinations readable without raw Discord IDs", async () => {
+  const id = "123456789012345678";
+  state.data.destinations.main.channel_id = id;
+  failedPost();
+  state.data.posts[0].channel_id = id;
+  vi.mocked(api).mockImplementation(async (path) =>
+    path === "/announcement-channels"
+      ? { channels: [] }
+      : path === "/roster-image-channels"
+        ? { channels: [] }
+        : structuredClone(state.data),
+  );
+  await render();
+  expect(host.textContent).not.toMatch(/\b\d{17,20}\b/);
+  await act(async () => button("Retry failed").click());
+  expect(host.querySelector('[role="dialog"]')?.textContent).toContain(
+    "Unknown channel",
+  );
+  expect(host.querySelector('[role="dialog"]')?.textContent).not.toMatch(
+    /\b\d{17,20}\b/,
+  );
+  expect(writes()).toHaveLength(0);
 });

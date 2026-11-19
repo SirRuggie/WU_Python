@@ -81,7 +81,7 @@ export default function ReminderStatusBar({
                   setNotice(
                     paused
                       ? "Scheduled messages paused."
-                      : "Scheduled messages resumed. The bot is updating its schedule.",
+                      : "Scheduled messages resumed. The schedule is updating.",
                   );
                 }),
             });

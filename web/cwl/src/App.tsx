@@ -317,15 +317,7 @@ function App() {
   }, [session?.user.id]);
   useEffect(() => {
     if (!session) return;
-    const allowed = visibleNavigationSections(
-      session.can_edit,
-      session.is_owner,
-      session.dashboard_permissions || [],
-    ).some((section) =>
-      section.items.some(
-        (item) => item.view === (view === "replacements" ? "strikes" : view),
-      ),
-    );
+    const allowed = allowedView(view) === view;
     if (!allowed) {
       setView("home");
       setCwlDirty(false);
@@ -837,7 +829,7 @@ function App() {
       );
     return true;
   };
-  const allowedView = (next: View): View => {
+  function allowedView(next: View): View {
     if (!session) return "home";
     return visibleNavigationSections(
       session.can_edit,
@@ -859,7 +851,7 @@ function App() {
         ))
       ? next
       : "home";
-  };
+  }
   const canOpenPublication = (step: "review" | "announce") =>
     !!session &&
     visibleNavigationSections(

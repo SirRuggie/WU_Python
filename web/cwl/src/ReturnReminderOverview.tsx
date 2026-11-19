@@ -114,9 +114,7 @@ export default function ReturnReminderOverview({
       } catch (cause) {
         if (id === destinationRequest.current) {
           setChannelNames({});
-          setDestinationError(
-            "Channel names could not be loaded; destination IDs remain visible.",
-          );
+          setDestinationError("Channel names could not be loaded.");
           if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
             setRecords([]);
             setSelected([]);
@@ -204,7 +202,7 @@ export default function ReturnReminderOverview({
     : destinationId
       ? channelNames[destinationId]
         ? `#${channelNames[destinationId]}`
-        : `Channel ${destinationId}`
+        : "Unknown channel"
       : destinationError
         ? "Destination unavailable"
         : "No channel configured";
@@ -212,7 +210,11 @@ export default function ReturnReminderOverview({
     const row = records.find((row) => row.id === id);
     if (row) onOpen(row);
   };
-  const pauseAction: ReturnAction = chosen.length > 0 && chosen.every(row => row.return_status?.state === "paused") ? "resume" : "pause";
+  const pauseAction: ReturnAction =
+    chosen.length > 0 &&
+    chosen.every((row) => row.return_status?.state === "paused")
+      ? "resume"
+      : "pause";
   const actions: ReturnAction[] =
     section === "FWA"
       ? [
@@ -221,13 +223,17 @@ export default function ReturnReminderOverview({
           "send",
           "away",
           "start",
-          ...(pauseAction === "pause" && chosen.some(row => row.return_status?.state === "paused") ? ["resume" as const] : []),
+          ...(pauseAction === "pause" &&
+          chosen.some((row) => row.return_status?.state === "paused")
+            ? ["resume" as const]
+            : []),
           "save",
           "replace",
           "clear",
         ]
       : ["save", "send", "away", "replace", "clear"];
-  const applicable = (action: ReturnAction) => visible.some(row => selected.includes(row.id) && canApply(row, action));
+  const applicable = (action: ReturnAction) =>
+    visible.some((row) => selected.includes(row.id) && canApply(row, action));
   const menuAction = (action: ReturnAction): ActionMenuItem => ({
     id: action,
     label: actionLabels[action],
@@ -235,10 +241,14 @@ export default function ReturnReminderOverview({
     onAction: () => openBatch(action),
     danger: action === "replace" || action === "clear",
   });
-  const primaryIds: ReturnAction[] = section === "FWA" ? ["frequency", pauseAction] : [];
-  const overflow = actions.filter(action => !primaryIds.includes(action) && applicable(action)).map(menuAction);
-  const firstDanger = overflow.findIndex(action => action.danger);
-  if (firstDanger >= 0) overflow[firstDanger] = { ...overflow[firstDanger], separatorBefore: true };
+  const primaryIds: ReturnAction[] =
+    section === "FWA" ? ["frequency", pauseAction] : [];
+  const overflow = actions
+    .filter((action) => !primaryIds.includes(action) && applicable(action))
+    .map(menuAction);
+  const firstDanger = overflow.findIndex((action) => action.danger);
+  if (firstDanger >= 0)
+    overflow[firstDanger] = { ...overflow[firstDanger], separatorBefore: true };
   return (
     <section
       className="return-overview"

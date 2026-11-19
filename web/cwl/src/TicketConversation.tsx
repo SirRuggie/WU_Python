@@ -326,7 +326,7 @@ export default function TicketConversation({
               <p>
                 {search
                   ? "No matches in these messages."
-                  : "No messages returned. If Discord shows messages, ask an owner to check the bot’s Read Message History and Message Content access."}
+                  : "No messages returned. If Discord shows messages, ask an owner to check the WU Wizard Read Message History and Message Content access."}
               </p>
             )}
           </div>

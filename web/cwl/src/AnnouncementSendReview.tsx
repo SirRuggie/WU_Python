@@ -90,7 +90,9 @@ export default function AnnouncementSendReview({
         <section key={pool.key} aria-label={`${pool.label} send review`}>
           {pool.resend && (
             <p role="alert">
-              Someone deleted the earlier announcement. If you send again, the bot pings the set roles again. It then posts new clan images and a closing note. The earlier image posts stay in Discord.
+              Someone deleted the earlier announcement. If you send again, the
+              set roles are pinged again. New clan images and a closing note
+              follow. The earlier image posts stay in Discord.
             </p>
           )}
           <h3>

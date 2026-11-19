@@ -351,7 +351,7 @@ export default function ClanManagement({
         { revision: saved.revision, request_id: crypto.randomUUID() },
       );
       setStatusUrl(result.status_url);
-      setNotice("Waiting for the bot…");
+      setNotice("Waiting for Discord…");
     });
   }
   async function upload(slot: string, file?: File) {

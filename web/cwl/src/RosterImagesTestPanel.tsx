@@ -56,7 +56,7 @@ export default function RosterImagesTestPanel({
                 version: data.published!.version,
                 operation: "test",
               })),
-              `Post a TEST copy of every Main and Lazy clan to #${channels.find((c) => c.id === channel)?.name || channel}? No pings. Nothing is recorded as posted.`,
+              `Post a TEST copy of every Main and Lazy clan to #${channels.find((c) => c.id === channel)?.name || "Unknown channel"}? No pings. Nothing is recorded as posted.`,
               destination.saveDefault,
             )
           }

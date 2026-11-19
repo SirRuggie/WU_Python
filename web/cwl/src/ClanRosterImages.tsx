@@ -105,8 +105,7 @@ export default function ClanRosterImages({
       test: jobs[0]?.operation === "test",
       channel:
         channels.find((c) => c.id === jobs[0]?.channel)?.name ||
-        jobs[0]?.channel ||
-        "the reviewed channels",
+        (jobs[0]?.channel ? "Unknown channel" : "the reviewed channels"),
     });
     try {
       await beforeSend?.();
@@ -214,7 +213,7 @@ export default function ClanRosterImages({
                   channel_name:
                     channels.find(
                       (channel) => channel.id === destination.channel_id,
-                    )?.name || destination.channel_id,
+                    )?.name || "Unknown channel",
                 }
               : undefined;
             const status = imagePoolStatus(data, pool);
@@ -335,7 +334,7 @@ export default function ClanRosterImages({
                                           version: data.published!.version,
                                         },
                                       ],
-                                      config?.channel_name || post.channel_id,
+                                      config?.channel_name || "Unknown channel",
                                     ),
                                   )
                                 }
@@ -505,7 +504,8 @@ export default function ClanRosterImages({
             {confirm.jobs.map((j) => (
               <li key={`${j.clan.pool}:${j.clan.tag}`}>
                 {j.clan.name} · #
-                {channels.find((c) => c.id === j.channel)?.name || j.channel}
+                {channels.find((c) => c.id === j.channel)?.name ||
+                  "Unknown channel"}
               </li>
             ))}
           </ul>

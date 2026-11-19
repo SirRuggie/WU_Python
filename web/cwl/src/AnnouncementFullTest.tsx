@@ -143,8 +143,7 @@ export default function AnnouncementFullTest({
   const active = !!job && ["ready", "sending"].includes(job.status);
   const channelName =
     channels.find((c) => c.id === (job?.channel_id || channel))?.name ||
-    job?.channel_id ||
-    channel;
+    "Unknown channel";
   function closeResult() {
     setShowResult(false);
     setNotice(
@@ -157,7 +156,8 @@ export default function AnnouncementFullTest({
     <details className="announcement-test">
       <summary>Test full post · no pings</summary>
       <p>
-        The test posts the announcement, then the clan images in order, then a closing note. It does not mark announcements as sent.
+        The test posts the announcement, then the clan images in order, then a
+        closing note. It does not mark announcements as sent.
       </p>
       <ChannelCombobox
         label="Full test channel"
@@ -239,7 +239,7 @@ export default function AnnouncementFullTest({
       {review && (
         <ConfirmDialog
           heading="Test full post"
-          text={`${job?.status === "uncertain" || error ? "Check Discord first: an earlier test may already have posted. Sending another can duplicate it. " : ""}Send 1 announcement, ${clanNames.length} clan images (${clanNames.join(", ") || "none"}), then a closing note to #${channels.find((c) => c.id === channel)?.name || channel}? No pings. Production sent marks stay unchanged.`}
+          text={`${job?.status === "uncertain" || error ? "Check Discord first: an earlier test may already have posted. Sending another can duplicate it. " : ""}Send 1 announcement, ${clanNames.length} clan images (${clanNames.join(", ") || "none"}), then a closing note to #${channels.find((c) => c.id === channel)?.name || "Unknown channel"}? No pings. Production sent marks stay unchanged.`}
           confirmLabel="Send full test"
           onConfirm={() => void send()}
           onCancel={() => setReview(false)}

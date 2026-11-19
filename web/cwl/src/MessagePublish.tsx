@@ -94,7 +94,7 @@ export default function MessagePublish({
       }>(path(url));
       if (!alive.current) return;
       setNotice(
-        result.result?.message || result.message || "Waiting for the bot…",
+        result.result?.message || result.message || "Waiting for Discord…",
       );
       if (["done", "failed", "uncertain"].includes(result.status)) {
         finished = true;

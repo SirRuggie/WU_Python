@@ -298,7 +298,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         await new Promise((resolve) => window.setTimeout(resolve, 2000));
     }
     setNotice(
-      "Still waiting for the bot. Use Check request status to see the result. Do not send the same request again.",
+      "Still waiting for Discord. Use Check request status to see the result. Do not send the same request again.",
     );
   };
   const save = async (review = false) => {
@@ -338,7 +338,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       );
       if (result.status_url) {
         pendingKeys.current.set(result.status_url, requestKey);
-        setNotice(result.message || "Waiting for the bot…");
+        setNotice(result.message || "Waiting for Discord…");
         const status = await checkAction(result.status_url, true);
         if (status !== "done") return;
         result = await api<ManagementDocument>(endpoint(selected));
