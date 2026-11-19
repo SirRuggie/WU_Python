@@ -20,6 +20,9 @@ class Store:
     async def clan_exists(self, tag):
         return self.exists
 
+    async def get_status(self, tag):
+        return self.status.copy()
+
     async def get_settings(self, tag):
         return self.config.copy()
 
@@ -146,7 +149,7 @@ def test_scan_confirms_only_scanned_settings_and_refreshes_first_new_success(mon
                              'detail': 'Waiting for an active war', 'war_end': None,
                              'settings_updated_at': first, 'settings_version': 1}).decode()
     writes = []
-    async def find(query):
+    async def find(query, *projection):
         return persisted
     async def update(query, values, **kwargs):
         nonlocal persisted

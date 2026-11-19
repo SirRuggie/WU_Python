@@ -101,7 +101,8 @@ def test_overview_row_revision_matches_the_clan_read_route(monkeypatch):
                   clan=AsyncMock(side_effect=lambda tag:next(r[0] for r in rows if r[0]['tag']==tag)),
                   get_settings=AsyncMock(side_effect=lambda tag:stored[tag]),
                   recent_deliveries=AsyncMock(return_value=[]),
-                  get_status=AsyncMock(return_value=None))
+                  get_status=AsyncMock(return_value=None),
+                  latest_scheduled_delivery=AsyncMock(return_value=None))
     monkeypatch.setattr(api,'WarReminderStore',make_store)
     body=json.loads(asyncio.run(api.overview(NS())).text)
     assert all(isinstance(entry['revision'],str) and entry['revision'] for entry in body['clans'])

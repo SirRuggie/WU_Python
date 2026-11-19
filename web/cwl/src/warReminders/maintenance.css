@@ -1,0 +1,16 @@
+.notice.reminder-maintenance {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.25rem;
+  margin-block: 0.5rem;
+  padding: 0.65rem 0.8rem;
+  background: var(--wu-accent);
+  color: #000;
+  border: 1px solid var(--wu-accent);
+}
+
+.notice.reminder-maintenance strong,
+.notice.reminder-maintenance span {
+  color: inherit;
+}

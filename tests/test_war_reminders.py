@@ -89,7 +89,7 @@ def test_scheduler_claim_is_durable_and_duplicate_scan_does_not_send(monkeypatch
     collections = {}
     class Rows:
         def __init__(self): self.rows = {}
-        async def find_one(self, q): return self.rows.get(q['_id'])
+        async def find_one(self, q, *projection): return self.rows.get(q['_id'])
         async def insert_one(self, row): self.rows[row['_id']] = row.copy()
         async def update_one(self, q, update, **kw):
             self.rows.setdefault(q['_id'], {}).update(update['$set'])

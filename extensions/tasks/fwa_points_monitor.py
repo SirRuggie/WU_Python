@@ -34,7 +34,7 @@ from hikari.impl import SeparatorComponentBuilder as Separator
 from hikari.impl import TextDisplayComponentBuilder as Text
 
 from utils import coc_maintenance
-from utils.constants import WU_GOLD
+from utils.constants import LOG_CHANNEL_ID, WU_GOLD
 from utils.mongo import MongoClient
 from utils.fwa_points_parser import (
     parse_clan_points, parse_active_fwa, sanitize_tag, is_newer_war, FwaPointsParseError,
@@ -51,7 +51,6 @@ GIVE_UP_SECONDS = 45 * 60             # bounded catch-up deadline
 MAX_CONSECUTIVE_FAILURES = 5          # stop early if the SITE is down (~10 min) vs merely stale
 FAILURE_COOLDOWN_SECONDS = GIVE_UP_SECONDS  # do not launch another retry burst for this same war immediately
 HTTP_TIMEOUT_SECONDS = 20
-LOG_CHANNEL_ID = 947166650321494067
 POINTS_URL = "https://points.fwafarm.com/clan?tag={tag}"
 STAGGER_STEP_SECONDS = 5        # spacing between clans launched in the same detector pass
 STAGGER_JITTER_MAX_SECONDS = 5  # extra random slack added on top of the step

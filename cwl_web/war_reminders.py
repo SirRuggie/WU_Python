@@ -61,8 +61,11 @@ async def read(request):
         config = await store.get_settings(row['tag'])
         history = await store.recent_deliveries(row['tag'])
         state = await store.get_status(row['tag'])
+        delivery = await store.latest_scheduled_delivery(row['tag'])
+    category, label, detail = health(config, state, delivery, datetime.now(timezone.utc))
     return web.json_response(
-        dict(settings=reminders.settings(config), revision=revision(config), history=history, status=state),
+        dict(settings=reminders.settings(config), revision=revision(config), history=history, status=state,
+             health=dict(category=category, label=label, detail=detail)),
         dumps=partial(json.dumps, default=json_value),
     )
 

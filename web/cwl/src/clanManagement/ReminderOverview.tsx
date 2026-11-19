@@ -23,6 +23,7 @@ import ReminderOverviewFilters, {
   type OverviewFilters,
 } from "./ReminderOverviewFilters";
 import "./ReminderOverview.css";
+import "../warReminders/maintenance.css";
 
 type Props = {
   active: boolean;
@@ -346,6 +347,15 @@ export default function ReminderOverview({
                         <span>{type}</span>
                       </p>
                       <p className="overview-row-line">{line}</p>
+                      {state.category === "maintenance" && (
+                        <p
+                          className="notice reminder-maintenance"
+                          role="status"
+                        >
+                          <strong>{state.label}</strong>
+                          <span>{state.detail}</span>
+                        </p>
+                      )}
                       {state.category === "attention" && (
                         <p className="overview-row-issue" role="status">
                           {state.label} · {state.detail}

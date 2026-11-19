@@ -208,3 +208,47 @@ it("puts the status first and Test & history before Copy, with the history flagg
       .mock.calls.some(([path]) => String(path).endsWith("/preview")),
   ).toBe(false);
 });
+
+it("refreshes maintenance health with the current status while preserving unsaved draft edits", async () => {
+  vi.mocked(api).mockResolvedValue({
+    ...saved,
+    settings: { ...saved.settings, enabled: true },
+    health: {
+      category: "maintenance",
+      label: "Clash maintenance",
+      detail: "Reminders continue when it ends.",
+    },
+    status: {
+      checked_at: "2026-01-01T00:00:00Z",
+      detail: "Clash maintenance.",
+    },
+  });
+  await render(true);
+  expect(host.querySelector(".reminder-maintenance")).not.toBeNull();
+  edit();
+  expect(editor?.changes).toBe(1);
+  vi.mocked(api).mockResolvedValue({
+    ...saved,
+    settings: { ...saved.settings, enabled: true },
+    health: {
+      category: "tracking",
+      label: "Monitoring",
+      detail: "Tracking battle day",
+    },
+    status: {
+      checked_at: "2026-01-01T00:01:00Z",
+      detail: "Tracking battle day",
+    },
+  });
+  await act(async () => {
+    await vi.advanceTimersByTimeAsync(15000);
+  });
+  expect(host.querySelector(".reminder-maintenance")).toBeNull();
+  expect(host.textContent).toContain("Tracking battle day");
+  expect(editor?.changes).toBe(1);
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.every(([, method]) => !method || method === "GET"),
+  ).toBe(true);
+});

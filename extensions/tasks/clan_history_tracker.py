@@ -22,7 +22,7 @@ import coc
 import hikari
 import lightbulb
 
-from utils import clan_history, todo_data
+from utils import clan_history, coc_maintenance, todo_data
 from utils.clash_links import resolve_family_linked_tags
 from utils.mongo import MongoClient
 
@@ -61,8 +61,13 @@ def _utc_datetime(value) -> datetime | None:
 async def _safe_fetch(sem: asyncio.Semaphore, label: str, key: str, fn):
     try:
         async with sem:
-            return await fn()
+            result = await fn()
+        if label in ('clan', 'player'):
+            coc_maintenance.note_success()
+        return result
     except Exception as exc:  # noqa: BLE001 - one object cannot stop the tracker
+        if isinstance(exc, coc.Maintenance):
+            coc_maintenance.note_maintenance()
         print(f"[clan-history] {label} fetch failed for {key}: "
               f"{type(exc).__name__}: {exc}")
         return None

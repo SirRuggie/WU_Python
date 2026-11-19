@@ -97,6 +97,7 @@ PARENT_ALIASES = MappingProxyType({
     'war_reminder_settings': 'bot_config',
     'war_reminder_status': 'bot_config',
     'war_reminder_deliveries': 'bot_config',
+    'maintenance_alert': 'bot_config',
     'clan_dashboard_history': 'bot_config',
     'text_command_files': 'bot_config',
     'text_command_images': 'bot_config',

@@ -2,7 +2,13 @@ import type { Clan } from "./types";
 import { timeLabel, type ReminderSettings } from "../warReminders/types";
 import { clanCategory } from "./ClanCategories";
 export type Health = {
-  category: "attention" | "pending" | "tracking" | "off" | "not_configured";
+  category:
+    | "attention"
+    | "pending"
+    | "tracking"
+    | "off"
+    | "not_configured"
+    | "maintenance";
   label: string;
   detail: string;
 };

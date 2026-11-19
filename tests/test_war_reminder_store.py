@@ -317,3 +317,14 @@ def test_failed_first_settings_refresh_is_retried_without_remembering_success():
         assert value.status.update_one.await_count == 2
         assert value.status.update_one.await_args.args[1]['$set']['settings_updated_at'] == first + timedelta(seconds=1)
     asyncio.run(check())
+
+
+def test_editor_delivery_health_ignores_tests_without_history_page_limit():
+    cursor = NS(sort=lambda *args: cursor, limit=lambda *args: cursor,
+                to_list=AsyncMock(return_value=[{'status': 'uncertain', 'test': False}]))
+    seen = []
+    rows = NS(find=lambda *args: (seen.append(args), cursor)[1])
+    value = WarReminderStore.__new__(WarReminderStore);value.deliveries = rows
+    assert asyncio.run(value.latest_scheduled_delivery('#P2Y'))['status'] == 'uncertain'
+    cursor.to_list.assert_awaited_once_with(length=1)
+    assert seen == [({'clan_tag': '#P2Y', 'test': False}, {'_id': 0})]

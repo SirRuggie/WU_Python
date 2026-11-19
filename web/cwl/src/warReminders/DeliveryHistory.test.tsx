@@ -102,3 +102,52 @@ it("explains an empty history", () => {
   );
   expect(html).toContain("No deliveries yet");
 });
+
+it("shows a gold maintenance notice in the editor without implying an error", () => {
+  const maintenance: ReminderData = {
+    ...data,
+    history: [],
+    health: {
+      category: "maintenance",
+      label: "Clash maintenance",
+      detail: "Reminders continue when it ends.",
+    },
+  };
+  const html = renderToStaticMarkup(
+    <DeliveryStatus data={maintenance} enabled />,
+  );
+  expect(html).toContain('class="notice reminder-maintenance"');
+  expect(html).toContain("Clash maintenance");
+  expect(html).toContain("Reminders continue when it ends.");
+  expect(html).not.toContain('role="alert"');
+  expect(
+    renderToStaticMarkup(<DeliveryStatus data={maintenance} enabled={false} />),
+  ).not.toContain("Clash maintenance");
+});
+
+it.each(["uncertain", "sending"])(
+  "keeps %s delivery health visible ahead of maintenance status",
+  (status) => {
+    const blocked: ReminderData = {
+      ...data,
+      status: {
+        checked_at: "2026-01-01T00:00:00Z",
+        detail: "Clash maintenance. Reminders continue when it ends.",
+      },
+      history: [{ ...data.history[0], status }],
+      health: {
+        category: "attention",
+        label: "Check delivery",
+        detail:
+          "The last scheduled delivery was not confirmed. Check the channel before taking action.",
+      },
+    };
+    const html = renderToStaticMarkup(
+      <DeliveryStatus data={blocked} enabled />,
+    );
+    expect(html).toContain("Check delivery");
+    expect(html).toContain("not confirmed");
+    expect(html).not.toContain("Clash maintenance");
+    expect(html).not.toContain("reminder-maintenance");
+  },
+);

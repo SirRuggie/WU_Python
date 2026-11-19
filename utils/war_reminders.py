@@ -66,6 +66,41 @@ def due(war, config, now):
     return [key for key, at in events if war['start'] <= at and 0 <= (now-at).total_seconds() < 300]
 
 
+def war_identity(value):
+    """Compare the persisted war start at existing BSON-millisecond precision."""
+    value = utc(value)
+    return value.replace(microsecond=value.microsecond // 1000 * 1000)
+
+
+def catchup_events(war, config, now, maintenance_since, prior_war_start):
+    """Existing occurrence identities missed in this observed maintenance window.
+
+    The prior stored war identity, not the freshly overwritten status, is the
+    authority. Unknown or different wars never acquire catch-up receipts.
+    """
+    if (not war or not config['enabled'] or maintenance_since is None
+            or prior_war_start is None or war_identity(prior_war_start) != war_identity(war['start'])
+            or not war['start'] <= now < war['end']):
+        return []
+    since = utc(maintenance_since) - timedelta(seconds=60)
+    events = [('start', war['start'])] if config['war_started'] else []
+    events += [(str(n), war['end'] - timedelta(minutes=n)) for n in config['minutes']]
+    return sorted([(key, at) for key, at in events
+                   if war['start'] <= at and since <= at < now - timedelta(seconds=300)],
+                  key=lambda item: (item[1], item[0]))
+
+
+def catchup_boundary(war, config, now, maintenance_since, prior_war_start):
+    """Retain the window for a threshold exactly300s old until the next scan.
+
+    Normal due() is strictly <300s and the approved missed window is strictly
+    >300s. Moving only this pure cutoff one microsecond identifies that boundary;
+    it does not authorize sending there or schedule another provider request.
+    """
+    return any(at == now - timedelta(seconds=300) for _, at in catchup_events(
+        war, config, now + timedelta(microseconds=1), maintenance_since, prior_war_start))
+
+
 def pending(war, audience):
     return [m for m in war['members'] if m['used'] < war['limit'] and (audience != 'zero' or m['used'] == 0)]
 
@@ -88,7 +123,7 @@ def discord_length(text):
     return len(text.encode('utf-16-le')) // 2
 
 
-def messages(war, config, event, owners=None, *, test=False, tester=None, sample_label="Sample players", sample_group="Sample accounts"):
+def messages(war, config, event, owners=None, *, test=False, tester=None, sample_label="Sample players", sample_group="Sample accounts", delayed_at=None):
     """One line per single-account owner; multi-account owners get one mention
     and a quoted row per account. Pages split safely without repeat pings."""
     from utils.emoji import emojis
@@ -115,7 +150,12 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
         # Non-breaking spaces keep the count next to its separator on phones.
         return text + f" ·\u00a0{member['used']}/{war['limit']}"
 
-    label = 'War started' if event == 'start' else duration(int(event))+' left'
+    if delayed_at is not None:
+        seconds = max(0, (war['end'] - delayed_at).total_seconds())
+        label = (duration(int(seconds // 60)) + ' left' if seconds >= 60
+                 else 'Less than a minute left') + ' · delayed by Clash maintenance'
+    else:
+        label = 'War started' if event == 'start' else duration(int(event))+' left'
     title = f"🔔 **{clean(war['name'])} · {label}**"
     end = int(war['end'].timestamp())
     remaining = sum(war['limit']-m['used'] for m in members)

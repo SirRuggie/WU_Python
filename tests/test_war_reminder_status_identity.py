@@ -29,7 +29,7 @@ class ConditionalStatus:
         self.before_update = None
         self.duplicate_inserts = 0
 
-    async def find_one(self, query):
+    async def find_one(self, query, *projection):
         return deepcopy(self.row)
 
     async def update_one(self, query, update, *, upsert=False):
@@ -196,9 +196,9 @@ def test_same_identity_paused_worker_read_cannot_overwrite_newer_receipt(monkeyp
         original_find = case.status.find_one
         older_task = None
         paused = False
-        async def delayed_find(query):
+        async def delayed_find(query, *projection):
             nonlocal paused
-            observed = await original_find(query)
+            observed = await original_find(query, *projection)
             if asyncio.current_task() is older_task and not paused:
                 paused = True
                 read_started.set()

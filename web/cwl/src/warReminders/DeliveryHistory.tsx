@@ -1,3 +1,4 @@
+import "./maintenance.css";
 import { formatDateTime } from "../format";
 import { timeLabel, type ReminderData } from "./types";
 
@@ -28,11 +29,23 @@ export function DeliveryStatus({
   return (
     <section className="war-status">
       <h3>Reminder status</h3>
-      <p>
-        {enabled
-          ? data.status?.detail || "Waiting for the first check."
-          : "Automatic reminders are disabled."}
-      </p>
+      {enabled && data.health?.category === "attention" ? (
+        <p className="notice error" role="status">
+          <strong>{data.health.label}</strong>
+          <span>{data.health.detail}</span>
+        </p>
+      ) : enabled && data.health?.category === "maintenance" ? (
+        <p className="notice reminder-maintenance" role="status">
+          <strong>Clash maintenance</strong>
+          <span>Reminders continue when it ends.</span>
+        </p>
+      ) : (
+        <p>
+          {enabled
+            ? data.status?.detail || "Waiting for the first check."
+            : "Automatic reminders are disabled."}
+        </p>
+      )}
       {data.status?.checked_at && (
         <small>
           Last checked {formatDateTime(new Date(data.status.checked_at))}
