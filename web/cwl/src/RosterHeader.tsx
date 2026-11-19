@@ -1,7 +1,8 @@
+import RefreshControl from "./RefreshControl";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw, WandSparkles } from "lucide-react";
+import { WandSparkles } from "lucide-react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import { draftPublicationStatus, type PublicationDraft } from "./publication";
 import type { RosterSnapshot } from "./roster";
@@ -33,7 +34,9 @@ type Props = {
   navigationDisabled?: boolean;
   archived: boolean;
   refreshKey?: number;
-  refreshInToolbar?: boolean;
+  refreshBusy?: boolean;
+  refreshUpdatedAt?: number | null;
+  refreshError?: string;
   viewLabel?: string;
   activeStatuses?: readonly string[];
   onSeasonChange: (id: string) => void;
@@ -58,7 +61,9 @@ export default function RosterHeader({
   navigationDisabled = uiLocked,
   archived,
   refreshKey = 0,
-  refreshInToolbar = false,
+  refreshBusy = false,
+  refreshUpdatedAt = null,
+  refreshError = "",
   viewLabel = "Accounts & signups",
   activeStatuses = [],
   onSeasonChange,
@@ -184,14 +189,13 @@ export default function RosterHeader({
           </h1>
         }
       >
-        {!refreshInToolbar && (
-          <Button
-            icon={RefreshCw}
-            label="Refresh roster"
-            disabled={uiLocked}
-            onClick={onRefresh}
-          />
-        )}
+        <RefreshControl
+          updatedAt={refreshUpdatedAt}
+          busy={refreshBusy}
+          disabled={uiLocked}
+          onRefresh={onRefresh}
+          showRefresh={!refreshError}
+        />
         <div className="roster-header-season">
           <RosterMenu
             label="Season"

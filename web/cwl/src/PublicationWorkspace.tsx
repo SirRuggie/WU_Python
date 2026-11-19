@@ -1,3 +1,5 @@
+import RefreshControl, { useRefreshTime } from "./RefreshControl";
+import LoadError from "./LoadError";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import { publicationBlockingReason } from "./publicationBlockingReason";
@@ -6,7 +8,7 @@ import { clanCapacity } from "./rosterCapacity";
 import useStaffDetailsPage from "./useStaffDetailsPage";
 import RosterMenu from "./rosterUi/Menu";
 import TownHallIcon from "./TownHallIcon";
-import { RefreshCw, Send, EyeOff } from "lucide-react";
+import { Send, EyeOff } from "lucide-react";
 import { Button } from "./rosterUi/primitives";
 import JoiningInstructionsEditor from "./JoiningInstructionsEditor";
 import { capacityWarnings, finalizeStatus } from "./publicationStatus";
@@ -421,6 +423,7 @@ export default function PublicationWorkspace({
     onOpenChange: setEditOpen,
   });
 
+  const refreshUpdatedAt = useRefreshTime(loading, !!draft, error);
   return (
     <div
       className={`publication-workspace roster-ui${step === "review" ? " finalize-review" : ""}`}
@@ -459,6 +462,15 @@ export default function PublicationWorkspace({
           </h1>
         }
       >
+        {step === "review" && (
+          <RefreshControl
+            updatedAt={refreshUpdatedAt}
+            busy={loading}
+            disabled={locked}
+            onRefresh={load}
+            showRefresh={!error}
+          />
+        )}
         <RosterMenu
           label="Season"
           value={seasonId}
@@ -480,14 +492,13 @@ export default function PublicationWorkspace({
           <p>Select a season to review its working roster.</p>
         </div>
       )}
-      {error && (
-        <div className="notice error" role="alert">
-          <span>
-            {error}
-            {!error.includes("Refresh") && " Use Refresh draft to try again."}
-          </span>
-        </div>
-      )}
+      <LoadError
+        message={error}
+        onRetry={() => void load()}
+        busy={loading}
+        disabled={locked}
+        retryContext="publication preview"
+      />
       {success && (
         <div className="notice success" role="status">
           {success}
@@ -495,15 +506,6 @@ export default function PublicationWorkspace({
       )}
       {loading && !draft && <p role="status">Loading publication preview…</p>}
 
-      {!draft && seasonId && (
-        <Button
-          icon={RefreshCw}
-          disabled={locked || loading}
-          onClick={() => void load()}
-        >
-          Refresh draft
-        </Button>
-      )}
       <div hidden={step !== "review"}>
         {draft && (
           <>
@@ -512,13 +514,6 @@ export default function PublicationWorkspace({
               aria-label="Publication and draft status"
             >
               <strong>{finalizeStatus(draft)}</strong>
-              <Button
-                icon={RefreshCw}
-                disabled={locked || loading}
-                onClick={() => void load()}
-              >
-                Refresh draft
-              </Button>
             </section>
             {step === "review" && (
               <PublicationChanges

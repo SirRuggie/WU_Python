@@ -429,6 +429,7 @@ export default function TextCommands({
               </p>
             )}
             <SectionTabs
+              id="command-editor"
               className="text-command-tabs section-tabs--flow"
               label="Command editor view"
               items={[
@@ -452,7 +453,13 @@ export default function TextCommands({
               }}
               revealSelection
             />
-            <div className={`text-command-editor mobile-${pane}`}>
+            <div
+              role="tabpanel"
+              tabIndex={0}
+              id={`command-editor-panel-${pane}`}
+              aria-labelledby={`command-editor-tab-${pane}`}
+              className={`text-command-editor mobile-${pane}`}
+            >
               <form
                 className="card"
                 aria-busy={busy}

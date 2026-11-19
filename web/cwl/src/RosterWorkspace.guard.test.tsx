@@ -72,6 +72,7 @@ vi.mock("./ClanSettings", () => ({
 afterEach(() => {
   state.api.mockReset();
   sessionStorage.clear();
+  history.replaceState(null, "", "/cwl/roster");
   localStorage.clear();
   vi.restoreAllMocks();
 });
@@ -243,7 +244,7 @@ it.each(["tab", "season", "capacity"])(
       if (destination === "season")
         expect(onSeasonChange).toHaveBeenCalledExactlyOnceWith("2");
       if (destination === "capacity")
-        expect(button("Hosting clans").getAttribute("aria-pressed")).toBe(
+        expect(button("Hosting clans").getAttribute("aria-selected")).toBe(
           "true",
         );
     } finally {

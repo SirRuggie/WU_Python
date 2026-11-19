@@ -1,3 +1,4 @@
+import EmptyState from "./EmptyState";
 import { Search, X } from "lucide-react";
 import FilterChips from "./FilterChips";
 import LoadError from "./LoadError";
@@ -812,20 +813,25 @@ export default function StrikeActivityRoster({
       {loading && !data.accounts.length ? (
         <p role="status">Loading family activity…</p>
       ) : !error && !rows.length ? (
-        <div className="card empty">
-          <p>
-            {data.accounts.length
-              ? hasExtraFilters
-                ? `No accounts match these filters in the ${filters.view.replaceAll("_", " ")} tab.`
-                : `No accounts in the ${filters.view.replaceAll("_", " ")} tab.`
-              : "No family accounts have been observed yet."}
-          </p>
-          {hasExtraFilters && (
-            <button onClick={() => change(clearedFilters)}>
-              Clear filters
-            </button>
-          )}
-        </div>
+        <EmptyState
+          title={
+            data.accounts.length
+              ? "No matching family accounts"
+              : "No family accounts observed"
+          }
+          line={
+            data.accounts.length
+              ? `No accounts in the ${filters.view.replaceAll("_", " ")} view match these filters.`
+              : "Family activity will appear after accounts are observed."
+          }
+          action={
+            hasExtraFilters ? (
+              <button onClick={() => change(clearedFilters)}>
+                Clear filters
+              </button>
+            ) : undefined
+          }
+        />
       ) : null}
       {canManage && selecting && (
         <div className="strike-activity-select">

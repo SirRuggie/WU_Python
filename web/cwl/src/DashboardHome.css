@@ -520,7 +520,7 @@
     align-items: start;
     flex-direction: column;
   }
-  .hub-section-heading > button {
+  .hub-section-heading > :is(button, a) {
     align-self: flex-end;
   }
   .hub-toolbar {
@@ -648,7 +648,7 @@
   text-wrap: pretty;
 }
 
-.dashboard-home .home-task-entry button {
+.dashboard-home .home-task-entry :is(button, a) {
   flex: none;
   min-height: 44px;
   border-color: transparent;
@@ -677,7 +677,7 @@
   margin: 0;
 }
 
-.dashboard-home .home-activity-links button {
+.dashboard-home .home-activity-links :is(button, a) {
   color: var(--wu-text-muted);
 }
 
@@ -687,7 +687,7 @@
   margin: 0 0 var(--wu-space-5);
 }
 
-.dashboard-home .hub-section-heading button,
+.dashboard-home .hub-section-heading :is(button, a),
 .dashboard-home .hub-account-action,
 .dashboard-home .hub-pagination button,
 .dashboard-home .hub-selection button {
@@ -710,7 +710,7 @@
   .home-task-entry > div {
     min-width: 180px;
   }
-  .dashboard-home .home-task-entry button {
+  .dashboard-home .home-task-entry :is(button, a) {
     margin-left: auto;
   }
 }

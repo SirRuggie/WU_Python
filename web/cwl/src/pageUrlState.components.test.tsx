@@ -61,7 +61,7 @@ it("falls back to the first visible Strikes tab and corrects the address", async
   ];
   expect(tabs.map((node) => node.textContent)).not.toContain("Settings");
   expect(
-    tabs.find((node) => node.getAttribute("aria-pressed") === "true")
+    tabs.find((node) => node.getAttribute("aria-selected") === "true")
       ?.textContent,
   ).toBe("Accounts");
   expect(window.location.search).not.toContain("tab=settings");

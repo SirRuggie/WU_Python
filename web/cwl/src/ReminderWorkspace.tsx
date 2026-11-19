@@ -1,5 +1,5 @@
 import LoadError from "./LoadError";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import { dashboardPath } from "./dashboardHistory";
 import SignupReminderOverview, {
   targetCwlMonth,
@@ -268,6 +268,7 @@ export default function ReminderWorkspace({
                 </p>
               )}
               <SectionTabs
+                id="reminder-sections"
                 className="tabs workflow-tabs section-tabs--flow"
                 label="Reminder sections"
                 items={(
@@ -294,119 +295,123 @@ export default function ReminderWorkspace({
                 }}
                 revealSelection
               />
-              {tab === "overview" && (
-                <>
-                  <SignupReminderOverview
-                    activated={state.activated}
-                    campaign={draft}
-                    cycle={state.cycle}
-                    schedule={schedule}
-                    destination={destination}
-                    recipient={recipient}
-                    onEdit={(id, audience) => {
-                      setMessageId(id);
-                      setPool(audience);
-                      setTab("messages");
-                    }}
-                    onTiming={() => setTab("schedule")}
-                  />
-                  {(channelError || roleLookup.error) && (
-                    <p className="reminder-lookup-warning" role="status">
-                      Channel or role names are unavailable. Open a message to
-                      retry the lookup.
+              <SectionTabPanel id="reminder-sections" value={tab}>
+                {tab === "overview" && (
+                  <>
+                    <SignupReminderOverview
+                      activated={state.activated}
+                      campaign={draft}
+                      cycle={state.cycle}
+                      schedule={schedule}
+                      destination={destination}
+                      recipient={recipient}
+                      onEdit={(id, audience) => {
+                        setMessageId(id);
+                        setPool(audience);
+                        setTab("messages");
+                      }}
+                      onTiming={() => setTab("schedule")}
+                    />
+                    {(channelError || roleLookup.error) && (
+                      <p className="reminder-lookup-warning" role="status">
+                        Channel or role names are unavailable. Open a message to
+                        retry the lookup.
+                      </p>
+                    )}
+                    <p className="reminder-overview-note">
+                      Roster posts are on{" "}
+                      <a
+                        href={dashboardPath({
+                          view: "publication",
+                          step: "announce",
+                          season: seasonId,
+                        })}
+                      >
+                        Announcements ›
+                      </a>
                     </p>
-                  )}
-                  <p className="reminder-overview-note">
-                    Roster posts are on{" "}
-                    <a
-                      href={dashboardPath({
-                        view: "publication",
-                        step: "announce",
-                        season: seasonId,
-                      })}
-                    >
-                      Announcements ›
-                    </a>
-                  </p>
-                  <p className="reminder-overview-note">
-                    Delivery is confirmed in Delivery history. Dashboard signups
-                    are {state.signup_open ? "open" : "closed"} separately.
-                  </p>
-                </>
-              )}
-              {tab === "messages" && (
-                <ReminderMessagesTab
-                  draft={draft}
-                  messageId={messageId}
-                  setMessageId={setMessageId}
-                  pool={pool}
-                  setPool={setPool}
-                  disabled={disabled}
-                  channels={channels}
-                  roles={roles}
-                  channelLookup={channelLookup}
-                  roleLookup={roleLookup}
-                  roleText={roleText}
-                  setRoleText={setRoleText}
-                  edit={edit}
-                  changeVariant={changeVariant}
-                  previewDeadline={preview?.deadline || state.deadline}
-                />
-              )}
-              {tab === "schedule" && (
-                <ReminderScheduleTab
-                  draft={draft}
-                  cycle={state.cycle}
-                  signupOpen={state.signup_open}
-                  disabled={disabled}
-                  edit={edit}
-                />
-              )}
-              {tab === "history" && (
-                <div className="card">
-                  <h3>Shared delivery history</h3>
+                    <p className="reminder-overview-note">
+                      Delivery is confirmed in Delivery history. Dashboard
+                      signups are {state.signup_open ? "open" : "closed"}{" "}
+                      separately.
+                    </p>
+                  </>
+                )}
+                {tab === "messages" && (
+                  <ReminderMessagesTab
+                    draft={draft}
+                    messageId={messageId}
+                    setMessageId={setMessageId}
+                    pool={pool}
+                    setPool={setPool}
+                    disabled={disabled}
+                    channels={channels}
+                    roles={roles}
+                    channelLookup={channelLookup}
+                    roleLookup={roleLookup}
+                    roleText={roleText}
+                    setRoleText={setRoleText}
+                    edit={edit}
+                    changeVariant={changeVariant}
+                    previewDeadline={preview?.deadline || state.deadline}
+                  />
+                )}
+                {tab === "schedule" && (
+                  <ReminderScheduleTab
+                    draft={draft}
+                    cycle={state.cycle}
+                    signupOpen={state.signup_open}
+                    disabled={disabled}
+                    edit={edit}
+                  />
+                )}
+                {tab === "history" && (
+                  <div className="card">
+                    <h3>Shared delivery history</h3>
+                    <p>
+                      Refresh to check delivery. This page does not send
+                      messages.
+                    </p>
+                    <ReminderDeliveryHistory history={state.history} />
+                  </div>
+                )}
+                {tab !== "history" && (tab !== "overview" || dirty) && (
+                  <ReminderSaveBar
+                    base={base}
+                    state={state}
+                    patch={patch}
+                    body={body}
+                    dirty={dirty}
+                    preview={preview}
+                    error={error}
+                    busy={busy}
+                    disabled={disabled}
+                    act={act}
+                    load={load}
+                    setPreview={setPreview}
+                    setNotice={setNotice}
+                    setConfirmation={setConfirmation}
+                  />
+                )}
+                {tab === "schedule" || preview ? (
+                  <ReminderSchedulePanel
+                    draft={draft}
+                    preview={preview}
+                    schedule={schedule}
+                    sentOccurrences={state.sent_occurrences}
+                    skipped={state.skipped}
+                  />
+                ) : null}
+                <details className="reminder-disclosure reminder-context">
+                  <summary>
+                    About this schedule · {targetCwlMonth(state.cycle)} CWL
+                  </summary>
                   <p>
-                    Refresh to check delivery. This page does not send messages.
+                    Messages and times repeat monthly. Existing signup links
+                    stay unchanged. Previously sent messages are not resent.
                   </p>
-                  <ReminderDeliveryHistory history={state.history} />
-                </div>
-              )}
-              {tab !== "history" && (tab !== "overview" || dirty) && (
-                <ReminderSaveBar
-                  base={base}
-                  state={state}
-                  patch={patch}
-                  body={body}
-                  dirty={dirty}
-                  preview={preview}
-                  error={error}
-                  busy={busy}
-                  disabled={disabled}
-                  act={act}
-                  load={load}
-                  setPreview={setPreview}
-                  setNotice={setNotice}
-                  setConfirmation={setConfirmation}
-                />
-              )}
-              {tab === "schedule" || preview ? (
-                <ReminderSchedulePanel
-                  draft={draft}
-                  preview={preview}
-                  schedule={schedule}
-                  sentOccurrences={state.sent_occurrences}
-                  skipped={state.skipped}
-                />
-              ) : null}
-              <details className="reminder-disclosure reminder-context">
-                <summary>
-                  About this schedule · {targetCwlMonth(state.cycle)} CWL
-                </summary>
-                <p>
-                  Messages and times repeat monthly. Existing signup links stay
-                  unchanged. Previously sent messages are not resent.
-                </p>
-              </details>
+                </details>
+              </SectionTabPanel>
             </>
           )}
         </>

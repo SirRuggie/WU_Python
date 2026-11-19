@@ -1,3 +1,4 @@
+import EmptyState from "./EmptyState";
 import { formatDateTime } from "./format";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
@@ -254,11 +255,11 @@ export default function TicketBrowser() {
       {busy ? (
         <p role="status">Loading tickets…</p>
       ) : !error && !tickets.length ? (
-        <div className="card empty">
-          <h2>No tickets found</h2>
-          <p>Try another name, status or date.</p>
-          <button onClick={clearFilters}>Clear filters</button>
-        </div>
+        <EmptyState
+          title="No tickets found"
+          line="Try another name, status or date."
+          action={<button onClick={clearFilters}>Clear filters</button>}
+        />
       ) : (
         <div className="ticket-list">
           {tickets.map((t) => (

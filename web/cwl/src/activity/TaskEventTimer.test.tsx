@@ -189,7 +189,7 @@ it("keeps the CWL timer first when the view has no task rows", async () => {
   expect(
     before(
       host.querySelector(".todo-event-timer")!,
-      host.querySelector(".card.empty")!,
+      host.querySelector(".empty-state")!,
     ),
   ).toBe(true);
   expect(host.querySelector(".todo-clan-list")).toBeNull();
@@ -200,7 +200,7 @@ it("uses filtered rows so an empty CWL search keeps the timer before the list st
   // The open search sits in the toolbar above the timer; the timer still
   // comes before the list state.
   expect(before(host.querySelector(".todo-search-row")!, timer)).toBe(true);
-  expect(before(timer, host.querySelector(".card.empty")!)).toBe(true);
+  expect(before(timer, host.querySelector(".empty-state")!)).toBe(true);
   expect(host.querySelector(".todo-clan-list")).toBeNull();
   expect(host.querySelectorAll(".todo-event-timer")).toHaveLength(1);
 });

@@ -1,11 +1,15 @@
-import { formatDateTime, formatTime } from "./format";
+import EmptyState from "./EmptyState";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
+import RefreshControl from "./RefreshControl";
+import { formatDateTime } from "./format";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { seasonMonthLabel } from "./seasonLabels";
 import VisitorSummary from "./VisitorSummary";
 import DashboardIcon from "./DashboardIcon";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { api, ApiError, type Season } from "./api";
 import {
   dashboardViews,
@@ -40,6 +44,7 @@ export default function StaffOverview({
     [busy, setBusy] = useState(false),
     [paused, setPaused] = useState(false),
     [refresh, setRefresh] = useState(0);
+  const refreshRead = useRef<() => void>(() => {});
   useEffect(() => {
     let active = true,
       inflight = false;
@@ -68,48 +73,42 @@ export default function StaffOverview({
         if (active) setBusy(false);
       }
     }
+    refreshRead.current = () => {
+      void load();
+    };
     void load();
-    const timer = setInterval(() => {
-      if (!paused && !document.hidden) void load();
-    }, 30000);
     return () => {
       active = false;
-      clearInterval(timer);
+      refreshRead.current = () => {};
     };
-  }, [paused, refresh]);
+  }, [refresh]);
+  useEffect(() => {
+    if (paused) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) refreshRead.current();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [paused]);
   return (
     <section className="staff-overview">
       <CwlPageHeader
         title={<h1>Staff overview</h1>}
         description="What needs attention across your areas."
       >
-        <button
-          aria-busy={busy || undefined}
-          disabled={busy}
-          onClick={() => setRefresh((v) => v + 1)}
-        >
-          {busy ? "Refreshing…" : "Refresh"}
-        </button>
+        <RefreshControl
+          updatedAt={data ? data.checked_at * 1000 : null}
+          busy={busy}
+          onRefresh={() => setRefresh((v) => v + 1)}
+          intervalSeconds={30}
+          paused={paused}
+          onPauseChange={(next) => {
+            setPaused(next);
+            if (!next) refreshRead.current();
+          }}
+          showRefresh={!error}
+        />
       </CwlPageHeader>
       <VisitorSummary refresh={refresh} />
-      <div className="staff-overview-status">
-        <span>
-          {data
-            ? `Updated ${formatTime(new Date(data.checked_at * 1000))}`
-            : error
-              ? "Not updated"
-              : "Loading staff overview…"}{" "}
-          · {paused ? "Auto-refresh paused" : "Refreshes every 30 seconds"}
-        </span>
-        <label>
-          <input
-            type="checkbox"
-            checked={paused}
-            onChange={(e) => setPaused(e.target.checked)}
-          />
-          Pause
-        </label>
-      </div>
       <LoadError
         message={error}
         note={data ? "Showing the last successful update." : undefined}
@@ -139,15 +138,25 @@ export default function StaffOverview({
                           {season.signed_up} signed up
                         </p>
                       </div>
-                      <button
-                        onClick={() => onNavigate("roster", String(season.id))}
+                      <DashboardLink
+                        className="button"
+                        href={dashboardPath({
+                          view: "roster",
+                          season: String(season.id),
+                        })}
+                        onNavigate={() =>
+                          onNavigate("roster", String(season.id))
+                        }
                       >
                         Open roster <ArrowRight size={16} aria-hidden="true" />
-                      </button>
+                      </DashboardLink>
                     </div>
                   ))
                 ) : (
-                  <p>No active CWL seasons.</p>
+                  <EmptyState
+                    title="No active CWL seasons"
+                    line="Active seasons will appear here."
+                  />
                 )}
               </article>
             )}
@@ -203,10 +212,17 @@ export default function StaffOverview({
                         </div>
                         {dashboardViews.includes(f.destination) &&
                           navigationLabel(f.destination) && (
-                            <button onClick={() => onNavigate(f.destination)}>
+                            <DashboardLink
+                              className="button"
+                              href={dashboardPath({
+                                view: f.destination,
+                                season: "",
+                              })}
+                              onNavigate={() => onNavigate(f.destination)}
+                            >
                               Review area{" "}
                               <ArrowRight size={16} aria-hidden="true" />
-                            </button>
+                            </DashboardLink>
                           )}
                       </div>
                     ))}
@@ -216,7 +232,10 @@ export default function StaffOverview({
                   )}
                 </>
               ) : (
-                <p>No recent failed actions.</p>
+                <EmptyState
+                  title="No recent failed actions"
+                  line="There are no failures to review."
+                />
               )}
             </article>
           </div>
@@ -234,9 +253,13 @@ export default function StaffOverview({
                     dashboardViews.includes(area) && navigationLabel(area),
                 )
                 .map((area) => (
-                  <button key={area} onClick={() => onNavigate(area)}>
+                  <DashboardLink
+                    key={area}
+                    href={dashboardPath({ view: area, season: "" })}
+                    onNavigate={() => onNavigate(area)}
+                  >
                     {navigationLabel(area)} →
-                  </button>
+                  </DashboardLink>
                 ))}
             </div>
           </section>

@@ -30,7 +30,9 @@ it("uses menu icons and labels for roster and ticket destinations", async () => 
   try {
     await act(async () => root.render(<StaffOverview onNavigate={vi.fn()} />));
     expect(
-      [...host.querySelectorAll("h2")].map((heading) => heading.textContent),
+      [...host.querySelectorAll("h2")]
+        .filter((heading) => !heading.closest(".empty-state"))
+        .map((heading) => heading.textContent),
     ).toEqual([
       " CWL placement",
       " Tickets",
@@ -109,7 +111,7 @@ it("marks only the pending refresh and blocks a second native click", async () =
     const refresh = host.querySelector<HTMLButtonElement>(
       ".cwl-page-header button",
     )!;
-    expect(refresh.textContent?.trim()).toBe("Refreshing…");
+    expect(refresh.getAttribute("aria-label")).toBe("Refresh");
     expect(refresh.disabled).toBe(true);
     expect(refresh.getAttribute("aria-busy")).toBe("true");
     const calls = () =>
@@ -124,7 +126,7 @@ it("marks only the pending refresh and blocks a second native click", async () =
     });
     expect(calls()).toBe(initialCalls);
     await act(async () => finish(snapshot));
-    expect(refresh.textContent?.trim()).toBe("Refresh");
+    expect(refresh.getAttribute("aria-label")).toBe("Refresh");
     expect(refresh.disabled).toBe(false);
     expect(refresh.hasAttribute("aria-busy")).toBe(false);
     await act(async () => refresh.click());
@@ -212,8 +214,8 @@ it("joins exact summary rows to App metadata by id without fetching again or cha
     expect(counts()).toEqual(beforeCounts);
     expect(vi.mocked(api).mock.calls).toHaveLength(reads);
     expect(summary.seasons.every((row) => !("cwl_month" in row))).toBe(true);
-    for (const button of host.querySelectorAll<HTMLButtonElement>(
-      ".staff-overview-row button",
+    for (const button of host.querySelectorAll<HTMLAnchorElement>(
+      ".staff-overview-row a",
     ))
       await act(async () => button.click());
     expect(onNavigate.mock.calls).toEqual([
@@ -270,8 +272,8 @@ it("labels every staff destination and return reminders from the shared navigati
       root.render(<StaffOverview onNavigate={onNavigate} />),
     );
     const buttons = [
-      ...host.querySelectorAll<HTMLButtonElement>(
-        ".staff-overview-shortcuts button",
+      ...host.querySelectorAll<HTMLAnchorElement>(
+        ".staff-overview-shortcuts a",
       ),
     ];
     expect(buttons.map((button) => button.textContent?.trim())).toEqual([

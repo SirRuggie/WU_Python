@@ -176,7 +176,7 @@ it("shows an inline section with no opener, modal, primary button or automatic e
   const status = host.querySelector('[aria-live="polite"]')!;
   expect(status.classList.contains("sr-only")).toBe(true);
   expect(status.getAttribute("aria-atomic")).toBe("true");
-  expect(host.querySelectorAll(".empty p")).toHaveLength(1);
+  expect(host.querySelectorAll(".empty-state p")).toHaveLength(1);
 });
 it("restores legacy weights in order, including duplicates, with TH and expansion", async () => {
   const parsed = parseActivityFilters(

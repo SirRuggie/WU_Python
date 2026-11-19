@@ -94,6 +94,11 @@ export default function SectionTabs<T extends string>({
       className={`section-tabs has-horizontal-fades ${className}`}
       role={mode === "tabs" ? "tablist" : "group"}
       aria-label={label}
+      onBlur={(event) => {
+        groupProps.onBlur?.(event);
+        if (!event.currentTarget.contains(event.relatedTarget as Node | null))
+          setFocused(value);
+      }}
     >
       {items.map((item) => (
         <button

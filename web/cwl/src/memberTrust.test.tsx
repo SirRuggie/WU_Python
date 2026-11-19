@@ -131,7 +131,9 @@ it("keeps the clan list through failed refresh and recovers; denied access clear
     await new Promise((resolve) => setTimeout(resolve, 40));
   });
   await flush();
-  expect(host.textContent).toContain("Could not refresh. Showing last update.");
+  expect(host.textContent).toContain(
+    "Could not refresh. Showing the last update.",
+  );
   expect(host.textContent).toContain("Elsewhere");
   expect(host.textContent).not.toContain("upstream secret");
   failure = null;
@@ -154,7 +156,11 @@ it("keeps initial failure separate and offers closed signup/link help", async ()
   await render(<MemberAssignments seasonId="1" seasons={[season]} />);
   expect(host.textContent).toContain("first read failed");
   mocks.api.mockResolvedValue({ ...assignment, published: null, accounts: [] });
-  await act(async () => host.querySelector("button")!.click());
+  await act(async () =>
+    [...host.querySelectorAll("button")]
+      .find((button) => button.textContent === "Try again")!
+      .click(),
+  );
   await flush();
   expect(host.textContent).toContain("Sign up for CWL");
   expect(host.textContent).not.toContain("Link an account");
@@ -314,7 +320,9 @@ it("retains Home account and signup data through refresh failure, then recovers 
   });
   await flush();
   expect(host.textContent).toContain("Retained player");
-  expect(host.textContent).toContain("Could not refresh. Showing last update.");
+  expect(host.textContent).toContain(
+    "Could not refresh. Showing the last update.",
+  );
   failure = null;
   await act(async () => {
     document.dispatchEvent(new Event("visibilitychange"));
@@ -359,7 +367,9 @@ it("keeps the known Home season after a failed focus refresh and recovers", asyn
   });
   await flush();
   expect(host.textContent).toContain("November");
-  expect(host.textContent).toContain("Could not refresh. Showing last update.");
+  expect(host.textContent).toContain(
+    "Could not refresh. Showing the last update.",
+  );
   expect(host.textContent).not.toContain("private upstream");
   fail = false;
   await act(async () => {

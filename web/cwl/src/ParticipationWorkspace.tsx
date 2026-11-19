@@ -1,3 +1,4 @@
+import EmptyState from "./EmptyState";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
@@ -686,7 +687,7 @@ export default function ParticipationWorkspace({
             onChange={(next) => {
               choosePool(next);
               setClan("all");
-              emit({ pool: next, clan: "all" });
+              emit({ pool: next, clan: "all" }, false);
             }}
           />
           {clanChoices.length > 0 && (
@@ -821,15 +822,17 @@ export default function ParticipationWorkspace({
                 ))}
               </ul>
               {!visible.length && (
-                <p className="participation-empty">
-                  No players match these filters.
-                </p>
+                <EmptyState
+                  title="No matching players"
+                  line="Select another pool or change the filters."
+                />
               )}
             </>
           ) : (
-            <p className="participation-empty">
-              No current signup accounts yet.
-            </p>
+            <EmptyState
+              title="No signup accounts yet"
+              line="Current signups will appear here."
+            />
           )}
           {lastPage > 0 && (
             <nav className="roster-pagination" aria-label="Participation pages">

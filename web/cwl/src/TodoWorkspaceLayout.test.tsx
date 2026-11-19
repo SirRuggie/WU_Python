@@ -178,9 +178,9 @@ it("moves focus to the accounts chip when closing search removes the search butt
 
 it("toggles auto-refresh with one pause button", async () => {
   await mount();
-  const pause = button("Pause auto-refresh");
-  expect(pause.getAttribute("aria-pressed")).toBe("false");
+  const pause = button("Pause automatic refresh");
+  expect(pause.getAttribute("aria-label")).toBe("Pause automatic refresh");
   await act(async () => pause.click());
-  expect(pause.getAttribute("aria-pressed")).toBe("true");
-  expect(host!.textContent).toContain("Paused · checked");
+  expect(pause.getAttribute("aria-label")).toBe("Resume automatic refresh");
+  expect(host!.textContent).toContain("paused");
 });

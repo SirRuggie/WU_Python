@@ -22,6 +22,7 @@ it.each([
   async (filter, label, content) => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     sessionStorage.clear();
+    history.replaceState(null, "", "/cwl/roster");
     localStorage.clear();
     api.mockResolvedValue({
       revision: 1,
@@ -50,7 +51,7 @@ it.each([
         ),
       );
       const active = host.querySelector(
-        '.roster-workflow-nav button[aria-pressed="true"]',
+        '.roster-workflow-nav button[aria-selected="true"]',
       );
       expect(active?.textContent).toContain(label);
       expect(host.textContent).toContain(content);
@@ -58,6 +59,7 @@ it.each([
       act(() => root.unmount());
       host.remove();
       sessionStorage.clear();
+      history.replaceState(null, "", "/cwl/roster");
       localStorage.clear();
       api.mockReset();
     }
@@ -67,6 +69,7 @@ it.each([
 it("Build Next cue calls Finalize and is hidden without publish permission", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   sessionStorage.clear();
+  history.replaceState(null, "", "/cwl/roster");
   localStorage.clear();
   api.mockResolvedValue({
     revision: 1,
@@ -110,6 +113,7 @@ it.each(["assign", "compare", "rules"])(
   async (mode) => {
     Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
     sessionStorage.clear();
+    history.replaceState(null, "", "/cwl/roster");
     localStorage.clear();
     sessionStorage.setItem("wu-roster-1-mode", JSON.stringify(mode));
     api.mockResolvedValue({
@@ -158,6 +162,7 @@ it.each(["assign", "compare", "rules"])(
       await act(async () => root.unmount());
       host.remove();
       sessionStorage.clear();
+      history.replaceState(null, "", "/cwl/roster");
       localStorage.clear();
       api.mockReset();
     }

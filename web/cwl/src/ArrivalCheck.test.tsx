@@ -237,11 +237,11 @@ it.each(["hidden", "never"])(
     expect(host.textContent).toContain(
       kind === "hidden"
         ? "Hidden from members · last published version 2"
-        : "Finalize roster first ›",
+        : "Go to Finalize roster ›",
     );
     expect(host.querySelectorAll(".declaration-clan")).toHaveLength(0);
     const finalize = [...host.querySelectorAll("button")].find(
-      (button) => button.textContent === "Finalize roster first ›",
+      (button) => button.textContent === "Go to Finalize roster ›",
     );
     expect(finalize).toBeDefined();
     expect(host.querySelector("a")).toBeNull();
@@ -900,7 +900,7 @@ it("uses guarded in-app Finalize and one read-only Next to Results", async () =>
   );
   expect(host.querySelector(".cwl-next-cue")).toBeNull();
   const button = [...host.querySelectorAll("button")].find(
-    (b) => b.textContent === "Finalize roster first ›",
+    (b) => b.textContent === "Go to Finalize roster ›",
   )!;
   await act(async () => button.click());
   expect(finalize).toHaveBeenCalledOnce();
@@ -911,10 +911,8 @@ it("hides unavailable Finalize and Results destinations rather than showing disa
   state.value.data.publication.published = null;
   state.value.data.arrival.publication_available = false;
   await render();
-  expect(host.textContent).not.toContain("Finalize roster first ›");
-  expect(host.textContent).toContain(
-    "No roster is currently published for members.",
-  );
+  expect(host.textContent).not.toContain("Go to Finalize roster ›");
+  expect(host.textContent).toContain("Roster not published yet");
   state.value.data = makeData();
   await render();
   expect(host.querySelector(".cwl-next-cue")).toBeNull();
@@ -1050,8 +1048,8 @@ async function queue148Page(
         `input[aria-label="Filler: Extra ${n}"]`,
       )!,
     refreshButton: () =>
-      [...host.querySelectorAll<HTMLButtonElement>("button")].find((b) =>
-        /^(Refresh|Refreshing…|Checking…)$/.test(b.textContent || ""),
+      [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+        (b) => b.getAttribute("aria-label") === "Refresh",
       )!,
   };
 }
@@ -1395,22 +1393,22 @@ it("pool discard Cancel keeps the pool and confirmation changes it without a wri
   ).toEqual([]);
 });
 
-it("marks the visible Checking label without changing its enabled state", async () => {
+it("marks the Refresh icon busy and prevents duplicate reads", async () => {
   extraState.value.loading = false;
   const props = { seasonId: "1" };
   await act(async () => root.render(<ArrivalCheck {...props} />));
   const refresh = () =>
     [
       ...host.querySelectorAll<HTMLButtonElement>(
-        ".declaration-refresh button",
+        'button[aria-label="Refresh"]',
       ),
-    ].find((button) => /Refresh|Checking/.test(button.textContent || ""))!;
+    ][0]!;
   expect(refresh().hasAttribute("aria-busy")).toBe(false);
   state.value.checking = true;
   await act(async () => root.render(<ArrivalCheck {...props} />));
-  expect(refresh().textContent?.trim()).toBe("Checking…");
+  expect(refresh().getAttribute("aria-label")).toBe("Refresh");
   expect(refresh().getAttribute("aria-busy")).toBe("true");
-  expect(refresh().disabled).toBe(false);
+  expect(refresh().disabled).toBe(true);
   state.value.checking = false;
   extraState.value.loading = true;
   await act(async () => root.render(<ArrivalCheck {...props} />));
@@ -1418,4 +1416,34 @@ it("marks the visible Checking label without changing its enabled state", async 
   extraState.value.loading = false;
   await act(async () => root.render(<ArrivalCheck {...props} />));
   expect(refresh().hasAttribute("aria-busy")).toBe(false);
+});
+
+it("publishes a read-only current control, clears it on unmount and rejects stale control invocation", async () => {
+  extraState.value.loading = false;
+  const publish = vi.fn();
+  const oldRefresh = state.value.refresh;
+  await act(async () =>
+    root.render(
+      <ArrivalCheck key="old" seasonId="1" onRefreshControl={publish} />,
+    ),
+  );
+  expect(host.querySelector('button[aria-label="Refresh"]')).toBeNull();
+  const oldControl = publish.mock.calls.at(-1)![0];
+  const currentRefresh = vi.fn(() => 22);
+  state.value = { ...state.value, refresh: currentRefresh };
+  await act(async () =>
+    root.render(
+      <ArrivalCheck key="new" seasonId="2" onRefreshControl={publish} />,
+    ),
+  );
+  const currentControl = publish.mock.calls.at(-1)![0];
+  await act(async () => oldControl.onRefresh());
+  expect(oldRefresh).not.toHaveBeenCalled();
+  expect(currentRefresh).not.toHaveBeenCalled();
+  await act(async () => currentControl.onRefresh());
+  expect(currentRefresh).toHaveBeenCalledTimes(1);
+  await act(async () => root.render(<p>Other page</p>));
+  expect(publish).toHaveBeenLastCalledWith(null);
+  await act(async () => currentControl.onRefresh());
+  expect(currentRefresh).toHaveBeenCalledTimes(1);
 });

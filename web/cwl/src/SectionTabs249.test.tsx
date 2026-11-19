@@ -60,6 +60,11 @@ it("uses manual activation, roving focus, disabled skipping, wrap, Home/End and 
     expect(document.activeElement).toBe(tabs[0]);
     await key(0, "ArrowLeft");
     expect(document.activeElement).toBe(tabs[2]);
+    const outside = document.createElement("button");
+    document.body.append(outside);
+    await act(async () => outside.focus());
+    expect(tabs.map((tab) => tab.tabIndex)).toEqual([0, -1, -1]);
+    outside.remove();
     await act(async () => tabs[2].click());
     expect(change).toHaveBeenCalledExactlyOnceWith("c");
     const panel = host.querySelector('[role="tabpanel"]')!;

@@ -600,7 +600,9 @@ it("empty base tab has no dead Clear filters action", async () => {
       />,
     ),
   );
-  expect(host.textContent).toContain("No accounts in the replacements tab.");
+  expect(host.textContent).toContain(
+    "No accounts in the replacements view match these filters.",
+  );
   expect(
     [...host.querySelectorAll("button")].some(
       (b) => b.textContent === "Clear filters",

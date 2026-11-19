@@ -56,10 +56,14 @@ it.each(["sections", "pills"])(
     act(() => root.render(<Fixture />));
     const buttons = [...host.querySelectorAll("button")];
     expect(
-      buttons.map((button) => button.getAttribute("aria-pressed")),
+      buttons.map((button) =>
+        button.getAttribute(
+          kind === "sections" ? "aria-selected" : "aria-pressed",
+        ),
+      ),
     ).toEqual(["true", "false"]);
     expect(buttons.map((button) => button.type)).toEqual(["button", "button"]);
-    buttons[1].focus();
+    act(() => buttons[1].focus());
     expect(document.activeElement).toBe(buttons[1]);
     expect(buttons[1].tabIndex).toBe(0);
     // Native buttons own Enter/Space activation; no custom handler intercepts it.
@@ -75,7 +79,11 @@ it.each(["sections", "pills"])(
     act(() => buttons[1].click());
     expect(changed.mock.calls).toEqual([["two"]]);
     expect(
-      buttons.map((button) => button.getAttribute("aria-pressed")),
+      buttons.map((button) =>
+        button.getAttribute(
+          kind === "sections" ? "aria-selected" : "aria-pressed",
+        ),
+      ),
     ).toEqual(["false", "true"]);
     act(() => root.render(<Fixture disabled />));
     expect(buttons.every((button) => button.disabled)).toBe(true);
@@ -119,11 +127,11 @@ it("gives SectionTabs the existing named group semantics and caller class", () =
       />,
     ),
   );
-  expect(host.querySelector('[role="group"]')?.getAttribute("aria-label")).toBe(
-    "Strike sections",
-  );
+  expect(
+    host.querySelector('[role="tablist"]')?.getAttribute("aria-label"),
+  ).toBe("Strike sections");
   expect(host.firstElementChild?.className).toBe(
     "section-tabs has-horizontal-fades strikes-tabs",
   );
-  expect(host.querySelector('[role="tab"]')).toBeNull();
+  expect(host.querySelectorAll('[role="tab"]')).toHaveLength(2);
 });

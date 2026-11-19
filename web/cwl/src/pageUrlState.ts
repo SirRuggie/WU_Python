@@ -9,6 +9,16 @@ type ParamSpec = { values: readonly string[]; fallback: string };
 export const pageParamSpecs: Partial<
   Record<DashboardView, Record<string, ParamSpec>>
 > = {
+  roster: {
+    tab: {
+      values: ["assign", "compare", "rules", "weights"],
+      fallback: "assign",
+    },
+  },
+  participation: { pool: { values: ["main", "lazy"], fallback: "main" } },
+  "clan-management": {
+    tab: { values: ["clans", "overview", "history"], fallback: "clans" },
+  },
   moderation: {
     tab: { values: ["history", "invites", "channels"], fallback: "history" },
   },

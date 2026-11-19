@@ -71,16 +71,7 @@ export function RefreshButton({
   );
 }
 
-export default function RefreshControl({
-  updatedAt,
-  busy,
-  onRefresh,
-  intervalSeconds,
-  paused = false,
-  onPauseChange,
-  disabled = false,
-  showRefresh = true,
-}: {
+export type RefreshControlProps = {
   updatedAt: Parameters<typeof formatTime>[0];
   busy: boolean;
   onRefresh: Refresh;
@@ -90,7 +81,18 @@ export default function RefreshControl({
   disabled?: boolean;
   /** The same read's LoadError owns Try again while its error is visible. */
   showRefresh?: boolean;
-}) {
+};
+
+export default function RefreshControl({
+  updatedAt,
+  busy,
+  onRefresh,
+  intervalSeconds,
+  paused = false,
+  onPauseChange,
+  disabled = false,
+  showRefresh = true,
+}: RefreshControlProps) {
   const previous = useRef(busy);
   const announce = previous.current && !busy && showRefresh;
   useEffect(() => {

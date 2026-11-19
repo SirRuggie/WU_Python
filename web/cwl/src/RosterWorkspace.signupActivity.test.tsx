@@ -52,6 +52,7 @@ it.each([
 ])("Fill spot respects workspace state: %s", async (scenario) => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   sessionStorage.clear();
+  history.replaceState(null, "", "/cwl/roster");
   localStorage.clear();
   sessionStorage.setItem("wu-roster-1-mode", '"rules"');
   const saved =
@@ -230,6 +231,7 @@ it.each([
     await act(async () => root.unmount());
     host.remove();
     sessionStorage.clear();
+    history.replaceState(null, "", "/cwl/roster");
     localStorage.clear();
     vi.restoreAllMocks();
     state.api.mockReset();

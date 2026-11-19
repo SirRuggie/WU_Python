@@ -117,6 +117,7 @@ it("rules saves use the real workspace path and never label the toast draft; err
     act(() => root.unmount());
     host.remove();
     sessionStorage.clear();
+    history.replaceState(null, "", "/cwl/roster");
     vi.restoreAllMocks();
   }
 });

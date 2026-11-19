@@ -1,3 +1,6 @@
+import EmptyState from "./EmptyState";
+import DashboardLink from "./DashboardLink";
+import { dashboardPath } from "./dashboardHistory";
 import CwlPageHeader from "./CwlPageHeader";
 import FilterChips from "./FilterChips";
 import { loadAccountDisplay } from "./accountDisplay";
@@ -233,17 +236,21 @@ export default function DashboardSearch({
         </p>
       )}
       {!busy && !error && !results.length && (
-        <div className="card empty">
-          <h2>
-            {index.length
+        <EmptyState
+          title={
+            index.length
               ? familyError
                 ? "No matches in available results"
                 : "No matches"
-              : "No accounts to search yet"}
-          </h2>
-          {index.length ? (
-            <>
-              <p>Try another name or tag, or select All.</p>
+              : "No accounts to search yet"
+          }
+          line={
+            index.length
+              ? "Try another name or tag, or select All."
+              : "Your linked-account check returned no accounts."
+          }
+          action={
+            index.length ? (
               <button
                 onClick={() => {
                   onQuery("");
@@ -252,12 +259,7 @@ export default function DashboardSearch({
               >
                 Clear filters
               </button>
-            </>
-          ) : (
-            <>
-              <p>
-                Your linked-account check succeeded and returned no accounts.
-              </p>
+            ) : (
               <details>
                 <summary>Link an account</summary>
                 <AccountLinkHelp
@@ -265,17 +267,9 @@ export default function DashboardSearch({
                   onRefresh={() => setAttempt((value) => value + 1)}
                 />
               </details>
-              {!familyError && (
-                <button
-                  disabled={busy}
-                  onClick={() => setAttempt((value) => value + 1)}
-                >
-                  Refresh search data
-                </button>
-              )}
-            </>
-          )}
-        </div>
+            )
+          }
+        />
       )}
       <div className="search-results">
         {results.slice(currentPage * 20, (currentPage + 1) * 20).map((item) => (
@@ -296,7 +290,17 @@ export default function DashboardSearch({
                 accounts.some(
                   (account) => account.current_clan_tag === item.tag,
                 )) && (
-                <button onClick={() => onTasks(item.tag)}>Open tasks</button>
+                <DashboardLink
+                  href={dashboardPath({
+                    view: "todo",
+                    season: "",
+                    activityFilter: item.tag,
+                  })}
+                  onNavigate={() => onTasks(item.tag)}
+                  aria-label={`Open tasks for ${item.name}`}
+                >
+                  Open tasks
+                </DashboardLink>
               )}
               <button
                 onClick={() => setDetail({ kind: item.kind, tag: item.tag })}

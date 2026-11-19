@@ -1,3 +1,4 @@
+import RefreshControl, { useRefreshTime } from "./RefreshControl";
 import CwlNextLink from "./CwlNextLink";
 import AnnouncementPostUpdate from "./AnnouncementPostUpdate";
 import AnnouncementDeletedRecovery from "./AnnouncementDeletedRecovery";
@@ -7,7 +8,7 @@ import { announcementPoolLabel as poolLabel } from "./announcementPoolLabel";
 import AnnouncementPoolCard from "./AnnouncementPoolCard";
 import AnnouncementEditor from "./AnnouncementEditor";
 import { Button } from "./rosterUi/primitives";
-import { ArrowUpRight, RefreshCw, Send } from "lucide-react";
+import { ArrowUpRight, Send } from "lucide-react";
 import AnnouncementMonth from "./AnnouncementMonth";
 import { announcementMonth } from "./announcementMonth";
 import ConfirmDialog from "./ConfirmDialog";
@@ -292,6 +293,7 @@ export default function ManageBridgeWorkspace({
     void load(true);
     void loadChannels();
   };
+  const updatedAt = useRefreshTime(loading, !!bridge, bridgeError);
   const reviewRefresh = () => {
     if (dirty) setConfirmation("refresh");
     else refresh();
@@ -602,13 +604,13 @@ export default function ManageBridgeWorkspace({
             </>
           )}
         </span>
-        <Button
-          icon={RefreshCw}
-          disabled={busy || loading}
-          onClick={reviewRefresh}
-        >
-          Refresh status
-        </Button>
+        <RefreshControl
+          updatedAt={updatedAt}
+          busy={loading}
+          disabled={busy}
+          onRefresh={reviewRefresh}
+          showRefresh={!bridgeError}
+        />
       </header>
       {notice && (
         <div

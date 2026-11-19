@@ -154,9 +154,7 @@ it("allows navigation guards to handle season and settings while other controls 
   const view = await renderHeader(rosterWithAssignments(["#04"]), true, false);
   const season = view.host.querySelector(".roster-menu-trigger");
   const capacity = view.host.querySelector(".roster-capacity-alert button");
-  const refresh = view.host.querySelector(
-    'button[aria-label="Refresh roster"]',
-  );
+  const refresh = view.host.querySelector('button[aria-label="Refresh"]');
   expect((season as HTMLButtonElement).disabled).toBe(false);
   expect((capacity as HTMLButtonElement).disabled).toBe(false);
   expect((refresh as HTMLButtonElement).disabled).toBe(true);

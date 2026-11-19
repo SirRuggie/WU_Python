@@ -40,7 +40,12 @@ const channels = [
   { id: "222222222222222222", name: "lazy-cwl" },
 ];
 const button = (text: string, scope: ParentNode = document) =>
-  [...scope.querySelectorAll("button")].find((b) => b.textContent === text)!;
+  [...scope.querySelectorAll("button")].find(
+    (b) =>
+      b.textContent === text ||
+      b.getAttribute("aria-label") ===
+        (text === "Refresh status" ? "Refresh" : text),
+  )!;
 async function click(text: string, scope: ParentNode = document) {
   await act(async () => button(text, scope).click());
 }
@@ -270,7 +275,7 @@ it("refresh with edits is one Cancel-first confirmation and Cancel preserves edi
   expect(api.mock.calls.some((c) => c[1])).toBe(false);
   expect(
     [...host.querySelectorAll("button")].filter(
-      (b) => b.textContent === "Refresh status",
+      (b) => b.getAttribute("aria-label") === "Refresh",
     ),
   ).toHaveLength(1);
 });

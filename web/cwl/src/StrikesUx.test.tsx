@@ -864,11 +864,11 @@ it("keeps a dirty leave draft until section navigation is confirmed, then clears
   expect(
     host.querySelector<HTMLInputElement>('input[type="date"]')?.value,
   ).toBe("2027-01-01");
-  expect(button("Leave", sections).getAttribute("aria-pressed")).toBe("true");
+  expect(button("Leave", sections).getAttribute("aria-selected")).toBe("true");
   await click("Settings", sections);
   await click("Discard", document.querySelector("dialog")!);
   await settle();
-  expect(button("Settings", sections).getAttribute("aria-pressed")).toBe(
+  expect(button("Settings", sections).getAttribute("aria-selected")).toBe(
     "true",
   );
   expect(host.querySelector('input[type="date"]')).toBeNull();

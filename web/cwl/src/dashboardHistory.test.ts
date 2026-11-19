@@ -282,7 +282,7 @@ it("restores bounded activity context only for its own destination", async () =>
       activityFilter: "#ABC123",
       activityKind: "cwl",
     }),
-  ).toBe("/tasks");
+  ).toBe("/tasks?filter=%23ABC123");
 });
 
 it("keeps each task handoff with its history entry through Back and Forward", async () => {

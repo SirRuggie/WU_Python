@@ -67,6 +67,34 @@ not claims of testing private installations of other products.
 
 ## Review before shipping
 
+### Shared refresh, empty states, links and tabs (249)
+
+Use `RefreshControl` in page or panel header actions: muted last-successful-read
+time, icon-only Refresh (`RefreshCw`), and Pause/Resume only for automatic reads.
+Keep existing read callbacks and cadences. Pause removes the timer subscription;
+resume requests one read, and a pending read must not be duplicated. Busy controls
+are disabled. Reduced motion stops the spin. Announce only a busy-to-done update,
+not clock ticks. Row-level refresh uses the same icon and busy behavior in place.
+
+A failed read uses one `LoadError` with one visible “Try again”; put its context
+in the accessible name. Hide the same read’s separate Refresh while that error is
+shown. Keep cached-data notes and clear protected data after access is lost.
+`EmptyState` gives a reason in its title, one short line and at most one relevant
+action. Empty-state copy remains subject to Ruggie’s approval before merge.
+
+Use `DashboardLink` for destinations: preserve the real href, plain-click History
+navigation and existing unsaved-change guards; leave modified and middle clicks
+to the browser. Use `SectionTabs` for content panels with manual activation,
+roving focus, Left/Right/Home/End, selected state and labeled panels. Return the
+selected tab to the tab order when focus leaves the strip. List-only filters
+(CWL pool lists, Build account pool and war lineup side) stay segmented controls.
+Build workspace tab, Results pool and Family view are URL state; selecting a tab
+replaces the current history entry so Back leaves the page. Unknown values use
+the documented fallback. Existing saved links and permission gates still apply.
+
+Validation is pending the complete 249 regression and isolated fixture review;
+this rule is not a claim of production or physical-device verification.
+
 ### Shared page hierarchy and primary actions (248)
 
 Use a sidebar-aligned 1200px page frame. The five named wide data surfaces

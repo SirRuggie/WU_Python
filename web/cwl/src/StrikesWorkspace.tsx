@@ -21,7 +21,7 @@ import StrikeTrackingStatus from "./StrikeTrackingStatus";
 import StrikeHelp from "./StrikeHelp";
 import { type StrikeStreakState } from "./StrikeStreak";
 import { detailQuery } from "./strikeHistoryView";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import { parsePageParam, replacePageParam } from "./pageUrlState";
 import StrikesDetail from "./strikes/StrikesDetail";
 import StrikesFindWar from "./strikes/StrikesFindWar";
@@ -541,6 +541,7 @@ export default function StrikesWorkspace({
       />
       <div className="strikes-navigation">
         <SectionTabs
+          id="strike-sections"
           className="strikes-tabs"
           label="Strike sections"
           items={visibleTabs}
@@ -572,266 +573,273 @@ export default function StrikesWorkspace({
           />
         )}
       </div>
-      <StrikesNotices
-        error={error}
-        notice={notice}
-        noticeRef={noticeRef}
-        busy={busy}
-        showLeaveRefresh={tab === "leave" && leaveConflict}
-        onLeaveRefresh={() =>
-          leaveDraft(() => {
-            setResumeDate("");
-            setLeaveTags([]);
-            setEndingLeave("");
-            setLeaveConflict(false);
-            setError("");
-            void updateSettings().catch((cause) =>
-              setError(
-                cause instanceof Error
-                  ? cause.message
-                  : "Could not reload settings.",
-              ),
-            );
-            if (selectedMember) void chooseMember(selectedMember);
-          })
-        }
-        onRetry={
-          tab === "history"
-            ? () =>
-                void (selectedAccount || selectedWar
-                  ? refreshHistory()
-                  : refreshAccounts())
-            : (tab === "settings" || tab === "leave") &&
-                access.manage &&
-                !settings &&
-                !leaveConflict
-              ? () => {
-                  setError("");
-                  void updateSettings().catch((cause) =>
-                    setError(errorText(cause)),
-                  );
-                }
-              : undefined
-        }
-      />
-
-      {tab === "history" && manualOpen && (
-        <ManualStrikeEditor
-          initialAccount={selectedAccount}
-          onDirty={setManualDirty}
-          onBusy={setBusy}
-          onCancel={() => {
-            setManualOpen(false);
-            setManualDirty(false);
-            memberRequest.current++;
-          }}
-          onSaved={async () => {
-            setManualOpen(false);
-            setManualDirty(false);
-            setNotice("Strike added.");
-            await refreshAfterChange();
-          }}
+      <SectionTabPanel id="strike-sections" value={tab}>
+        <StrikesNotices
+          error={error}
+          notice={notice}
+          noticeRef={noticeRef}
+          busy={busy}
+          showLeaveRefresh={tab === "leave" && leaveConflict}
+          onLeaveRefresh={() =>
+            leaveDraft(() => {
+              setResumeDate("");
+              setLeaveTags([]);
+              setEndingLeave("");
+              setLeaveConflict(false);
+              setError("");
+              void updateSettings().catch((cause) =>
+                setError(
+                  cause instanceof Error
+                    ? cause.message
+                    : "Could not reload settings.",
+                ),
+              );
+              if (selectedMember) void chooseMember(selectedMember);
+            })
+          }
+          onRetry={
+            tab === "history"
+              ? () =>
+                  void (selectedAccount || selectedWar
+                    ? refreshHistory()
+                    : refreshAccounts())
+              : (tab === "settings" || tab === "leave") &&
+                  access.manage &&
+                  !settings &&
+                  !leaveConflict
+                ? () => {
+                    setError("");
+                    void updateSettings().catch((cause) =>
+                      setError(errorText(cause)),
+                    );
+                  }
+                : undefined
+          }
         />
-      )}
-      {tab === "history" && !manualOpen && (
-        <>
-          <StrikesToolbar
-            canAdd={access.add}
-            busy={busy}
-            loading={loading}
-            status={status}
-            selectedAccount={selectedAccount}
-            selectedWar={selectedWar}
-            showWarSearch={showWarSearch}
-            onBack={backToAccounts}
-            onStatus={(value) =>
-              leaveDraft(() => {
-                setRemoveId("");
-                setRemoveReason("");
-                setStatus(value);
-              })
-            }
-            onAdd={openManual}
-            onToggleWarSearch={() => setShowWarSearch((open) => !open)}
-            onRefresh={() => void refreshHistory()}
-            onClearWar={() => leaveDraft(clearWar)}
+
+        {tab === "history" && manualOpen && (
+          <ManualStrikeEditor
+            initialAccount={selectedAccount}
+            onDirty={setManualDirty}
+            onBusy={setBusy}
+            onCancel={() => {
+              setManualOpen(false);
+              setManualDirty(false);
+              memberRequest.current++;
+            }}
+            onSaved={async () => {
+              setManualOpen(false);
+              setManualDirty(false);
+              setNotice("Strike added.");
+              await refreshAfterChange();
+            }}
           />
-          {selectedWar?.manual_review_required && (
-            <StrikeReviewResolution
-              key={selectedWar.war_key}
-              warKey={selectedWar.war_key}
-              revision={selectedWar.review_revision || 0}
-              reason={selectedWar.review_message}
-              canManage={access.manage}
-              onDirty={setReviewDirty}
-              onWorking={setReviewBusy}
-              onResolved={() => {
-                setSelectedWar(null);
-                setShowWarSearch(true);
-                setWarRetry((value) => value + 1);
-                setNotice("War review resolved. The streak hold is released.");
-                requestAnimationFrame(() => noticeRef.current?.focus());
-              }}
-            />
-          )}
-          {!selectedAccount && showWarSearch && (
-            <StrikesFindWar
-              inputRef={warSearchRef}
-              query={warQuery}
-              onQuery={(value) => {
-                setWarQuery(value);
-                setWarPage(0);
-              }}
-              loading={warLoading}
-              error={warError}
-              wars={wars}
-              incomplete={warIncomplete}
-              total={warTotal}
-              page={warPage}
-              setPage={setWarPage}
-              onChoose={(war) =>
+        )}
+        {tab === "history" && !manualOpen && (
+          <>
+            <StrikesToolbar
+              canAdd={access.add}
+              busy={busy}
+              loading={loading}
+              status={status}
+              selectedAccount={selectedAccount}
+              selectedWar={selectedWar}
+              showWarSearch={showWarSearch}
+              onBack={backToAccounts}
+              onStatus={(value) =>
                 leaveDraft(() => {
                   setRemoveId("");
                   setRemoveReason("");
-                  chooseWar(war);
+                  setStatus(value);
                 })
               }
-              onRetry={() => setWarRetry((value) => value + 1)}
+              onAdd={openManual}
+              onToggleWarSearch={() => setShowWarSearch((open) => !open)}
+              onRefresh={() => void refreshHistory()}
+              onClearWar={() => leaveDraft(clearWar)}
             />
-          )}
-          {(selectedAccount || selectedWar) && !slotDetail ? (
-            detailContent
-          ) : (
-            <StrikeActivityRoster
-              detailSlot={slotDetail ? detailContent : undefined}
-              onSlotChoose={(account) =>
-                leaveDraft(() => {
-                  chooseAccount(account, true);
-                  onAccountRoute?.(account.player_tag);
-                  slotOrigins.current.add(
-                    slotRouteIdentity(account.player_tag),
+            {selectedWar?.manual_review_required && (
+              <StrikeReviewResolution
+                key={selectedWar.war_key}
+                warKey={selectedWar.war_key}
+                revision={selectedWar.review_revision || 0}
+                reason={selectedWar.review_message}
+                canManage={access.manage}
+                onDirty={setReviewDirty}
+                onWorking={setReviewBusy}
+                onResolved={() => {
+                  setSelectedWar(null);
+                  setShowWarSearch(true);
+                  setWarRetry((value) => value + 1);
+                  setNotice(
+                    "War review resolved. The streak hold is released.",
                   );
-                  memory?.set("slotOriginRoutes", slotOrigins.current);
-                })
-              }
-              trackingSlotRef={setTrackingSlot}
-              overviewActions={[
-                ...(access.add
-                  ? [
-                      {
-                        id: "add-strike",
-                        label: "Add strike",
-                        disabled: busy,
-                        onAction: openManual,
-                      },
-                    ]
-                  : []),
-                {
-                  id: "find-war",
-                  label: showWarSearch ? "Close war search" : "Find war",
-                  onAction: () => setShowWarSearch((open) => !open),
-                },
-              ]}
-              selectionReset={selectionReset}
-              canManage={access.manage}
-              onWorking={setBusy}
-              onDirty={setBulkDirty}
-              state={activityState}
-              markedDefault={markedDefault}
-              reload={activityReload}
-              memory={memory}
-              headingRef={listHeading}
-              focusTag={returnPlayer.current}
-              onRestored={() => {
-                returnPlayer.current = null;
-              }}
-              onState={
-                onActivityState
-                  ? (state, push) => {
-                      onActivityState(state, push);
-                      if (slotDetail && selectedAccount) {
-                        slotOrigins.current.add(
-                          slotRouteIdentity(selectedAccount.player_tag, state),
-                        );
-                        memory?.set("slotOriginRoutes", slotOrigins.current);
+                  requestAnimationFrame(() => noticeRef.current?.focus());
+                }}
+              />
+            )}
+            {!selectedAccount && showWarSearch && (
+              <StrikesFindWar
+                inputRef={warSearchRef}
+                query={warQuery}
+                onQuery={(value) => {
+                  setWarQuery(value);
+                  setWarPage(0);
+                }}
+                loading={warLoading}
+                error={warError}
+                wars={wars}
+                incomplete={warIncomplete}
+                total={warTotal}
+                page={warPage}
+                setPage={setWarPage}
+                onChoose={(war) =>
+                  leaveDraft(() => {
+                    setRemoveId("");
+                    setRemoveReason("");
+                    chooseWar(war);
+                  })
+                }
+                onRetry={() => setWarRetry((value) => value + 1)}
+              />
+            )}
+            {(selectedAccount || selectedWar) && !slotDetail ? (
+              detailContent
+            ) : (
+              <StrikeActivityRoster
+                detailSlot={slotDetail ? detailContent : undefined}
+                onSlotChoose={(account) =>
+                  leaveDraft(() => {
+                    chooseAccount(account, true);
+                    onAccountRoute?.(account.player_tag);
+                    slotOrigins.current.add(
+                      slotRouteIdentity(account.player_tag),
+                    );
+                    memory?.set("slotOriginRoutes", slotOrigins.current);
+                  })
+                }
+                trackingSlotRef={setTrackingSlot}
+                overviewActions={[
+                  ...(access.add
+                    ? [
+                        {
+                          id: "add-strike",
+                          label: "Add strike",
+                          disabled: busy,
+                          onAction: openManual,
+                        },
+                      ]
+                    : []),
+                  {
+                    id: "find-war",
+                    label: showWarSearch ? "Close war search" : "Find war",
+                    onAction: () => setShowWarSearch((open) => !open),
+                  },
+                ]}
+                selectionReset={selectionReset}
+                canManage={access.manage}
+                onWorking={setBusy}
+                onDirty={setBulkDirty}
+                state={activityState}
+                markedDefault={markedDefault}
+                reload={activityReload}
+                memory={memory}
+                headingRef={listHeading}
+                focusTag={returnPlayer.current}
+                onRestored={() => {
+                  returnPlayer.current = null;
+                }}
+                onState={
+                  onActivityState
+                    ? (state, push) => {
+                        onActivityState(state, push);
+                        if (slotDetail && selectedAccount) {
+                          slotOrigins.current.add(
+                            slotRouteIdentity(
+                              selectedAccount.player_tag,
+                              state,
+                            ),
+                          );
+                          memory?.set("slotOriginRoutes", slotOrigins.current);
+                        }
                       }
-                    }
-                  : undefined
-              }
-              onChoose={(account) => {
-                leaveDraft(() => {
-                  chooseAccount(account);
-                  onAccountRoute?.(account.player_tag);
-                });
-              }}
-              onDenied={() => setAccessLost(true)}
-            />
-          )}
-        </>
-      )}
+                    : undefined
+                }
+                onChoose={(account) => {
+                  leaveDraft(() => {
+                    chooseAccount(account);
+                    onAccountRoute?.(account.player_tag);
+                  });
+                }}
+                onDenied={() => setAccessLost(true)}
+              />
+            )}
+          </>
+        )}
 
-      {tab === "leave" && access.manage && (
-        <StrikesLeaveTab
-          busy={busy}
-          error={error}
-          settings={settings}
-          members={members}
-          memberQuery={memberQuery}
-          memberError={memberError}
-          selectedMember={selectedMember}
-          leaveTags={leaveTags}
-          setLeaveTags={setLeaveTags}
-          leaveConflict={leaveConflict}
-          leaveRevision={leaveRevision}
-          resumeDate={resumeDate}
-          setResumeDate={setResumeDate}
-          endingLeave={endingLeave}
-          setEndingLeave={setEndingLeave}
-          discordProfiles={discordProfiles}
-          onMemberQuery={(value) => {
-            memberRequest.current++;
-            setMemberQuery(value);
-            setSelectedMember("");
-            setLeaveTags([]);
-          }}
-          chooseMember={chooseMember}
-          run={run}
-          updateSettings={updateSettings}
-          onSaved={() => {
-            setSelectedMember("");
-            setMemberQuery("");
-            setLeaveTags([]);
-            setResumeDate("");
-          }}
-        />
-      )}
+        {tab === "leave" && access.manage && (
+          <StrikesLeaveTab
+            busy={busy}
+            error={error}
+            settings={settings}
+            members={members}
+            memberQuery={memberQuery}
+            memberError={memberError}
+            selectedMember={selectedMember}
+            leaveTags={leaveTags}
+            setLeaveTags={setLeaveTags}
+            leaveConflict={leaveConflict}
+            leaveRevision={leaveRevision}
+            resumeDate={resumeDate}
+            setResumeDate={setResumeDate}
+            endingLeave={endingLeave}
+            setEndingLeave={setEndingLeave}
+            discordProfiles={discordProfiles}
+            onMemberQuery={(value) => {
+              memberRequest.current++;
+              setMemberQuery(value);
+              setSelectedMember("");
+              setLeaveTags([]);
+            }}
+            chooseMember={chooseMember}
+            run={run}
+            updateSettings={updateSettings}
+            onSaved={() => {
+              setSelectedMember("");
+              setMemberQuery("");
+              setLeaveTags([]);
+              setResumeDate("");
+            }}
+          />
+        )}
 
-      {tab === "settings" && access.manage && (
-        <StrikesSettingsTab
-          settings={settings}
-          error={error}
-          onSaved={setSettings}
-          onDirty={setSettingsDirty}
-          onBusy={setBusy}
-        />
-      )}
+        {tab === "settings" && access.manage && (
+          <StrikesSettingsTab
+            settings={settings}
+            error={error}
+            onSaved={setSettings}
+            onDirty={setSettingsDirty}
+            onBusy={setBusy}
+          />
+        )}
 
-      {tab === "settings" && access.add && (
-        <StrikesImportPanel
-          open={importOpen}
-          onToggle={setImportOpen}
-          busy={busy}
-          importJob={importJob}
-          preview={preview}
-          excluded={excluded}
-          setExcluded={setExcluded}
-          jobRetryPaused={jobRetryPaused}
-          discordProfiles={discordProfiles}
-          onPreview={() => void startImportPreview()}
-          onApply={() => void startImportApply()}
-          onRetryStatus={retryStatus}
-        />
-      )}
+        {tab === "settings" && access.add && (
+          <StrikesImportPanel
+            open={importOpen}
+            onToggle={setImportOpen}
+            busy={busy}
+            importJob={importJob}
+            preview={preview}
+            excluded={excluded}
+            setExcluded={setExcluded}
+            jobRetryPaused={jobRetryPaused}
+            discordProfiles={discordProfiles}
+            onPreview={() => void startImportPreview()}
+            onApply={() => void startImportApply()}
+            onRetryStatus={retryStatus}
+          />
+        )}
+      </SectionTabPanel>
       {pendingNavigation && (
         <ConfirmDialog
           heading="Unsaved changes"

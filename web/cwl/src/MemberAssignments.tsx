@@ -1,3 +1,6 @@
+import RefreshControl, { useRefreshTime } from "./RefreshControl";
+import EmptyState from "./EmptyState";
+import DashboardLink from "./DashboardLink";
 import LoadError from "./LoadError";
 import { visibleRefresh } from "./visibleRefresh";
 import CwlPageHeader from "./CwlPageHeader";
@@ -49,18 +52,20 @@ export default function MemberAssignments({
   const [data, setData] = useState<MyAssignments | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [paused, setPaused] = useState(false);
+  const updatedAt = useRefreshTime(loading, !!data, error);
   const locations = useRef<LocationRecords>({});
   const inFlight = useRef(false);
   const requestId = useRef(0);
   const activeSeason = useRef(seasonId);
   activeSeason.current = seasonId;
   const load = useCallback(
-    async (background = false) => {
-      if (!seasonId || (background && inFlight.current)) return;
+    async (_background = false) => {
+      if (!seasonId || inFlight.current) return;
       inFlight.current = true;
       const sid = seasonId;
       const id = ++requestId.current;
-      if (!background) setLoading(true);
+      setLoading(true);
       setError("");
       try {
         const result = await api<MyAssignments>(
@@ -98,8 +103,9 @@ export default function MemberAssignments({
     };
   }, [seasonId, load]);
   useEffect(() => {
+    if (paused) return;
     return visibleRefresh(() => load(true), 30000, { focus: true });
-  }, [load]);
+  }, [load, paused]);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const groups = groupAssignments(data?.accounts || []);
   const awaiting = groups.find((group) => !group.clanTag)?.accounts.length || 0;
@@ -122,6 +128,18 @@ export default function MemberAssignments({
         title={<h1>My clan assignments</h1>}
         description="Your accounts, grouped by assigned clan."
       >
+        <RefreshControl
+          updatedAt={updatedAt}
+          busy={loading}
+          onRefresh={load}
+          intervalSeconds={30}
+          paused={paused}
+          onPauseChange={(next) => {
+            setPaused(next);
+            if (!next) void load();
+          }}
+          showRefresh={!error}
+        />
         <p className="cwl-page-header-season" aria-label="Season">
           {seasons.find((item) => String(item.id) === seasonId)?.label ||
             "No CWL season available"}
@@ -129,18 +147,18 @@ export default function MemberAssignments({
       </CwlPageHeader>
       {steps}
       {!seasonId && (
-        <div className="card empty">
-          <p>Staff will make your CWL season available here.</p>
-        </div>
+        <EmptyState
+          title="No CWL season available"
+          line="Staff will make your CWL season available here."
+        />
       )}
-      {error && data ? (
-        <div className="member-refresh-note" role="status">
-          Could not refresh. Showing last update.
-          <button onClick={() => void load()}>Try again</button>
-        </div>
-      ) : (
-        <LoadError message={error} onRetry={() => void load()} />
-      )}
+      <LoadError
+        message={data && error ? "Could not refresh." : error}
+        note={data ? "Showing the last update." : undefined}
+        onRetry={load}
+        busy={loading}
+        retryContext="clan assignments"
+      />
       {loading && <p role="status">Loading current assignments…</p>}
       {data && (
         <>
@@ -154,25 +172,16 @@ export default function MemberAssignments({
               <section className="member-signup-empty">
                 <h2>You have not signed up any accounts yet.</h2>
                 {memberSignupsOpen(season) ? (
-                  <button
-                    onClick={
-                      onSignup ||
-                      (() => {
-                        window.location.href = "/signup";
-                      })
-                    }
-                  >
-                    Sign up for CWL ›
-                  </button>
+                  onSignup ? (
+                    <DashboardLink href="/signup" onNavigate={onSignup}>
+                      Sign up for CWL ›
+                    </DashboardLink>
+                  ) : (
+                    <a href="/signup">Sign up for CWL ›</a>
+                  )
                 ) : (
                   <p>Signups are closed. Ask staff for help.</p>
                 )}
-                <button
-                  className="member-signup-refresh"
-                  onClick={() => void load()}
-                >
-                  Refresh
-                </button>
               </section>
             </div>
           )}
@@ -200,7 +209,6 @@ export default function MemberAssignments({
                 </a>
               </p>
               {waitingList}
-              <button onClick={() => void load()}>Refresh</button>
             </section>
           )}
           {assignedGroups > 0 && (
@@ -214,7 +222,6 @@ export default function MemberAssignments({
                       : ""}
                   </strong>
                 </div>
-                <button onClick={() => void load()}>Refresh</button>
               </div>
             </div>
           )}

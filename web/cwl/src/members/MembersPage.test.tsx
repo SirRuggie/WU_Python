@@ -575,3 +575,15 @@ it("manual refresh accepts the server TTL and retains visible members", async ()
   await act(async () => finish(original));
   expect(host.textContent).not.toContain("Updating member list…");
 });
+
+it("shows one actionable directory error when both independent reads lack Discord configuration", async () => {
+  vi.mocked(api).mockRejectedValue(new Error("Discord is not configured."));
+  await render();
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(host.textContent?.match(/Discord is not configured/g)).toHaveLength(1);
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Try again",
+    ),
+  ).toHaveLength(1);
+});

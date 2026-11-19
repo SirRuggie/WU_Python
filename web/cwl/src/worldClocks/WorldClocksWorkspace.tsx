@@ -3,7 +3,7 @@ import CwlPageHeader from "../CwlPageHeader";
 import { Ban } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
-import SectionTabs from "../SectionTabs";
+import SectionTabs, { SectionTabPanel } from "../SectionTabs";
 import { Button } from "../rosterUi/primitives";
 import AddClockDialog from "./AddClockDialog";
 import ClockSettingsPanel, { RecentUpdates } from "./ClockSettingsPanel";
@@ -154,6 +154,7 @@ export default function WorldClocksWorkspace({
     <section className="world-clocks" aria-labelledby="world-clocks-title">
       <Header />
       <SectionTabs
+        id="world-clock-sections"
         className="world-clock-sections section-tabs--flow"
         label="World clocks sections"
         items={[
@@ -163,158 +164,162 @@ export default function WorldClocksWorkspace({
         value={section}
         onChange={setSection}
       />
-      {notice && (
-        <p className="world-clock-notice" role="status">
-          {notice}
-        </p>
-      )}
-      {!data.channels_available && (
-        <p className="world-clock-warning" role="status">
-          Discord is unavailable. Channel names and lists may be out of date.
-        </p>
-      )}
-      <div hidden={section !== "clocks"}>
-        {data.clocks.length > 0 && (
-          <p className="world-clock-status">
-            <span>
-              <strong>{counts.updating} updating</strong>
-              {counts.problems > 0 && ` · ${counts.problems} with a problem`}
-              {counts.off > 0 && ` · ${counts.off} off`}
-            </span>
-            <span>
-              Next update <strong>{localTime(data.next_update)}</strong>
-            </span>
+      <SectionTabPanel id="world-clock-sections" value={section}>
+        {notice && (
+          <p className="world-clock-notice" role="status">
+            {notice}
           </p>
         )}
-        {problems.length > 0 && (
-          <div className="world-clock-alert" role="alert">
-            <p>
-              <Ban size={16} aria-hidden="true" />{" "}
-              {problems.length === 1
-                ? `${problems[0].name_now?.split(" · ")[0] || problems[0].zone}: ${problemText(problems[0])}`
-                : `${problems.length} clocks have a problem.`}
-            </p>
-            <Button onClick={() => openRow(problems[0].id, true)}>Fix</Button>
-          </div>
+        {!data.channels_available && (
+          <p className="world-clock-warning" role="status">
+            Discord is unavailable. Channel names and lists may be out of date.
+          </p>
         )}
-        <div className="world-clock-layout">
-          <div className="world-clock-main">
-            <div className="world-clock-add">
-              <Button
-                variant={openId ? "secondary" : "primary"}
-                disabled={full}
-                onClick={() => {
-                  openRow(null);
-                  setAdding(true);
-                }}
-              >
-                + Add clock
-              </Button>
-              {full && (
-                <span className="world-clock-help">
-                  You have the maximum of {data.max_clocks} clocks.
-                </span>
-              )}
+        <div hidden={section !== "clocks"}>
+          {data.clocks.length > 0 && (
+            <p className="world-clock-status">
+              <span>
+                <strong>{counts.updating} updating</strong>
+                {counts.problems > 0 && ` · ${counts.problems} with a problem`}
+                {counts.off > 0 && ` · ${counts.off} off`}
+              </span>
+              <span>
+                Next update <strong>{localTime(data.next_update)}</strong>
+              </span>
+            </p>
+          )}
+          {problems.length > 0 && (
+            <div className="world-clock-alert" role="alert">
+              <p>
+                <Ban size={16} aria-hidden="true" />{" "}
+                {problems.length === 1
+                  ? `${problems[0].name_now?.split(" · ")[0] || problems[0].zone}: ${problemText(problems[0])}`
+                  : `${problems.length} clocks have a problem.`}
+              </p>
+              <Button onClick={() => openRow(problems[0].id, true)}>Fix</Button>
             </div>
-            {data.clocks.length === 0 ? (
-              <div className="world-clock-empty">
-                <p>
-                  <strong>No clocks yet.</strong>
-                </p>
-                <p className="world-clock-help">
-                  Add a clock to show a local time as a voice channel name.
-                  {!data.settings.category_id &&
-                    " Select a category in Settings first."}
-                </p>
+          )}
+          <div className="world-clock-layout">
+            <div className="world-clock-main">
+              <div className="world-clock-add">
+                <Button
+                  variant={openId ? "secondary" : "primary"}
+                  disabled={full}
+                  onClick={() => {
+                    openRow(null);
+                    setAdding(true);
+                  }}
+                >
+                  + Add clock
+                </Button>
+                {full && (
+                  <span className="world-clock-help">
+                    You have the maximum of {data.max_clocks} clocks.
+                  </span>
+                )}
               </div>
-            ) : (
-              <div className="world-clock-list">
-                {data.clocks.map((clock) => (
-                  <WorldClockRow
-                    key={clock.id}
-                    clock={clock}
-                    open={openId === clock.id}
-                    focusChannel={openId === clock.id && focusChannel}
-                    chips={data.chips}
-                    usedZones={usedZones}
-                    voiceChannels={data.voice_channels}
-                    channelsAvailable={data.channels_available}
-                    onOpen={(open) => openRow(open ? clock.id : null)}
-                    onDirty={rowDirty}
-                    onSaved={(saved, nextUpdate) =>
-                      setData(
-                        (current) =>
-                          current && {
-                            ...current,
-                            next_update: nextUpdate,
-                            clocks: current.clocks.map((row) =>
-                              row.id === saved.id ? { ...row, ...saved } : row,
-                            ),
-                          },
-                      )
-                    }
-                    onReload={(message) => void load(message)}
+              {data.clocks.length === 0 ? (
+                <div className="world-clock-empty">
+                  <p>
+                    <strong>No clocks yet.</strong>
+                  </p>
+                  <p className="world-clock-help">
+                    Add a clock to show a local time as a voice channel name.
+                    {!data.settings.category_id &&
+                      " Select a category in Settings first."}
+                  </p>
+                </div>
+              ) : (
+                <div className="world-clock-list">
+                  {data.clocks.map((clock) => (
+                    <WorldClockRow
+                      key={clock.id}
+                      clock={clock}
+                      open={openId === clock.id}
+                      focusChannel={openId === clock.id && focusChannel}
+                      chips={data.chips}
+                      usedZones={usedZones}
+                      voiceChannels={data.voice_channels}
+                      channelsAvailable={data.channels_available}
+                      onOpen={(open) => openRow(open ? clock.id : null)}
+                      onDirty={rowDirty}
+                      onSaved={(saved, nextUpdate) =>
+                        setData(
+                          (current) =>
+                            current && {
+                              ...current,
+                              next_update: nextUpdate,
+                              clocks: current.clocks.map((row) =>
+                                row.id === saved.id
+                                  ? { ...row, ...saved }
+                                  : row,
+                              ),
+                            },
+                        )
+                      }
+                      onReload={(message) => void load(message)}
+                    />
+                  ))}
+                </div>
+              )}
+              {data.clocks.length > 0 && (
+                <details className="world-clock-phone-preview">
+                  <summary>Preview in Discord</summary>
+                  <DiscordPreview
+                    clocks={data.clocks}
+                    categoryName={categoryName}
                   />
-                ))}
-              </div>
-            )}
+                </details>
+              )}
+              {data.runs.length > 0 && <RecentUpdates runs={data.runs} />}
+            </div>
             {data.clocks.length > 0 && (
-              <details className="world-clock-phone-preview">
-                <summary>Preview in Discord</summary>
+              <aside className="world-clock-aside">
+                <p className="world-clock-aside-title">In Discord</p>
                 <DiscordPreview
                   clocks={data.clocks}
                   categoryName={categoryName}
                 />
-              </details>
+                <p className="world-clock-help">
+                  Names update every {data.settings.interval_minutes} minutes.
+                </p>
+              </aside>
             )}
-            {data.runs.length > 0 && <RecentUpdates runs={data.runs} />}
           </div>
-          {data.clocks.length > 0 && (
-            <aside className="world-clock-aside">
-              <p className="world-clock-aside-title">In Discord</p>
-              <DiscordPreview
-                clocks={data.clocks}
-                categoryName={categoryName}
-              />
-              <p className="world-clock-help">
-                Names update every {data.settings.interval_minutes} minutes.
-              </p>
-            </aside>
-          )}
         </div>
-      </div>
-      <div hidden={section !== "settings"}>
-        <ClockSettingsPanel
-          settings={data.settings}
-          categories={data.categories}
-          channelsAvailable={data.channels_available}
-          onSaved={(settings) =>
-            setData((current) => current && { ...current, settings })
-          }
-          onConflict={(message) => void load(message)}
-          onDirty={settingsDirty}
-        />
-      </div>
-      {adding && (
-        <AddClockDialog
-          chips={data.chips}
-          usedZones={usedZones}
-          voiceChannels={data.voice_channels}
-          categories={data.categories}
-          settings={data.settings}
-          channelsAvailable={data.channels_available}
-          onDirty={addDirty}
-          onClose={() => {
-            addDirty(false);
-            setAdding(false);
-          }}
-          onAdded={(message) => {
-            addDirty(false);
-            setAdding(false);
-            void load(message);
-          }}
-        />
-      )}
+        <div hidden={section !== "settings"}>
+          <ClockSettingsPanel
+            settings={data.settings}
+            categories={data.categories}
+            channelsAvailable={data.channels_available}
+            onSaved={(settings) =>
+              setData((current) => current && { ...current, settings })
+            }
+            onConflict={(message) => void load(message)}
+            onDirty={settingsDirty}
+          />
+        </div>
+        {adding && (
+          <AddClockDialog
+            chips={data.chips}
+            usedZones={usedZones}
+            voiceChannels={data.voice_channels}
+            categories={data.categories}
+            settings={data.settings}
+            channelsAvailable={data.channels_available}
+            onDirty={addDirty}
+            onClose={() => {
+              addDirty(false);
+              setAdding(false);
+            }}
+            onAdded={(message) => {
+              addDirty(false);
+              setAdding(false);
+              void load(message);
+            }}
+          />
+        )}
+      </SectionTabPanel>
     </section>
   );
 }

@@ -1,3 +1,5 @@
+import EmptyState from "./EmptyState";
+import RefreshControl, { useRefreshTime } from "./RefreshControl";
 import { formatDateTime } from "./format";
 import LoadError, { CopyStatus, useReferenceCopy } from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
@@ -82,6 +84,7 @@ export default function DashboardIssues() {
       active = false;
     };
   }, [refresh]);
+  const updatedAt = useRefreshTime(loading, true, error);
   const members = history.members || {};
   const matching = history.items.filter((item) =>
     matchesIssue(item, members, search, kind),
@@ -91,7 +94,14 @@ export default function DashboardIssues() {
       <CwlPageHeader
         title={<h1 id="issues-title">Dashboard issues</h1>}
         description="See what failed and who was affected. Newest reports first."
-      />
+      >
+        <RefreshControl
+          updatedAt={updatedAt}
+          busy={loading}
+          onRefresh={() => setRefresh((value) => value + 1)}
+          showRefresh={!error}
+        />
+      </CwlPageHeader>
       <div className="issues-toolbar">
         <label>
           Find an issue
@@ -122,14 +132,6 @@ export default function DashboardIssues() {
             ))}
           </select>
         </label>
-        <button
-          aria-busy={loading || undefined}
-          type="button"
-          disabled={loading}
-          onClick={() => setRefresh((value) => value + 1)}
-        >
-          {loading ? "Checking…" : "Refresh"}
-        </button>
       </div>
       <LoadError
         message={error}
@@ -153,11 +155,14 @@ export default function DashboardIssues() {
           : `${matching.length} ${matching.length === 1 ? "report" : "reports"} · Last 30 days`}
       </p>
       {!loading && !error && !matching.length && (
-        <p>
-          {search || kind
-            ? "No matching issues. Try another name or issue type."
-            : "No recorded issues in the current history."}
-        </p>
+        <EmptyState
+          title={search || kind ? "No matching issues" : "No recorded issues"}
+          line={
+            search || kind
+              ? "Try another name or issue type."
+              : "There are no reports in the current history."
+          }
+        />
       )}
       <CopyStatus copied={copied} />
       <div className="issues-list" aria-busy={loading}>

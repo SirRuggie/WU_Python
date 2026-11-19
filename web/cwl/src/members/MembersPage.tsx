@@ -1,3 +1,4 @@
+import EmptyState from "../EmptyState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useClock } from "../activity/useClock";
 import { requestDetailsNavigation } from "../detailsNavigation";
@@ -233,12 +234,21 @@ export default function MembersPage({
       />
       <LoadError
         message={directory.error}
-        onRetry={!data ? () => void directory.load() : undefined}
+        onRetry={() => void directory.load()}
         busy={directory.loading}
       />
-      {!person && (actionError || roles.error) && (
-        <p role="alert">{actionError || roles.error}</p>
-      )}
+      {!person &&
+        (actionError || (data && roles.error)) &&
+        (actionError ? (
+          <p role="alert">{actionError}</p>
+        ) : (
+          <LoadError
+            message={roles.error}
+            onRetry={roles.refresh}
+            busy={roles.busy}
+            retryContext="role progress"
+          />
+        ))}
       {directory.loading && !data && <p role="status">{t.loading}</p>}
       {data && (
         <>
@@ -415,7 +425,7 @@ export default function MembersPage({
                     />
                   ))
                 ) : (
-                  <p>{t.empty}</p>
+                  <EmptyState title="No matching members" line={t.empty} />
                 )}
                 <MemberPages
                   page={currentPage}

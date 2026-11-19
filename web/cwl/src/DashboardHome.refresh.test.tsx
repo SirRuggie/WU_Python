@@ -8,7 +8,7 @@ import DashboardHome from "./DashboardHome";
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
 vi.mock("./api", async (original) => ({ ...(await original<object>()), api }));
 
-it("names the Refresh button by its visible text and hides the glyph", async () => {
+it("offers one Try again and hides the duplicate header Refresh on failure", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   api.mockRejectedValue(new Error("offline"));
   const host = document.createElement("div");
@@ -26,13 +26,12 @@ it("names the Refresh button by its visible text and hides the glyph", async () 
         />,
       ),
     );
-    const button = [...host.querySelectorAll("button")].find((item) =>
-      item.textContent?.includes("Refresh"),
-    )!;
-    expect(button).toBeTruthy();
-    expect(button.hasAttribute("aria-label")).toBe(false);
-    expect(button.querySelector('[aria-hidden="true"]')?.textContent).toBe("↻");
-    expect(button.textContent?.replace("↻", "").trim()).toBe("Refresh");
+    const buttons = [...host.querySelectorAll("button")].filter(
+      (item) => item.textContent === "Try again",
+    );
+    expect(buttons).toHaveLength(1);
+    expect(host.querySelector('button[aria-label="Refresh"]')).toBeNull();
+    expect(buttons[0].getAttribute("aria-label")).toBe("Try again: dashboard");
   } finally {
     await act(async () => root.unmount());
     host.remove();

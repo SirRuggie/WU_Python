@@ -267,7 +267,7 @@ it("shows eleven unknown accounts before displaying a partial verified in-clan c
   });
   await act(async () =>
     [...host.querySelectorAll<HTMLButtonElement>("button")]
-      .find((b) => b.textContent === "Refresh")!
+      .find((b) => b.getAttribute("aria-label") === "Refresh")!
       .click(),
   );
   expect(host.querySelector(".member-clan-head small")?.textContent).toBe(

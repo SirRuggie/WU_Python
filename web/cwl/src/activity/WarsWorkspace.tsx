@@ -1,6 +1,7 @@
+import RefreshControl from "../RefreshControl";
 import CwlPageHeader from "../CwlPageHeader";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
-import SectionTabs from "../SectionTabs";
+import SectionTabs, { SectionTabPanel } from "../SectionTabs";
 import { useJourneyState, useJourneyPosition } from "../journeyState";
 import { useState } from "react";
 import WarDetailPanel from "./WarDetailPanel";
@@ -271,10 +272,15 @@ export default function WarsWorkspace({
     `wars:${userId}:${visit}:query`,
     "",
   );
-  const { data, error, busy, refresh, invalidateAccess } = useClanActivity(
-    "war",
-    scope,
-  );
+  const {
+    data,
+    error,
+    busy,
+    refresh,
+    paused,
+    onPauseChange,
+    invalidateAccess,
+  } = useClanActivity("war", scope);
   useJourneyPosition(`wars:${userId}:${visit}`, !!data || !!error);
   const now = useClock();
   const clans = (data?.clans || []).filter(
@@ -308,8 +314,19 @@ export default function WarsWorkspace({
             ? "Your clans’ wars, scores, and your accounts’ remaining attacks."
             : "All family clans · war scores and battle times."
         }
-      />
+      >
+        <RefreshControl
+          updatedAt={data?.checked_at || null}
+          busy={busy}
+          onRefresh={refresh}
+          intervalSeconds={60}
+          paused={paused}
+          onPauseChange={onPauseChange}
+          showRefresh={!error}
+        />
+      </CwlPageHeader>
       <SectionTabs
+        id="war-types"
         className="workflow-tabs section-tabs--flow"
         label="War type"
         items={(["regular", "cwl"] as const).map((value) => {
@@ -340,65 +357,67 @@ export default function WarsWorkspace({
         }}
         revealSelection
       />
-      <div className="activity-toolbar">
-        <label>
-          Find a clan
-          <input
-            type="search"
-            value={query}
-            onChange={(event) => setQuery(event.target.value)}
-            placeholder="Clan name or tag"
-          />
-        </label>
-        {canEdit && (
-          <button
-            aria-pressed={scope === "family"}
-            onClick={() => setScope(scope === "mine" ? "family" : "mine")}
-          >
-            {scope === "mine" ? "Show all clans" : "Show my clans"}
-          </button>
+      <SectionTabPanel id="war-types" value={type}>
+        <div className="activity-toolbar">
+          <label>
+            Find a clan
+            <input
+              type="search"
+              value={query}
+              onChange={(event) => setQuery(event.target.value)}
+              placeholder="Clan name or tag"
+            />
+          </label>
+          {canEdit && (
+            <button
+              aria-pressed={scope === "family"}
+              onClick={() => setScope(scope === "mine" ? "family" : "mine")}
+            >
+              {scope === "mine" ? "Show all clans" : "Show my clans"}
+            </button>
+          )}
+        </div>
+        <ClanActivityStatus
+          error={error}
+          busy={busy}
+          checkedAt={data?.checked_at}
+          warnings={data?.warnings || []}
+          refresh={refresh}
+        />
+        {!data && busy && <p role="status">Loading your wars…</p>}
+        {data && !clans.length && (
+          <p>
+            {query
+              ? "No clans match this search."
+              : "No wars to show. Private war logs are hidden."}
+          </p>
         )}
-      </div>
-      <ClanActivityStatus
-        error={error}
-        busy={busy}
-        checkedAt={data?.checked_at}
-        warnings={data?.warnings || []}
-        refresh={refresh}
-      />
-      {!data && busy && <p role="status">Loading your wars…</p>}
-      {data && !clans.length && (
-        <p>
-          {query
-            ? "No clans match this search."
-            : "No wars to show. Private war logs are hidden."}
+        {data && clans.length > 0 && !active.length && (
+          <p>
+            No active {type === "cwl" ? "CWL rounds" : "wars"}
+            {query
+              ? " match this search"
+              : scope === "mine"
+                ? " in your clans"
+                : ""}
+            .
+          </p>
+        )}
+        <div className="activity-card-grid">{active.map(card)}</div>
+        {quiet.length > 0 && (
+          <details className="war-inactive">
+            <summary>
+              No active war · {quiet.length}{" "}
+              {quiet.length === 1 ? "clan" : "clans"}
+            </summary>
+            <div className="activity-card-grid">{quiet.map(card)}</div>
+          </details>
+        )}
+        <p className="small">
+          This page refreshes each minute while you can see it. Game data can be
+          late.
         </p>
-      )}
-      {data && clans.length > 0 && !active.length && (
-        <p>
-          No active {type === "cwl" ? "CWL rounds" : "wars"}
-          {query
-            ? " match this search"
-            : scope === "mine"
-              ? " in your clans"
-              : ""}
-          .
-        </p>
-      )}
-      <div className="activity-card-grid">{active.map(card)}</div>
-      {quiet.length > 0 && (
-        <details className="war-inactive">
-          <summary>
-            No active war · {quiet.length}{" "}
-            {quiet.length === 1 ? "clan" : "clans"}
-          </summary>
-          <div className="activity-card-grid">{quiet.map(card)}</div>
-        </details>
-      )}
-      <p className="small">
-        This page refreshes each minute while you can see it. Game data can be
-        late.
-      </p>
+      </SectionTabPanel>
     </section>
   );
 }

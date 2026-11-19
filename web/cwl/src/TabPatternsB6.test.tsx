@@ -112,7 +112,7 @@ it("uses the shared underline tabs for Moderation and keeps both section actions
     root.render(<ModerationWorkspace memberId="123" onMemberRoute={route} />),
   );
   const group = host.querySelector('[aria-label="Moderation sections"]')!;
-  expect(group.getAttribute("role")).toBe("group");
+  expect(group.getAttribute("role")).toBe("tablist");
   expect(group.classList).toContain("section-tabs");
   expect(group.classList).toContain("section-tabs--flow");
   expect(group.classList).toContain("moderation-sections");
@@ -124,14 +124,16 @@ it("uses the shared underline tabs for Moderation and keeps both section actions
     [...group.querySelectorAll("button")].map((node) => node.textContent),
   ).toEqual(["Activity history", "Invites", "Log channels"]);
   await act(async () => buttonNamed("Invites").click());
-  expect(buttonNamed("Invites").getAttribute("aria-pressed")).toBe("true");
+  expect(buttonNamed("Invites").getAttribute("aria-selected")).toBe("true");
   expect(host.textContent).toContain("Settings panel invites");
   await act(async () => buttonNamed("Log channels").click());
-  expect(buttonNamed("Log channels").getAttribute("aria-pressed")).toBe("true");
+  expect(buttonNamed("Log channels").getAttribute("aria-selected")).toBe(
+    "true",
+  );
   expect(host.textContent).toContain("Settings panel channels");
   expect(host.querySelectorAll("p").length).toBeGreaterThan(0);
   await act(async () => buttonNamed("Activity history").click());
-  expect(buttonNamed("Activity history").getAttribute("aria-pressed")).toBe(
+  expect(buttonNamed("Activity history").getAttribute("aria-selected")).toBe(
     "true",
   );
   expect(route).toHaveBeenCalledWith("");

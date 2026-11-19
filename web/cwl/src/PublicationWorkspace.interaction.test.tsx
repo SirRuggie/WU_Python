@@ -126,7 +126,7 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
   ).toBe(false);
   expect(
     [...host.querySelectorAll("button")].filter(
-      (e) => e.textContent === "Refresh draft",
+      (e) => e.getAttribute("aria-label") === "Refresh",
     ),
   ).toHaveLength(1);
   expect(document.querySelector("dialog")).toBeNull();
@@ -151,7 +151,7 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
   draft = { ...draft, draft_revision: 8 };
   await act(async () =>
     [...host.querySelectorAll("button")]
-      .find((e) => e.textContent === "Refresh draft")!
+      .find((e) => e.getAttribute("aria-label") === "Refresh")!
       .click(),
   );
   await act(async () =>

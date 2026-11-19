@@ -33,6 +33,7 @@ export default function CwlPoolTabs({
 }) {
   return (
     <SectionTabs
+      mode="segmented"
       className="cwl-pool-tabs section-tabs--flow"
       label="CWL group"
       items={[

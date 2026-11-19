@@ -1,5 +1,7 @@
-import { formatDateTime, formatTime } from "./format";
-import SectionTabs from "./SectionTabs";
+import RefreshControl from "./RefreshControl";
+import LoadError from "./LoadError";
+import { formatDateTime } from "./format";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import CwlPageHeader from "./CwlPageHeader";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import DiscordIdentity from "./DiscordIdentity";
@@ -52,8 +54,7 @@ export default function TicketConversation({
   useEffect(() => {
     heading.current?.focus();
   }, [ticket.id]);
-  const pausedRef = useRef(paused);
-  pausedRef.current = paused;
+  const refreshRead = useRef<() => void>(() => {});
   const readerKey = useRef("");
   useEffect(() => {
     let alive = true,
@@ -93,15 +94,22 @@ export default function TicketConversation({
         if (alive) setBusy(false);
       }
     };
+    refreshRead.current = () => {
+      void load();
+    };
     void load();
-    const timer = setInterval(() => {
-      if (!pausedRef.current && !before && !document.hidden) void load();
-    }, 30000);
     return () => {
       alive = false;
-      clearInterval(timer);
+      refreshRead.current = () => {};
     };
   }, [ticket.id, space, before, reload]);
+  useEffect(() => {
+    if (paused || before) return;
+    const timer = setInterval(() => {
+      if (!document.hidden) refreshRead.current();
+    }, 30000);
+    return () => clearInterval(timer);
+  }, [paused, before]);
   if (denied)
     return (
       <section className="ticket-browser">
@@ -142,7 +150,20 @@ export default function TicketConversation({
           </h1>
         }
         description={`${ticket.kind.toUpperCase()} · ${statusName(ticket.status)} · Read only`}
-      />
+      >
+        <RefreshControl
+          updatedAt={data ? data.checked_at * 1000 : null}
+          busy={busy}
+          onRefresh={() => setReload((n) => n + 1)}
+          intervalSeconds={!before ? 30 : undefined}
+          paused={paused}
+          onPauseChange={(next) => {
+            setPaused(next);
+            if (!next) refreshRead.current();
+          }}
+          showRefresh={!error}
+        />
+      </CwlPageHeader>
       <DiscordIdentity
         userId={ticket.user_id}
         displayName={ticket.name}
@@ -162,6 +183,7 @@ export default function TicketConversation({
         </div>
       )}
       <SectionTabs
+        id="ticket-conversation"
         className="ticket-conversation-tabs section-tabs--flow"
         label="Ticket conversation"
         items={[
@@ -187,154 +209,138 @@ export default function TicketConversation({
         }}
         revealSelection
       />
-      <div className="ticket-reader-tools">
-        <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
-          Refresh messages
-        </button>
-        {data && (
-          <a
-            className="button"
-            href={data.discord_url}
-            target="_blank"
-            rel="noreferrer"
-          >
-            Open conversation in Discord{" "}
-            <ArrowUpRight size={16} aria-hidden="true" />
-          </a>
-        )}
-      </div>
-      <p className="small">
-        {before
-          ? "Reading older messages. Automatic refresh is paused."
-          : paused
-            ? "Automatic refresh paused."
-            : "New messages refresh every 30 seconds."}
-        {data
-          ? ` Updated ${formatTime(new Date(data.checked_at * 1000))}.`
-          : ""}
-      </p>
-      {error && (
-        <p className="notice error" role="alert">
-          {error}
-          {data ? " Showing the last update." : ""}
-          <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
-            Retry loading messages
-          </button>
-        </p>
-      )}
-      {busy && !data && <p role="status">Loading conversation…</p>}
-      {data && (
-        <>
-          <details className="ticket-date-filter">
-            <summary>
-              Find messages &amp; refresh options
-              {search ? " · search active" : ""}
-            </summary>
-            <div>
-              {" "}
-              <label>
-                Find in these {data.messages.length} messages
-                <input
-                  type="search"
-                  placeholder="Name or words in this page"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                />
-              </label>{" "}
-              <label>
-                <input
-                  type="checkbox"
-                  checked={paused}
-                  onChange={(e) => setPaused(e.target.checked)}
-                />
-                Pause refresh
-              </label>
-            </div>
-          </details>
-          <nav className="ticket-pages" aria-label="Message pages">
-            <button
-              disabled={busy || !data.older}
-              onClick={() => setBefore(data.older || "")}
+      <SectionTabPanel id="ticket-conversation" value={space}>
+        <div className="ticket-reader-tools">
+          {data && (
+            <a
+              className="button"
+              href={data.discord_url}
+              target="_blank"
+              rel="noreferrer"
             >
-              Older messages
-            </button>
-            {before && (
-              <button disabled={busy} onClick={() => setBefore("")}>
-                Latest messages
-              </button>
-            )}
-          </nav>
-          <div className="ticket-messages">
-            {messages.map((m) => (
-              <article className="ticket-message" key={m.id}>
-                <header>
-                  <strong>
-                    {m.author}
-                    {m.bot ? " · Bot" : ""}
-                  </strong>
-                  <small>
-                    {when(m.at)}
-                    {m.edited ? " · Edited" : ""}
-                  </small>
-                </header>
-                {m.text ? (
-                  <ReactMarkdown
-                    remarkPlugins={[remarkGfm]}
-                    skipHtml
-                    components={{
-                      a: ({ children, href }) => (
-                        <a href={href} target="_blank" rel="noreferrer">
-                          {children}
-                        </a>
-                      ),
-                      img: ({ src, alt }) => (
-                        <a
-                          href={typeof src === "string" ? src : undefined}
-                          target="_blank"
-                          rel="noreferrer"
-                        >
-                          {alt || "View image"} ↗
-                        </a>
-                      ),
-                    }}
-                  >
-                    {m.text}
-                  </ReactMarkdown>
-                ) : (
-                  !m.attachments.length && (
-                    <p className="small">
-                      System message or content unavailable. Open in Discord to
-                      check.
-                    </p>
-                  )
-                )}
-                {m.attachments.length > 0 && (
-                  <ul className="ticket-attachments">
-                    {m.attachments.map((a, i) => (
-                      <li key={i}>
-                        <a href={a.url} target="_blank" rel="noreferrer">
-                          <DashboardIcon name="attachment" /> {a.name} ↗
-                        </a>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </article>
-            ))}
-            {!messages.length && (
-              <p>
-                {search
-                  ? "No matches in these messages."
-                  : "No messages returned. If Discord shows messages, ask an owner to check the WU Wizard Read Message History and Message Content access."}
-              </p>
-            )}
-          </div>
+              Open conversation in Discord{" "}
+              <ArrowUpRight size={16} aria-hidden="true" />
+            </a>
+          )}
+        </div>
+        {before && (
           <p className="small">
-            Attachments open from Discord. Deleted messages and threads may no
-            longer be available.
+            Reading older messages. Automatic refresh is paused.
           </p>
-        </>
-      )}
+        )}
+        <LoadError
+          message={error}
+          note={data ? "Showing the last update." : undefined}
+          onRetry={() => setReload((n) => n + 1)}
+          busy={busy}
+          retryContext="ticket messages"
+        />
+        {busy && !data && <p role="status">Loading conversation…</p>}
+        {data && (
+          <>
+            <details className="ticket-date-filter">
+              <summary>
+                Find messages &amp; refresh options
+                {search ? " · search active" : ""}
+              </summary>
+              <div>
+                {" "}
+                <label>
+                  Find in these {data.messages.length} messages
+                  <input
+                    type="search"
+                    placeholder="Name or words in this page"
+                    value={search}
+                    onChange={(e) => setSearch(e.target.value)}
+                  />
+                </label>{" "}
+              </div>
+            </details>
+            <nav className="ticket-pages" aria-label="Message pages">
+              <button
+                disabled={busy || !data.older}
+                onClick={() => setBefore(data.older || "")}
+              >
+                Older messages
+              </button>
+              {before && (
+                <button disabled={busy} onClick={() => setBefore("")}>
+                  Latest messages
+                </button>
+              )}
+            </nav>
+            <div className="ticket-messages">
+              {messages.map((m) => (
+                <article className="ticket-message" key={m.id}>
+                  <header>
+                    <strong>
+                      {m.author}
+                      {m.bot ? " · Bot" : ""}
+                    </strong>
+                    <small>
+                      {when(m.at)}
+                      {m.edited ? " · Edited" : ""}
+                    </small>
+                  </header>
+                  {m.text ? (
+                    <ReactMarkdown
+                      remarkPlugins={[remarkGfm]}
+                      skipHtml
+                      components={{
+                        a: ({ children, href }) => (
+                          <a href={href} target="_blank" rel="noreferrer">
+                            {children}
+                          </a>
+                        ),
+                        img: ({ src, alt }) => (
+                          <a
+                            href={typeof src === "string" ? src : undefined}
+                            target="_blank"
+                            rel="noreferrer"
+                          >
+                            {alt || "View image"} ↗
+                          </a>
+                        ),
+                      }}
+                    >
+                      {m.text}
+                    </ReactMarkdown>
+                  ) : (
+                    !m.attachments.length && (
+                      <p className="small">
+                        System message or content unavailable. Open in Discord
+                        to check.
+                      </p>
+                    )
+                  )}
+                  {m.attachments.length > 0 && (
+                    <ul className="ticket-attachments">
+                      {m.attachments.map((a, i) => (
+                        <li key={i}>
+                          <a href={a.url} target="_blank" rel="noreferrer">
+                            <DashboardIcon name="attachment" /> {a.name} ↗
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </article>
+              ))}
+              {!messages.length && (
+                <p>
+                  {search
+                    ? "No matches in these messages."
+                    : "No messages returned. If Discord shows messages, ask an owner to check the WU Wizard Read Message History and Message Content access."}
+                </p>
+              )}
+            </div>
+            <p className="small">
+              Attachments open from Discord. Deleted messages and threads may no
+              longer be available.
+            </p>
+          </>
+        )}
+      </SectionTabPanel>
     </section>
   );
 }

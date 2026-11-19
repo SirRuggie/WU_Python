@@ -1,7 +1,7 @@
+import { RefreshButton } from "./RefreshControl";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { usesClanWeights } from "./clanWeightPolicy";
 import { useEffect, useRef, useState } from "react";
-import { RefreshCw } from "lucide-react";
 import { Button } from "./rosterUi/primitives";
 import { compactWeightState } from "./CompactWeightField";
 import type { ManualWeightDraft } from "./manualWeight";
@@ -148,9 +148,12 @@ export default function WeightQueue({
     >
       <div className="weight-queue-heading">
         <h2 id="weight-queue-title">Needs weight · {missing.length}</h2>
-        <Button icon={RefreshCw} disabled={disabled} onClick={onRefresh}>
-          Refresh weights
-        </Button>
+        <RefreshButton
+          busy={busy || saving}
+          disabled={archived}
+          onRefresh={onRefresh}
+          label="Refresh weights"
+        />
       </div>
       {permissionNotice && (
         <p role="status">

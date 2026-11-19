@@ -4,7 +4,7 @@ import { parsePageParam, replacePageParam } from "./pageUrlState";
 import MemberActivityHistory from "./MemberActivityHistory";
 import MemberTimeline from "./MemberTimeline";
 import ModerationSettings from "./ModerationSettings";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import "./ModerationWorkspace.css";
 
 type Section = "history" | "invites" | "channels";
@@ -50,6 +50,7 @@ export default function ModerationWorkspace({
         description="Review member events and configure where notices are posted."
       />
       <SectionTabs
+        id="moderation-sections"
         className="moderation-sections section-tabs--flow"
         label="Moderation sections"
         items={[
@@ -62,27 +63,29 @@ export default function ModerationWorkspace({
           next === "history" ? showHistory() : showSettings(next)
         }
       />
-      <div hidden={section !== "history" || timeline}>
-        <MemberActivityHistory
-          active={section === "history" && !timeline}
-          onViewMember={onMemberRoute}
-        />
-      </div>
-      {timeline && (
-        <MemberTimeline
-          key={memberId}
-          userId={memberId}
-          onBack={() => onMemberRoute?.("")}
-        />
-      )}
-      {openedSettings && (
-        <div hidden={section === "history"}>
-          <ModerationSettings
-            onDirty={onDirty}
-            view={section === "invites" ? "invites" : "channels"}
+      <SectionTabPanel id="moderation-sections" value={section}>
+        <div hidden={section !== "history" || timeline}>
+          <MemberActivityHistory
+            active={section === "history" && !timeline}
+            onViewMember={onMemberRoute}
           />
         </div>
-      )}
+        {timeline && (
+          <MemberTimeline
+            key={memberId}
+            userId={memberId}
+            onBack={() => onMemberRoute?.("")}
+          />
+        )}
+        {openedSettings && (
+          <div hidden={section === "history"}>
+            <ModerationSettings
+              onDirty={onDirty}
+              view={section === "invites" ? "invites" : "channels"}
+            />
+          </div>
+        )}
+      </SectionTabPanel>
     </section>
   );
 }

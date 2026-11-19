@@ -1,3 +1,4 @@
+import RefreshControl from "../RefreshControl";
 import CwlPageHeader from "../CwlPageHeader";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { useState } from "react";
@@ -21,7 +22,10 @@ export default function EventsWorkspace({
   const [utc, setUtc] = useState(false);
   const [chosenScope, setScope] = useState<"mine" | "family">("mine");
   const scope = canEdit ? chosenScope : "mine";
-  const { data, error, busy, refresh } = useClanActivity("raid", scope);
+  const { data, error, busy, refresh, paused, onPauseChange } = useClanActivity(
+    "raid",
+    scope,
+  );
   const zone = utc ? "UTC" : undefined;
   const zoneName = utc
     ? "UTC"
@@ -168,6 +172,15 @@ export default function EventsWorkspace({
               </select>
             </label>
           )}
+          <RefreshControl
+            updatedAt={data?.checked_at || null}
+            busy={busy}
+            onRefresh={refresh}
+            intervalSeconds={60}
+            paused={paused}
+            onPauseChange={onPauseChange}
+            showRefresh={!error}
+          />
         </CwlPageHeader>
         <ClanActivityStatus
           error={error}

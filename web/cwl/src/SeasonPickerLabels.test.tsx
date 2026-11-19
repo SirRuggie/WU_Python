@@ -210,7 +210,7 @@ it("formats staff text and preserves its destination id", async () => {
   await mount(<StaffOverview onNavigate={change} />);
   expect(host.textContent).toContain("October 2026");
   await act(async () =>
-    [...host.querySelectorAll("button")]
+    [...host.querySelectorAll<HTMLAnchorElement>("a")]
       .find((row) => row.textContent?.trim() === "Open roster")!
       .click(),
   );

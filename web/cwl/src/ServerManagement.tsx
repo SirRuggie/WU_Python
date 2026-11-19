@@ -642,6 +642,7 @@ export default function ServerManagement({
           )}
           {document.preview_supported && (
             <SectionTabs
+              id="management-editor"
               className="manage-preview-toggle section-tabs--flow"
               label="Message editor view"
               items={[
@@ -667,6 +668,10 @@ export default function ServerManagement({
             />
           )}
           <div
+            role="tabpanel"
+            tabIndex={0}
+            id={`management-editor-panel-${mobilePane}`}
+            aria-labelledby={`management-editor-tab-${mobilePane}`}
             className={
               document.preview_supported
                 ? `manage-editor-layout mobile-${mobilePane}`
