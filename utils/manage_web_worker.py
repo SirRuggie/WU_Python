@@ -247,11 +247,11 @@ async def dispatch(bot, mongo, row, ctx):
         if fingerprint(cfg) != row["revision"]:
             raise ValueError("Ticket settings changed. Reload before trying again.")
         if action == "save":
-            from cwl_web.manage_tickets import validated_settings
+            from utils.ticket_settings import validated_settings
 
             changes = validated_settings(values)
             from cwl_web.change_history import begin, finish
-            from cwl_web.manage_tickets import history_values
+            from utils.ticket_settings import history_values
 
             histories = []
             actor = {

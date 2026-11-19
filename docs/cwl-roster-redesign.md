@@ -1,3 +1,25 @@
+## Backend audit Part L, batch 2 — ticket-settings contract (239L)
+
+Status: bounded implementation for review, stacked on L1 head
+`b382e3db02d44dff467e4c2772c870271621598a`; L1 approval does not approve L2.
+The existing ticket setting field set, validator and history projection move
+unchanged into `utils/ticket_settings.py`. The HTTP adapter reexports the same
+objects; native and worker consumers import the pure owner directly. Storage,
+auditing, authorization, routing and Discord behavior stay with existing owners.
+
+This removes three exact forbidden import edges (56 → 53), with none added.
+Timer bounds, string snowflake conversion, viewer order/duplicates, errors and
+history defaults—including the existing unknown-part projection—are preserved.
+Preview: N/A (backend). Focused contract, ticket-save/history/worker and generic
+boundary checks passed: 75 tests and 38 subtests. Four changed modules imported
+in isolation; explicit fixture startup returned config 200 with all 76 SQLite
+fixture table counts unchanged. Full backend passed 9,326 tests and 577 subtests
+(134 skips); full frontend passed 2,750 tests. Type/build, scoped formatting,
+diff and the war-reminder gate passed. Independent source/focused review passed.
+These are isolated fixture results, not live-delivery or production evidence.
+Later Part L batches retain the content fingerprint and history-storage edges;
+this batch does not move those owners or expand its scope.
+
 ## Backend audit Part L, batch 1 — role authorization boundaries (239L)
 
 Status: bounded implementation for review; no merge or release claim. The pure

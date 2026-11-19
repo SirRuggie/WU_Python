@@ -211,7 +211,7 @@ async def save(ctx,mongo,rest,data):
         from cwl_web.manage_content import GUILD_ID
         if guild(ctx)==GUILD_ID:
             from cwl_web.change_history import begin,finish
-            from cwl_web.manage_tickets import history_values
+            from utils.ticket_settings import history_values
             for part in ('timers','main','fwa','viewers'):
                 before=history_values(baseline,part)
                 if set(before).intersection(changes):
