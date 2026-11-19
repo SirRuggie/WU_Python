@@ -50,22 +50,17 @@ def test_missing_fields_and_multi_field_atomicity():
     assert asyncio.run(drafts.save_fields(fields, 'config', baseline, {'war.th18': 'new'}))
 
 
-def test_native_link_modal_rejects_dashboard_change_and_saves_fresh_edit(monkeypatch):
+def test_retired_link_modal_never_consumes_draft_or_overwrites_dashboard(monkeypatch):
     from extensions.commands.clan.dashboard import fwa_data
     from unittest.mock import AsyncMock
-    monkeypatch.setattr(fwa_data, '_require_fwa_representative', AsyncMock(return_value=True))
-    old = 'https://link.clashofclans.com/?id=old'
+    monkeypatch.setattr(fwa_data, 'require_dashboard_role', AsyncMock(return_value=True))
     web = 'https://link.clashofclans.com/?id=web'
-    new = 'https://link.clashofclans.com/?id=native'
     fields = Fields(**{'fwa_base_links.th18': web})
-    mongo = SimpleNamespace(fwa_data=fields)
-    ctx = SimpleNamespace(user=SimpleNamespace(id=1), respond=AsyncMock(), interaction=SimpleNamespace(
-        components=[[SimpleNamespace(custom_id='base_link', value=new)]],
-        create_initial_response=AsyncMock(), edit_initial_response=AsyncMock()))
-    token = drafts.remember(1, 'fwa_link_submit:th18', {'fwa_base_links': {'th18': old}}, ['fwa_base_links.th18'])
-    asyncio.run(fwa_data.fwa_link_submit(ctx=ctx, action_id='th18|' + token, mongo=mongo))
+    ctx = SimpleNamespace(user=SimpleNamespace(id=1), respond=AsyncMock())
+    token = drafts.remember(1, 'fwa_link_submit:th18',
+                            {'fwa_base_links': {'th18': 'old'}}, ['fwa_base_links.th18'])
+    asyncio.run(fwa_data.fwa_link_submit(ctx=ctx, action_id='th18|' + token,
+                                       mongo=SimpleNamespace(fwa_data=fields)))
     assert fields.fields['fwa_base_links.th18'] == web
-    assert 'changed' in ctx.interaction.edit_initial_response.call_args.kwargs['content']
-    token = drafts.remember(1, 'fwa_link_submit:th18', {'fwa_base_links': {'th18': web}}, ['fwa_base_links.th18'])
-    asyncio.run(fwa_data.fwa_link_submit(ctx=ctx, action_id='th18|' + token, mongo=mongo))
-    assert fields.fields['fwa_base_links.th18'] == new
+    assert drafts.consume(token, 1, 'fwa_link_submit:th18') == {'fwa_base_links.th18': 'old'}
+    assert 'Town Halls' in str(ctx.respond.await_args.kwargs['components'][0].build())
