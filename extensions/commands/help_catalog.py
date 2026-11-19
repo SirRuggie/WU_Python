@@ -53,6 +53,7 @@ HELP_CATEGORIES = {
             ("/goldrush configure", "Preview and confirm event start, duration and score reset. Admin only."),
             ("/goldrush finalize", "Refresh and lock results after the event ends. Admin only."),
             ("/fwa bases", "Select and show an FWA base layout."),
+            ("/bases-panel", "Post the FWA base panel in this channel. Staff only."),
             ("/fwa chocolate", "Look up a player or clan on FWA Chocolate."),
             ("/fwa links", "Open FWA verification and war-weight links."),
             ("/fwa new-th-upgrade", "Show FWA Town Hall upgrade notes."),
