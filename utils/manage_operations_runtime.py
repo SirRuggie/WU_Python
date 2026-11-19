@@ -42,41 +42,44 @@ def runtime_snapshot(monitor):
     }
 
 
-async def refresh_base_image_cache(mongo, *, force=False):
-    """Bot-worker hook after a web base save, using the same native cache format."""
+def publish_base_image_snapshot(doc):
+    """Publish shared registry images under both legacy variant cache keys."""
     from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
     from utils.media_urls import optimized, DETAIL
+    from utils import town_halls
 
+    if doc is None:
+        return False
+    war, active = {}, {}
+    for level in town_halls.levels(doc):
+        if level < doc['lowest_fwa_town_hall']:
+            continue
+        bases = doc['levels'][str(level)].get('bases', {})
+        for field, target in (('war_image', war), ('active_image', active)):
+            url = bases.get(field, '')
+            if url:
+                converted = optimized(url, width=DETAIL)
+                target[f'th{level}'] = converted
+                target[f'th{level}_new'] = converted
+    FWA_WAR_BASE.clear()
+    FWA_WAR_BASE.update(war)
+    FWA_ACTIVE_WAR_BASE.clear()
+    FWA_ACTIVE_WAR_BASE.update(active)
+    return True
+
+
+async def refresh_base_image_cache(mongo, *, force=False):
+    """Existing image poll now reads through the registry storage owner only."""
+    from utils import town_halls
     from utils.manage_poll_cache import state_for
-
     state = state_for(mongo)
     async with state.images_lock:
         if not force and time.monotonic() - state.images_at < 60:
             return False
-        row = (
-            await mongo.fwa_data.find_one(
-                {"_id": "fwa_config"},
-                {"_id": 0, "war_base_images": 1, "active_base_images": 1},
-            )
-            or {}
-        )
-        changes = []
-        for key, target in (
-            ("war_base_images", FWA_WAR_BASE),
-            ("active_base_images", FWA_ACTIVE_WAR_BASE),
-        ):
-            values = row.get(key, {})
-            if not isinstance(values, dict):
-                raise ValueError("Base image configuration is unavailable")
-            for th, url in values.items():
-                changes.append(
-                    (target, th, optimized(url, width=DETAIL) if url else None)
-                )
-        for target, th, url in changes:
-            if url:
-                target[th] = url
-            else:
-                target.pop(th, None)
+        doc = await town_halls.load(mongo, 644963518025826315)
+        if doc is None:
+            return False
+        publish_base_image_snapshot(doc)
         state.images_at = time.monotonic()
         return True
 
@@ -94,6 +97,8 @@ async def refresh_town_halls_cache(mongo, *, force=False, startup=False, expecte
             mongo, 644963518025826315, log_failure=not startup, expected_revision=expected_revision
         )
         state.town_halls_at = time.monotonic()
+        if refreshed:
+            publish_base_image_snapshot(town_halls.snapshot(644963518025826315))
         if startup and not refreshed:
             import logging
             logging.getLogger(__name__).error("Town Halls not migrated or unavailable")
@@ -116,7 +121,8 @@ async def apply_town_halls_refresh(mongo, row, actor):
             or type(row.get("revision")) is not int
             or row["revision"] < 0):
         raise ValueError("Invalid Town Halls refresh request.")
-    if not actor or not await dashboard_allowed(actor, "fwa_weight", mongo, write=True):
+    if not actor or not (await dashboard_allowed(actor, "fwa_weight", mongo, write=True)
+                         or await dashboard_allowed(actor, "fwa_bases", mongo, write=True)):
         raise ValueError("Your Discord access changed. This action was not run.")
     doc = await town_halls.load(mongo, row["guild_id"])
     if doc is None:

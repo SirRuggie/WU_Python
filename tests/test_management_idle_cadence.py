@@ -38,25 +38,20 @@ def test_heartbeat_repeats_with_margin_and_failures_do_not_suppress_retry():
     asyncio.run(run())
 
 
-def test_base_images_are_projected_cached_and_can_be_forced_after_change():
+def test_base_images_are_registry_owned_cached_and_can_be_forced_after_change():
     async def run():
-        now = [0.0]
-        read = AsyncMock(return_value={})
-        mongo = NS(fwa_data=NS(find_one=read))
-        with patch.object(runtime, "time", NS(monotonic=lambda: now[0])):
+        from utils import town_halls
+        from test_town_halls_discord_bases_245 import bases_doc
+        now=[0.0];read=AsyncMock(return_value=bases_doc());mongo=NS()
+        with patch.object(runtime,'time',NS(monotonic=lambda:now[0])),patch.object(town_halls,'load',read):
             await runtime.refresh_base_image_cache(mongo)
-            now[0] = 59
-            await runtime.refresh_base_image_cache(mongo)
-            read.assert_awaited_once_with(
-                {"_id": "fwa_config"},
-                {"_id": 0, "war_base_images": 1, "active_base_images": 1},
-            )
-            now[0] = 60
-            await runtime.refresh_base_image_cache(mongo)
-            await runtime.refresh_base_image_cache(mongo, force=True)
-            assert read.await_count == 3
-
+            now[0]=59;await runtime.refresh_base_image_cache(mongo)
+            read.assert_awaited_once_with(mongo,644963518025826315)
+            now[0]=60;await runtime.refresh_base_image_cache(mongo)
+            await runtime.refresh_base_image_cache(mongo,force=True)
+            assert read.await_count==3
     asyncio.run(run())
+
 
 
 def test_idle_observation_skips_only_recent_confirmed_empty_work_and_band_updates_on_change():
@@ -214,30 +209,23 @@ def test_canceled_bridge_keeps_lane_releasable_and_shutdown_blocks_new_admission
 
 def test_unusable_base_image_result_never_caches_failure_or_partially_changes_images():
     async def run():
-        from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
-
-        original_war, original_active = dict(FWA_WAR_BASE), dict(FWA_ACTIVE_WAR_BASE)
-        read = AsyncMock(
-            side_effect=[
-                {"war_base_images": {"fixture": None}, "active_base_images": None},
-                {},
-            ]
-        )
-        mongo = NS(fwa_data=NS(find_one=read))
+        from utils.constants import FWA_WAR_BASE,FWA_ACTIVE_WAR_BASE
+        from utils import town_halls
+        from test_town_halls_discord_bases_245 import bases_doc
+        original_war,original_active=dict(FWA_WAR_BASE),dict(FWA_ACTIVE_WAR_BASE)
+        invalid=bases_doc();invalid['levels']['19']['bases']['war_image']='bad'
+        read=AsyncMock(side_effect=[invalid,bases_doc()]);mongo=NS()
         try:
-            with pytest.raises(ValueError):
-                await runtime.refresh_base_image_cache(mongo)
-            assert dict(FWA_WAR_BASE) == original_war
-            assert dict(FWA_ACTIVE_WAR_BASE) == original_active
-            assert await runtime.refresh_base_image_cache(mongo)
-            assert read.await_count == 2
+            with patch.object(town_halls,'load',read):
+                with pytest.raises(ValueError):await runtime.refresh_base_image_cache(mongo)
+                assert dict(FWA_WAR_BASE)==original_war and dict(FWA_ACTIVE_WAR_BASE)==original_active
+                assert await runtime.refresh_base_image_cache(mongo)
+                assert read.await_count==2
         finally:
-            FWA_WAR_BASE.clear()
-            FWA_WAR_BASE.update(original_war)
-            FWA_ACTIVE_WAR_BASE.clear()
-            FWA_ACTIVE_WAR_BASE.update(original_active)
-
+            FWA_WAR_BASE.clear();FWA_WAR_BASE.update(original_war)
+            FWA_ACTIVE_WAR_BASE.clear();FWA_ACTIVE_WAR_BASE.update(original_active)
     asyncio.run(run())
+
 
 
 def test_independent_heartbeat_survives_a_temporary_mongo_failure(caplog):

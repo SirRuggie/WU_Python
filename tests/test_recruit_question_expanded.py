@@ -144,19 +144,19 @@ def test_fwa_base_selector_and_public_th_result_use_saved_copy_with_live_base_da
     assert "th_select:panel" in str(selector[0].build())
     rest.create_message.assert_not_awaited()
 
-    base = SimpleNamespace(
-        fwa_base_links=SimpleNamespace(th18="https://example.org/live-base"),
-        base_information={"th18": "Live instructions from Mongo"},
-    )
-    monkeypatch.setattr(questions, "get_fwa_base_object", AsyncMock(return_value=base))
-    monkeypatch.setitem(questions.FWA_WAR_BASE, "th18", "https://example.org/live-war.png")
-    monkeypatch.setitem(questions.FWA_ACTIVE_WAR_BASE, "th18", "https://example.org/live-active.png")
+    from utils import town_halls
+    from test_town_halls_discord_bases_245 import bases_doc,GUILD_ID
+    doc=bases_doc();doc=town_halls.add_level(doc,18)
+    link='https://link.clashofclans.com/en?action=OpenLayout&id=fixture18'
+    for field,value in [('merged.link',link),('merged.instructions','Live instructions from registry'),('war_image','https://example.org/live-war.png'),('active_image','https://example.org/live-active.png')]:
+        doc=town_halls.set_base_field(doc,18,field,value)
+    monkeypatch.setattr(town_halls,'_snapshot',doc);monkeypatch.setattr(town_halls,'_snapshot_guild',str(GUILD_ID))
     public_ctx = _ctx("th_select", "th18")
     run(questions.th_select(user_id=123, bot=SimpleNamespace(rest=rest), mongo=db, ctx=public_ctx))
     sent = rest.create_message.await_args.kwargs
     payload = str([part.build() for part in sent["components"]])
-    assert "Saved lead. Live instructions from Mongo" in payload
-    assert "https://example.org/live-base" in payload
+    assert "Saved lead. Live instructions from registry" in payload
+    assert link in payload
     assert "live-war.png" in payload and "live-active.png" in payload
     assert sent["user_mentions"] == [123]
 
