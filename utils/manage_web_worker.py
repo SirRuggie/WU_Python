@@ -58,7 +58,7 @@ ACTIONS = {
 
 
 async def context(bot, mongo, row):
-    from extensions.commands.recruit.perms import guild_permissions
+    from utils.role_permissions import guild_permissions
     from utils.dashboard_access import dashboard_allowed as allowed
 
     if row.get("section") == "roles":

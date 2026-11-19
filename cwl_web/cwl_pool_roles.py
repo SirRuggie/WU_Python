@@ -3,7 +3,7 @@
 from aiohttp import web
 from utils import cwl_pool_roles as service
 from utils.role_permissions import role_is_safe_for_pool
-from extensions.commands.recruit.perms import actor_can_manage_role
+from utils.role_permissions import actor_can_manage_role
 from .server_management import identity
 from .manage_roles import hierarchy, dashboard_grant_roles
 

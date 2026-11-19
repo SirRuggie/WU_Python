@@ -169,7 +169,7 @@ def inventory_rows(raw, profiles, roles, guild, bot, acting):
     me = guild.get_member(bot.get_me().id)
     from utils.role_hierarchy import RolePositions
     from types import SimpleNamespace
-    from extensions.commands.recruit import perms
+    from utils import role_permissions as perms
 
     # One request's live context only. Writes never receive this snapshot.
     positions = RolePositions(role_list)
@@ -329,7 +329,7 @@ async def members_overview(request):
 
 def role_rows(rows, roles, guild, bot, acting, protected):
     """Pure role choices and flags, using this request's live actor context."""
-    from extensions.commands.recruit.perms import actor_can_manage_role
+    from utils.role_permissions import actor_can_manage_role
     from utils.role_permissions import role_is_manageable
 
     options = [
@@ -339,7 +339,7 @@ def role_rows(rows, roles, guild, bot, acting, protected):
         and role_is_manageable(guild, bot, role)
         and actor_can_manage_role(acting, guild, role)
     ]
-    from extensions.commands.recruit.perms import actor_can_manage_member
+    from utils.role_permissions import actor_can_manage_member
     from types import SimpleNamespace
 
     for row in rows:

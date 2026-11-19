@@ -8,7 +8,7 @@ from uuid import UUID
 from types import SimpleNamespace as NS
 from aiohttp import web
 from .server_management import API, GUILD_ID, discord, require_manage, mongo
-from extensions.commands.recruit import perms
+from utils import role_permissions as perms
 from utils.role_permissions import role_is_manageable
 
 
