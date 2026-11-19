@@ -1,6 +1,8 @@
 """Public read-only FWA base projection. Staff configuration is never returned."""
 
 from urllib.parse import urlsplit, parse_qs
+from utils import town_halls
+from utils.constants import WARRIORS_UNITED_GUILD_ID
 
 FWA_TH_LEVELS = [
     "th18_new",
@@ -54,7 +56,7 @@ def https_url(value, *, clash=False):
     return value
 
 
-def public_bases(document):
+def public_bases(document, *, minimum=1):
     rows, details = [], {}
     document = document if isinstance(document, dict) else {}
     fields = {
@@ -62,6 +64,8 @@ def public_bases(document):
         for key in PUBLIC_FIELDS
     }
     for key in FWA_TH_LEVELS:
+        if int(key[2:].split("_")[0]) < minimum:
+            continue
         info = {
             name: (
                 fields[name].get(key)[:4000]
@@ -91,7 +95,10 @@ def public_bases(document):
 
 
 async def read_base_bank(mongo):
+    registry = await town_halls.load(mongo, WARRIORS_UNITED_GUILD_ID)
+    if registry is None:
+        raise town_halls.TownHallsMissing(town_halls.MISSING_MESSAGE)
     document = await mongo.fwa_data.find_one(
         {"_id": "fwa_config"}, {**{field: 1 for field in PUBLIC_FIELDS}, "_id": 0}
     )
-    return public_bases(document)
+    return public_bases(document, minimum=registry["lowest_fwa_town_hall"])

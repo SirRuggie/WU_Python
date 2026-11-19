@@ -138,12 +138,17 @@ def fwa_town_hall_options(options):
     Base records themselves move in 245. Missing startup data retains the old
     read-only choices with plain level labels rather than inventing a registry.
     """
+    allowed = set(fwa_town_hall_keys([option.value for option in options]))
+    return [option for option in options if option.value in allowed]
+
+
+def fwa_town_hall_keys(keys):
+    """Read-only visibility filter for the existing legacy base dataset."""
     from utils.town_halls import snapshot
     doc = snapshot()
     if doc is None:
-        return options
-    minimum = doc['lowest_fwa_town_hall']
-    return [option for option in options if int(option.value[2:].split('_')[0]) >= minimum]
+        return list(keys)
+    return [key for key in keys if int(key[2:].split('_')[0]) >= doc['lowest_fwa_town_hall']]
 
 
 def fwa_town_hall_menu(menu):

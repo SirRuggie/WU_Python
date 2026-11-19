@@ -10,7 +10,13 @@ Display ranges are computed when read. No ordinary save creates a registry.
 
 The migration sets the lowest FWA level to 12. Weight calculations and the
 reference table use weighted levels at or above that setting. Clan minimum-level
-choices use every registered level, newest first. Existing unknown clan values
+choices use every registered level, newest first. Base bank rows/details and
+native base-section choices filter the existing legacy base dataset by the same
+minimum. After an explicit minimum Save, an app-local generation invalidates
+both completed and in-flight base reads. A superseded read cannot refill the
+cache; it retries once within the same eight-second budget, then returns an
+unavailable response if settings keep changing. This visibility change does not
+migrate or rewrite base content. Existing unknown clan values
 can be preserved unchanged; another unknown value cannot be selected and saved.
 Family role IDs remain in their existing table until prompt 246.
 

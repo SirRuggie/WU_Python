@@ -151,6 +151,9 @@ async def save(request):
                 raise ValueError('Open a Town Hall or setting before saving.')
             target = '/api/cwl' + PATH + '/' + destination
             saved = await registry.save(db, shared.GUILD_ID, updated, int(actor['user_id']), body['revision'])
+            if current['lowest_fwa_town_hall'] != saved['lowest_fwa_town_hall']:
+                from .base_bank import invalidate
+                invalidate(request.app)
             result = document(saved, destination)
             warnings = []
             try:

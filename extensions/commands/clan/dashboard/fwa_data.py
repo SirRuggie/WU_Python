@@ -17,7 +17,7 @@ from utils.manage_ui import breadcrumb, button_emoji
 from utils.media_store import FWA_ACTIVE_BASE_NAME, FWA_WAR_BASE_NAME, MediaStore, fwa_base_folder
 from utils.media_urls import DETAIL, optimized
 from utils.constants import WU_GOLD, WU_GREEN, WU_RED, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
-from utils.emoji import emojis
+from utils.emoji import emojis, fwa_town_hall_keys, fwa_town_hall_menu
 from utils.town_halls import town_hall_emoji
 from extensions.commands.clan.dashboard.dashboard import dashboard_page
 from extensions.commands.clan.dashboard.permissions import require_dashboard_role
@@ -157,7 +157,7 @@ async def build_fwa_management_screen(
 
     # Build overview of all TH levels
     overview_lines = []
-    for th in FWA_TH_LEVELS:
+    for th in fwa_town_hall_keys(FWA_TH_LEVELS):
         emoji_obj = get_th_emoji(th)
         emoji_str = str(emoji_obj) if emoji_obj else ""
         base_link = base_links.get(th)
@@ -173,7 +173,7 @@ async def build_fwa_management_screen(
 
     # Build dropdown options for TH selection
     options = []
-    for th in FWA_TH_LEVELS:
+    for th in fwa_town_hall_keys(FWA_TH_LEVELS):
         emoji_obj = get_th_emoji(th)
         th_num = th.upper().replace("TH", "")
 
@@ -211,18 +211,18 @@ async def build_fwa_management_screen(
                 )),
                 Separator(divider=True),
                 Text(content="### 📊 **Current Status**"),
-                Text(content="\n".join(overview_lines)),
+                Text(content="\n".join(overview_lines) or "No matching FWA base levels."),
                 Separator(divider=True),
                 Text(content="### 🔧 **Select Town Hall to Edit**"),
 
                 ActionRow(
                     components=[
-                        TextSelectMenu(
+                        fwa_town_hall_menu(TextSelectMenu(
                             custom_id=f"fwa_th_select:{manage_token or 'main'}",
                             placeholder="Select a Town Hall to edit...",
                             max_values=1,
                             options=options,
-                        )
+                        ))
                     ]
                 ),
 

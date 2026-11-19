@@ -323,3 +323,47 @@ async def test_history_failure_logs_once_with_revision_no_new_warning_ui(caplog)
     assert 'warning' not in result
     assert len(caplog.records)==1 and 'revision 8' in caplog.text
     save.assert_awaited_once()
+
+
+@run_async
+async def test_minimum_save_invalidates_only_after_committed_cas():
+    req=request(item='settings',values={'lowest_fwa_town_hall':19})
+    req.app['base_bank_cache']='old-visible-levels'
+    saved=fixture();saved.update(revision=8,lowest_fwa_town_hall=19)
+    with patch.object(shared,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(shared,'mongo',mongo),patch.object(api,'required',AsyncMock(return_value=fixture())),patch.object(api.registry,'save',AsyncMock(return_value=saved)),patch.object(shared,'queue_action',AsyncMock(return_value=web.json_response({'status':'pending'}))),patch.object(change_history,'record_committed',AsyncMock()):
+        assert json.loads((await api.save(req)).text)['saved'] is True
+    assert 'base_bank_cache' not in req.app
+    req=request(item='settings',values={'lowest_fwa_town_hall':19},revision=6)
+    req.app['base_bank_cache']='keep-on-conflict'
+    with patch.object(shared,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(shared,'mongo',mongo),patch.object(api,'required',AsyncMock(return_value=fixture())):
+        with pytest.raises(web.HTTPConflict):await api.save(req)
+    assert req.app['base_bank_cache']=='keep-on-conflict'
+
+
+@run_async
+async def test_inflight_old_base_read_cannot_refill_cache_after_minimum_cas():
+    from cwl_web import base_bank as bank
+    current=fixture();started=asyncio.Event();release=asyncio.Event();reads=[]
+    req=request(item='settings',values={'lowest_fwa_town_hall':19})
+    bank_request=SimpleNamespace(app=req.app,query={})
+    async def load(_):return deepcopy(current)
+    async def persist(db,guild,doc,user,revision):
+        assert current['revision']==revision
+        current.update(deepcopy(doc),revision=revision+1)
+        return deepcopy(current)
+    async def base_read(_):
+        minimum=current['lowest_fwa_town_hall'];reads.append(minimum)
+        if len(reads)==1:
+            started.set();await release.wait()
+        return ([{'key':f'th{minimum}','town_hall':minimum}],{f'th{minimum}':{}})
+    with patch('cwl_web.app._require',return_value={'user_id':'123'}),patch('cwl_web.server_membership.server_member_status',AsyncMock(return_value=True)),patch.object(bank,'mongo',mongo),patch.object(bank,'read_base_bank',base_read),patch.object(shared,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(shared,'mongo',mongo),patch.object(api,'required',load),patch.object(api.registry,'save',AsyncMock(side_effect=persist)) as save,patch.object(shared,'queue_action',AsyncMock(return_value=web.json_response({'status':'pending'}))),patch.object(change_history,'record_committed',AsyncMock()):
+        pending=asyncio.create_task(bank.read(bank_request))
+        await started.wait()
+        assert json.loads((await api.save(req)).text)['saved'] is True
+        release.set()
+        result=json.loads((await pending).text)
+        again=json.loads((await bank.read(bank_request)).text)
+    assert reads==[12,19]
+    assert result==again=={'bases':[{'key':'th19','town_hall':19}]}
+    assert req.app['base_bank_cache'][1]==result['bases']
+    save.assert_awaited_once()
