@@ -20,6 +20,10 @@ migrate or rewrite base content. Existing unknown clan values
 can be preserved unchanged; another unknown value cannot be selected and saved.
 Family role IDs remain in their existing table until prompt 246.
 
+Dashboard select-option values are strings for the existing HTML controls; the
+Lowest FWA Town Hall draft is converted to a canonical integer before Save. The
+registry schema and stored minimum remain integers.
+
 The dashboard's Town Halls section uses the existing `fwa_weight` permission and
 `fwa` scope. Its list, Add, minimum-level, emoji and weight edits require explicit
 Save. A stale revision returns 409 without a registry, history or refresh-request

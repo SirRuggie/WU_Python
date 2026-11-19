@@ -51,12 +51,12 @@ def document(doc, item=None, *, readonly=False):
     if item == 'settings':
         result['label'] = 'Lowest FWA Town Hall'
         result['fields'] = [field('lowest_fwa_town_hall', 'Lowest FWA Town Hall', lowest, 'select',
-                                  options=[dict(value=level, label=f'TH{level}') for level in levels
+                                  required=True, options=[dict(value=str(level), label=f'TH{level}') for level in levels
                                            if 'weight' in doc['levels'][str(level)]])]
         return result
     if item == 'add':
         result.update(label='Add Town Hall', create=True, submit_label='Add Town Hall')
-        result['fields'] = [field('level', 'Town Hall level', min(99, max(levels) + 1), 'number', min=1, max=99),
+        result['fields'] = [field('level', 'Town Hall level', min(99, max(levels) + 1), 'number', min=1, max=99, required=True),
                             field('emoji', 'Town Hall emoji', '', 'emoji', options_endpoint='/manage/town-halls/emojis')]
         return result
     if re.fullmatch(r'[1-9][0-9]?', item) is None or item not in doc['levels']:

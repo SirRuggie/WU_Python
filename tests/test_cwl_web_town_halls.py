@@ -367,3 +367,14 @@ async def test_inflight_old_base_read_cannot_refill_cache_after_minimum_cas():
     assert result==again=={'bases':[{'key':'th19','town_hall':19}]}
     assert req.app['base_bank_cache'][1]==result['bases']
     save.assert_awaited_once()
+
+
+def test_minimum_select_choices_are_strings_but_draft_value_is_integer():
+    field=api.document(fixture(),'settings')['fields'][0]
+    assert field['value']==12 and type(field['value']) is int
+    assert field['required'] is True
+    assert all(type(option['value']) is str for option in field['options'])
+    assert {option['value'] for option in field['options']}=={'11','12','19'}
+    add=api.document(fixture(),'add')
+    assert [field['key'] for field in add['fields']]==['level','emoji']
+    assert add['fields'][0]['required'] is True
