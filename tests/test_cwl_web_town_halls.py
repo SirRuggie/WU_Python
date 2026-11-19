@@ -13,6 +13,13 @@ from cwl_web import change_history, server_management as shared
 from test_town_halls import registry
 
 
+@pytest.fixture(autouse=True)
+def admin_permissions(monkeypatch):
+    # Existing244 tests exercise the admin contract;245 role combinations have
+    # separate permission regressions and do not inherit this fixture.
+    monkeypatch.setattr(api.bases, 'permissions', AsyncMock(return_value=(True, False)))
+
+
 def run_async(fn):
     @wraps(fn)
     def run(*args, **kwargs):
@@ -157,13 +164,13 @@ async def test_member_list_signed_in_only_cached_no_markup():
 def test_emoji_route_is_before_generic_and_history_targets():
     assert str(api.routes[0].path).endswith('/emojis')
     assert api.routes[0].handler is api.emojis
-    assert change_history.target_info('/manage/town-halls/19')==('town_halls','fwa_weight',{'item':'19'},'/api/cwl/manage/town-halls/19')
+    assert change_history.target_info('/manage/town-halls/19')==('town_halls','town_halls',{'item':'19'},'/api/cwl/manage/town-halls/19')
 
 
 @run_async
-@pytest.mark.parametrize('permission,allowed', [(8,True),(0,False)])
-async def test_native_permissions_match_existing_weight_check(permission,allowed):
-    actor={'permissions':permission,'role_ids':{993015846442127420}}
+@pytest.mark.parametrize('permission,roles,allowed', [(8,set(),True),(0,{993015846442127420},True),(0,set(),False)])
+async def test_native_permissions_match_admin_or_base_manager(permission,roles,allowed):
+    actor={'permissions':permission,'role_ids':roles}
     assert await shared.allowed(actor,'town_halls',object()) is allowed
 
 

@@ -55,7 +55,8 @@ def test_guard_action_sets_exactly_cover_every_persistent_child():
     assert CLAN_CHILD_ACTIONS == EXPECTED_CLAN_CHILDREN
     assert FWA_CHILD_ACTIONS == EXPECTED_FWA_CHILDREN
     assert CLAN_CHILD_ACTIONS.isdisjoint(FWA_CHILD_ACTIONS)
-    assert CLAN_CHILD_ACTIONS | FWA_CHILD_ACTIONS <= components.registered_functions.keys()
+    assert all(components._resolve(name) is not None
+               for name in CLAN_CHILD_ACTIONS | FWA_CHILD_ACTIONS)
 
 
 @pytest.mark.parametrize("action", ["remove_clan", "add_clan", "add_clan_modal", "clan_image_upload", "fwa_image_upload", "dashboard_image_submit"])
@@ -106,13 +107,13 @@ def test_dispatch_allows_current_role_for_nonmodal_opener_and_submit(
     assert any(event[0] == "defer" for event in ctx.events) is dispatcher_defers
 
 
-def test_all_six_legacy_modal_openers_have_opener_metadata():
+def test_retired_fwa_openers_are_nonmodal_dashboard_links():
     for action in (
         "fwa_image_upload",
         "fwa_update_link", "fwa_image_urls", "fwa_update_descriptions",
     ):
-        registration = components.registered_functions[action]
-        assert registration.opens_modal is True
+        registration = components._resolve(action)
+        assert registration.opens_modal is False
         assert registration.is_modal is False
 
 
@@ -131,45 +132,16 @@ def test_old_add_modal_redirects_without_clash_or_database_writes():
         ("fwa_descriptions_submit", {"base_information": "Info", "upgrade_notes": ""}),
     ],
 )
-def test_fwa_modal_submits_acknowledge_before_database(handler, field_values):
-    events = []
-
-    class Interaction:
-        member = SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=ROLE_ID),))
-        components = (tuple(
-            SimpleNamespace(custom_id=name, value=value)
-            for name, value in field_values.items()
-        ),)
-
-        async def create_initial_response(self, response_type):
-            events.append(("ack", response_type))
-
-        async def edit_initial_response(self, **_kwargs):
-            events.append(("edit",))
-
-    class FwaCollection:
-        async def update_one(self, *_args, **_kwargs):
-            events.append(("mongo",))
-            return SimpleNamespace(matched_count=1)
-
-        async def find_one(self, *_args, **_kwargs):
-            return {"_id": "fwa_config"}
-
-    interaction = Interaction()
-    ctx = SimpleNamespace(
-        interaction=interaction,
-        user=SimpleNamespace(id=123),
-        member=interaction.member,
-        respond=AsyncMock(),
-    )
-    from utils.manage_field_drafts import remember
-    fields = ["fwa_base_links.th16"] if handler == "fwa_link_submit" else ["base_information.th16", "base_upgrade_notes.th16"]
-    token = remember(123, handler + ":th16", {"_id": "fwa_config"}, fields)
+def test_retired_fwa_modal_submits_link_without_database(handler, field_values):
+    member = SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=ROLE_ID),))
+    ctx = SimpleNamespace(member=member, respond=AsyncMock())
+    collection = SimpleNamespace(find_one=AsyncMock(), update_one=AsyncMock())
     asyncio.run(getattr(fwa_data, handler).__wrapped__._func(
-        ctx=ctx,
-        action_id="th16|" + token,
-        mongo=SimpleNamespace(fwa_data=FwaCollection()),
+        ctx=ctx, action_id="th16|expired", mongo=SimpleNamespace(fwa_data=collection),
     ))
-
-    assert events[0] == ("ack", hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)
-    assert events.index(("ack", hikari.ResponseType.DEFERRED_MESSAGE_UPDATE)) < events.index(("mongo",))
+    collection.find_one.assert_not_awaited()
+    collection.update_one.assert_not_awaited()
+    payload = ctx.respond.await_args.kwargs
+    assert "Town Halls" in str(payload["components"][0].build())
+    assert payload["ephemeral"] is True
+    assert payload["user_mentions"] is payload["role_mentions"] is payload["mentions_everyone"] is False

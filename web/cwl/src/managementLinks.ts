@@ -27,6 +27,11 @@ export function townHallManagementPath(pathname: string): string | undefined {
     /^\/manage\/town-halls(?:\/(settings|add|[1-9][0-9]?))?$/,
   );
   if (current) return `/manage/town-halls${current[1] ? `/${current[1]}` : ""}`;
+  const legacyBase = path.match(
+    /^\/manage\/operations\/fwa_bases(?:\/th([1-9][0-9]?)(?:_new)?)?$/,
+  );
+  if (legacyBase)
+    return `/manage/town-halls${legacyBase[1] ? `/${legacyBase[1]}` : ""}`;
   const legacy =
     path.match(/^\/manage\/operations\/fwa_weight(?:\/([1-9][0-9]?))?$/) ||
     path.match(/^\/fwa_weight\/([1-9][0-9]?)$/);

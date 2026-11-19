@@ -11,6 +11,7 @@ from aiohttp import web
 
 from utils import town_halls as registry
 from . import server_management as shared
+from . import town_hall_bases as bases
 
 API = shared.API + '/town-halls'
 PATH = '/manage/town-halls'
@@ -28,7 +29,7 @@ def field(key, label, value, kind='text', **kwargs):
     return dict(key=key, label=label, value=value, type=kind, **kwargs)
 
 
-def document(doc, item=None, *, readonly=False):
+def document(doc, item=None, *, readonly=False, can_weight=True, can_bases=False):
     """Shape the registry without exposing stored metadata or Discord markup text."""
     result = dict(id='town_halls', label='Town Halls',
                   description='Emoji, weight range and bases for each Town Hall level.',
@@ -44,10 +45,21 @@ def document(doc, item=None, *, readonly=False):
         records.append(dict(id=str(level), label=f'Town Hall {level}', endpoint=f'{PATH}/{level}',
                             list_role='level', list_group='fwa' if level >= lowest else 'other',
                             meta=meta, emoji_url=emoji_url(registry.emoji_markup(doc, level))))
+    if not can_weight:
+        records = [record for record in records if record.get('list_role') != 'add' and record.get('list_group') != 'other']
+        records[0]['readonly'] = True
+        records[0].pop('endpoint', None)
+    for record in records:
+        if record.get('list_group') == 'fwa':
+            stored = doc['levels'][record['id']].get('bases', {})
+            shown = [label for key, label in [('merged', 'Merged'), ('non_merged', 'Non-merged')] if stored.get(key, {}).get('link')]
+            record['bases_meta'] = ' · '.join(shown) or 'Hidden from members'
     result['documents'] = records
     if item is None:
         return result
     result['endpoint'] = PATH + '/' + item
+    if item in ('settings', 'add') and not can_weight:
+        raise web.HTTPForbidden(text='Only server admins can change Town Hall settings.')
     if item == 'settings':
         result['label'] = 'Lowest FWA Town Hall'
         result['fields'] = [field('lowest_fwa_town_hall', 'Lowest FWA Town Hall', lowest, 'select',
@@ -62,6 +74,8 @@ def document(doc, item=None, *, readonly=False):
     if re.fullmatch(r'[1-9][0-9]?', item) is None or item not in doc['levels']:
         raise web.HTTPNotFound(text='This Town Hall is not in the list.')
     level = int(item)
+    if level < lowest and not can_weight:
+        raise web.HTTPNotFound(text='This Town Hall is not available for bases.')
     result.update(label=f'Town Hall {level}', level=level, emoji_url=emoji_url(registry.emoji_markup(doc, level)),
                   lowest_fwa_town_hall=lowest)
     result['fields'] = [field('emoji', 'Town Hall emoji', registry.emoji_markup(doc, level), 'emoji',
@@ -74,6 +88,12 @@ def document(doc, item=None, *, readonly=False):
             result['warning'] = 'Add a weight range to use this level for FWA.'
     else:
         result['help'] = f'Weights and bases are for TH{lowest} and up.'
+    for entry in result['fields']:
+        entry['readonly'] = not can_weight
+    if not can_weight and (not can_bases or doc['schema_version'] != 2):
+        result['readonly'] = True
+    if level >= lowest and doc['schema_version'] == 2:
+        bases.decorate(result, doc, level, can_weight=can_weight, can_bases=can_bases)
     return result
 
 
@@ -85,10 +105,13 @@ async def required(db):
 
 
 async def read(request):
-    await shared.require_manage(request, 'fwa_weight')
+    actor = await shared.require_manage(request, 'town_halls')
     async with shared.mongo(request) as db:
         doc = await required(db)
-    return web.json_response(document(doc, request.match_info.get('item')))
+        can_weight, can_bases = await bases.permissions(actor, db)
+    return web.json_response(document(doc, request.match_info.get('item'),
+                                      readonly=not (can_weight or can_bases),
+                                      can_weight=can_weight, can_bases=can_bases))
 
 
 class RefreshRequest:
@@ -111,7 +134,7 @@ class RefreshRequest:
 async def save(request):
     from .app import _json
     from . import change_history
-    actor = await shared.require_manage(request, 'fwa_weight', write=True)
+    actor = await shared.require_manage(request, 'town_halls', write=True)
     body = await _json(request)
     item = request.match_info.get('item')
     if not isinstance(body, dict) or type(body.get('revision')) is not int or not isinstance(body.get('values'), dict):
@@ -124,13 +147,27 @@ async def save(request):
     try:
         async with shared.mongo(request) as db:
             current = await required(db)
-            if current['revision'] != body['revision']:
-                raise registry.TownHallsConflict(registry.CONFLICT_MESSAGE)
-            before = document(current, item)
+            can_weight, can_bases = await bases.permissions(actor, db)
+            before = document(current, item, can_weight=can_weight, can_bases=can_bases)
             values = body['values']
-            allowed = {entry['key'] for entry in before['fields']}
-            if set(values) != allowed:
+            allowed = {entry['key'] for entry in before['fields'] if not entry.get('readonly')}
+            if not values or not set(values) <= allowed:
+                raise web.HTTPForbidden(text='You cannot change these Town Hall fields.')
+            if not before.get('partial_save') and set(values) != allowed:
                 raise ValueError('Review all fields on this page before saving.')
+            base_values = {key[len(bases.PREFIX):]: value for key, value in values.items() if key.startswith(bases.PREFIX)}
+            admin_values = {key: value for key, value in values.items() if not key.startswith(bases.PREFIX)}
+            if admin_values and not can_weight or base_values and not can_bases:
+                raise web.HTTPForbidden(text='You cannot change these Town Hall fields.')
+            originals = body.get('originals', {})
+            if not isinstance(originals, dict) or set(originals) != {bases.PREFIX + key for key in base_values}:
+                raise ValueError('Review the original base values before saving.')
+            base_originals = {key: originals[bases.PREFIX + key] for key in base_values}
+            restore = getattr(request, 'history_base_restore', None)
+            if restore is not None and getattr(request, 'history_action', None) != 'restore':
+                raise ValueError('Review the saved base version before restoring.')
+            if admin_values and current.get('nonbase_revision', current['revision']) > body['revision']:
+                raise registry.TownHallsConflict(registry.CONFLICT_MESSAGE)
             if item == 'add':
                 updated = registry.add_level(current, values['level'], values['emoji'])
                 destination = str(values['level'])
@@ -139,28 +176,39 @@ async def save(request):
                 destination = item
             elif item and re.fullmatch(r'[1-9][0-9]?', item):
                 updated = deepcopy(current)
-                updated['levels'][item]['emoji'] = values['emoji']
-                if int(item) >= current['lowest_fwa_town_hall']:
-                    if values['min'] is None and values['max'] is None:
-                        updated['levels'][item].pop('weight', None)
-                    else:
-                        updated['levels'][item]['weight'] = {'min': values['min'], 'max': values['max']}
-                registry.validate(updated)
+                if 'emoji' in admin_values:
+                    updated['levels'][item]['emoji'] = values['emoji']
+                if {'min', 'max'} & set(admin_values):
+                    old_weight = updated['levels'][item].get('weight', {})
+                    minimum = values.get('min', old_weight.get('min'))
+                    maximum = values.get('max', old_weight.get('max'))
+                    updated = registry.set_weight(updated, int(item), minimum, maximum)
                 destination = item
             else:
                 raise ValueError('Open a Town Hall or setting before saving.')
+            if admin_values:
+                updated['revision'] = body['revision']
+                saved = await registry.save(db, shared.GUILD_ID, updated, int(actor['user_id']), body['revision'],
+                                            **({'base_level': int(item), 'base_values': base_values, 'base_originals': base_originals, **({'base_restore': restore} if restore is not None else {})} if base_values else {}))
+            else:
+                saved = await registry.save_base_fields(db, shared.GUILD_ID, int(item), base_values, base_originals, int(actor['user_id']), **({'restore': restore} if restore is not None else {}))
             target = '/api/cwl' + PATH + '/' + destination
-            saved = await registry.save(db, shared.GUILD_ID, updated, int(actor['user_id']), body['revision'])
-            if current['lowest_fwa_town_hall'] != saved['lowest_fwa_town_hall']:
+            if base_values or current['lowest_fwa_town_hall'] != saved['lowest_fwa_town_hall']:
                 from .base_bank import invalidate
                 invalidate(request.app)
-            result = document(saved, destination)
+            result = document(saved, destination, can_weight=can_weight, can_bases=can_bases)
             warnings = []
             try:
                 history_before = {} if item == 'add' else change_history.fields(before)
                 history_after = change_history.fields(result)
                 if item == 'add':
+                    # Add creates only Town Hall values, never blank base fields.
+                    history_after = {entry['key']: entry['value'] for entry in result['fields'] if entry.get('group') == 'Town Hall'}
                     history_after['level'] = int(destination)
+                elif before.get('partial_save'):
+                    # A concurrent unrelated base/admin edit is not this Save's history.
+                    history_before = {key: value for key, value in history_before.items() if key in values}
+                    history_after = {key: value for key, value in history_after.items() if key in values}
                 await change_history.record_committed(
                     db, target, actor, history_before, history_after,
                     event_id=f'dashboard-history:town-halls:{shared.GUILD_ID}:{saved["revision"]}',
@@ -170,8 +218,8 @@ async def save(request):
             except Exception:
                 LOG.warning('Town Halls revision %s saved but history could not be recorded.', saved['revision'])
                 result['history_saved'] = False
-    except registry.TownHallsConflict:
-        raise web.HTTPConflict(text=registry.CONFLICT_MESSAGE) from None
+    except registry.TownHallsConflict as exc:
+        raise web.HTTPConflict(text=str(exc)) from None
     except ValueError as exc:
         raise web.HTTPBadRequest(text=str(exc)) from None
     # Save is already committed. Never report a failed enqueue as an unsaved edit.
@@ -237,5 +285,5 @@ async def emojis(request):
     return web.json_response({'emojis': result, 'errors': errors})
 
 
-routes = [web.get(API + '/emojis', emojis), web.get('/api/cwl/town-halls', member_list),
+routes = [web.get(API + '/emojis', emojis), web.post(API + '/{item}/upload/{slot}', bases.upload), web.get('/api/cwl/town-halls', member_list),
           web.get(API, read), web.get(API + '/{item}', read), web.patch(API + '/{item}', save)]

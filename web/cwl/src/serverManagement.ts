@@ -47,6 +47,8 @@ export type ManagementSection = {
   meta?: string;
   value?: string;
   emoji_url?: string | null;
+  bases_meta?: string;
+  readonly?: boolean;
   return_status?: ReturnStatus;
   id: string;
   label: string;
@@ -57,6 +59,11 @@ export type ManagementSection = {
   destination?: string;
 };
 export type ManagementDocument = ManagementSection & {
+  base_management?: boolean;
+  partial_save?: boolean;
+  section_readonly?: Record<string, boolean>;
+  base_status?: Record<string, boolean>;
+  base_originals?: Record<string, { exists: boolean; value?: string }>;
   create?: boolean;
   submit_label?: string;
   level?: number;

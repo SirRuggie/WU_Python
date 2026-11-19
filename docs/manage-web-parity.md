@@ -8,23 +8,23 @@ Audited 2026-10-15 against current source, not only the older management guide. 
 
 ## Feature and permission inventory
 
-| Native workspace | Required web controls | Existing source / store | Native authorization |
-|---|---|---|---|
-| Roles | Member lookup; select up to 25 roles; add/remove; full paginated role membership | `role_management.py`, `recruit/perms.py`, `utils/role_permissions.py`; Discord | Configured recruiters or Administrator; recheck actor, target and bot hierarchy on every action |
-| Recruit Gauntlet | Choose About Us/Strike System/Family Particulars; edit grouped text, artwork, channel; preview, save, load published copy, send/update | `content.py`; `bot_config` content/destination/published keys; MediaStore | Manage Server or Administrator |
-| Recruitment Staff Thread | Main/FWA staff notices and talking points, preview/save/reset | `ticket_staff_content.load/save`; `ticket_staff_templates` | Manage Server or Administrator |
-| Recruitment Questions | Primary/FWA/Explanation/Keep It Moving variants; grouped text, accent, media; preview/save/reset | `recruit_question_content.load_template/save_template/reset_template`; `bot_config` | Manage Server or Administrator |
-| Ticket Settings | Main/FWA channels and recruiter roles; extra viewers; inactivity review and resolved archive timers; setup check; restore entry/console messages | `tickets/settings.py`, `thread_service.py`, `ticket_runtime`; `ticket_setup` config + settings audit | Target-server Administrator |
-| Ticket Testing | Open/close isolated window; expiry and cleanup; tester members/roles/admin toggle; own access; Main/FWA test tickets; clear test tickets | `ticket_testing_control.py`, `tickets/testing_service.py`; isolated test namespace | Target-server Administrator controls; allowed testers can open test tickets |
-| FWA Bases & Guidance | TH selection; base link; war/active image uploads or URLs; descriptions/guide | `clan/dashboard/fwa_data.py`; `fwa_data` `_id=fwa_config` | FWA Representative role `993015846442127420` |
-| FWA War Message Templates | Four variants; grouped text, artwork, accent; preview/reset; submitted edits auto-save | `fwa_war_content.load_template/save_template/reset_template`; `bot_config` | FWA Clan Rep role `769130325460254740` (admin alone is not a bypass) |
-| FWA Blacklist | Search/page; add tag/name/reason; remove with confirmation | `utils/fwa_blacklist.py`; `fwa_blacklist` | Server members read; FWA Clan Rep role writes |
-| FWA Points Monitor | Status/results; enable/disable; add/remove manually watched extras | `tasks/fwa_points_monitor.py`; `fwa_points` and monitor config | Administrator |
-| FWA Sync & Reminders | State/next sync/recent results; enable/disable; destination; fallback BAND link; check feed; test DM | `tasks/band_sync_ical.py`; `fwa_sync_config`, `fwa_sync_events`, `fwa_sync_deliveries` | Administrator |
-| BAND Monitor | Runtime poll health/startup recovery/last error; debug enable/disable | `tasks/band_monitor.py` process globals | Administrator |
-| Town Halls | Dashboard-only list, Add, lowest FWA level, exact emoji and weight editing; Discord /manage links to the dashboard | `utils/town_halls.py`; routed `town_halls` registry; legacy weights retained read-only | Existing `fwa_weight` Administrator / dashboard `fwa` scope |
-| CWL | Existing message/reminder controls plus native final-roster publish parity | `cwl_campaign`, `cwl_web_bridge`; bot config + queues | Native Administrator; existing web explicitly granted editor access must remain scoped to CWL |
-| CWL Return Pings | Main/FWA/all/individual scope; save current members; replace/clear list; add/remove saved players; away status; send now; FWA start/pause/resume/frequency; failed-only retry | `lazy_cwl_service.py`, `lazy_cwl_store.py`; native saved snapshots | Administrator |
+| Native workspace          | Required web controls                                                                                                                                                         | Existing source / store                                                                              | Native authorization                                                                            |
+| ------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ---------------------------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------- |
+| Roles                     | Member lookup; select up to 25 roles; add/remove; full paginated role membership                                                                                              | `role_management.py`, `recruit/perms.py`, `utils/role_permissions.py`; Discord                       | Configured recruiters or Administrator; recheck actor, target and bot hierarchy on every action |
+| Recruit Gauntlet          | Choose About Us/Strike System/Family Particulars; edit grouped text, artwork, channel; preview, save, load published copy, send/update                                        | `content.py`; `bot_config` content/destination/published keys; MediaStore                            | Manage Server or Administrator                                                                  |
+| Recruitment Staff Thread  | Main/FWA staff notices and talking points, preview/save/reset                                                                                                                 | `ticket_staff_content.load/save`; `ticket_staff_templates`                                           | Manage Server or Administrator                                                                  |
+| Recruitment Questions     | Primary/FWA/Explanation/Keep It Moving variants; grouped text, accent, media; preview/save/reset                                                                              | `recruit_question_content.load_template/save_template/reset_template`; `bot_config`                  | Manage Server or Administrator                                                                  |
+| Ticket Settings           | Main/FWA channels and recruiter roles; extra viewers; inactivity review and resolved archive timers; setup check; restore entry/console messages                              | `tickets/settings.py`, `thread_service.py`, `ticket_runtime`; `ticket_setup` config + settings audit | Target-server Administrator                                                                     |
+| Ticket Testing            | Open/close isolated window; expiry and cleanup; tester members/roles/admin toggle; own access; Main/FWA test tickets; clear test tickets                                      | `ticket_testing_control.py`, `tickets/testing_service.py`; isolated test namespace                   | Target-server Administrator controls; allowed testers can open test tickets                     |
+| Town Hall bases           | Dashboard-only shared war/active images and per-variant links/instructions/upgrade notes; Discord edit/upload controls link to each FWA level                                 | `utils/town_halls.py`; registry `levels.<n>.bases`; legacy `fwa_config` retained for migration only  | Existing FWA Representative role `993015846442127420`                                           |
+| FWA War Message Templates | Four variants; grouped text, artwork, accent; preview/reset; submitted edits auto-save                                                                                        | `fwa_war_content.load_template/save_template/reset_template`; `bot_config`                           | FWA Clan Rep role `769130325460254740` (admin alone is not a bypass)                            |
+| FWA Blacklist             | Search/page; add tag/name/reason; remove with confirmation                                                                                                                    | `utils/fwa_blacklist.py`; `fwa_blacklist`                                                            | Server members read; FWA Clan Rep role writes                                                   |
+| FWA Points Monitor        | Status/results; enable/disable; add/remove manually watched extras                                                                                                            | `tasks/fwa_points_monitor.py`; `fwa_points` and monitor config                                       | Administrator                                                                                   |
+| FWA Sync & Reminders      | State/next sync/recent results; enable/disable; destination; fallback BAND link; check feed; test DM                                                                          | `tasks/band_sync_ical.py`; `fwa_sync_config`, `fwa_sync_events`, `fwa_sync_deliveries`               | Administrator                                                                                   |
+| BAND Monitor              | Runtime poll health/startup recovery/last error; debug enable/disable                                                                                                         | `tasks/band_monitor.py` process globals                                                              | Administrator                                                                                   |
+| Town Halls                | Dashboard-only list, Add, lowest FWA level, exact emoji and weight editing; Discord /manage links to the dashboard                                                            | `utils/town_halls.py`; routed `town_halls` registry; legacy weights retained read-only               | Existing `fwa_weight` Administrator / dashboard `fwa` scope                                     |
+| CWL                       | Existing message/reminder controls plus native final-roster publish parity                                                                                                    | `cwl_campaign`, `cwl_web_bridge`; bot config + queues                                                | Native Administrator; existing web explicitly granted editor access must remain scoped to CWL   |
+| CWL Return Pings          | Main/FWA/all/individual scope; save current members; replace/clear list; add/remove saved players; away status; send now; FWA start/pause/resume/frequency; failed-only retry | `lazy_cwl_service.py`, `lazy_cwl_store.py`; native saved snapshots                                   | Administrator                                                                                   |
 
 ## Integration constraints
 
@@ -50,7 +50,7 @@ One Server Management home with short grouped cards (Recruitment, War tools, Ser
 2. Permission rules are distributed between entry routing and action handlers; maintain a shared capability layer to prevent future Discord/web divergence.
 3. Points monitor disabling cancels process-local retry tasks. A web Mongo-only flag update cannot claim those tasks were cancelled immediately.
 4. BAND debug is runtime-only and resets from environment on restart; label this explicitly or persist intent through the actual bot worker.
-5. FWA Bases & Guidance uses direct field updates without the template revision pattern; concurrent edits need field-aware CAS protection in both interfaces.
+5. Town Hall bases use the registry owner's per-field CAS. Discord base editing and uploads are retired; old controls recheck the existing role and return dashboard links without downloading, uploading or saving data.
 6. Some onboarding edits and channels are saved through different paths; a single generic JSON editor would obscure publication and unsaved-draft semantics.
 7. Full role-member lists depend on Discord member lookup availability; failures must not appear as an empty role.
 8. Native return pings and dashboard assignment rosters have different purposes; call the former Return reminders, not a second Roster builder.
@@ -110,6 +110,7 @@ Copy reviewed across Home, Todo, signups/settings, member roles, message editors
 Verification:86frontend tests and92management backend tests passed. Isolated desktop/mobile browsing and selected-member persistence checked. Live Discord browse/search probes returned200; no roles were changed. Deployed index-DVmXXGby.js, webservice active, unauthenticated member endpoint401. Rollback copies `.local/pre-member-picker-20261015-141526` in workspace and bot repository.
 
 ### Dashboard access areas (2026-10-15)
+
 Owners manage six explicit areas under Server settings → Access: CWL management, recruitment messages, tickets, member roles, FWA tools, and server tools (BAND). No area grants access-management rights. The Discord server owner and permanent owner retain all areas. Native Discord `/manage` authorization is unchanged; web authorization no longer inherits general Discord administrator access.
 
 Legacy SQLite grants migrate to CWL-only permissions. Server-management grants are mirrored in the existing Mongo bot_config collection as dashboard-access:<user ID>; the web checks both local and shared grants, and the bot worker rereads shared grants before executing queued work. Revocation removes shared access before local access. Shared-store outages fail closed. Role edits retain the existing actor/bot hierarchy checks. Ticket testing uses a trusted worker context with a fresh scoped check; native interactions retain their original administrator checks.
@@ -117,6 +118,7 @@ Legacy SQLite grants migrate to CWL-only permissions. Server-management grants a
 Validation: 132 backend tests and 87 frontend tests passed; production build served, protected access endpoint returned 401 unauthenticated, dashboard and bot services active after restart. Rollback assets and SQLite snapshot: .local/pre-scoped-access-20261015-142820. No staff grants existed at migration; no users were automatically added.
 
 ### Command triggers (2026-10-15)
+
 Server settings → Command triggers is a separate editor with its own `text_commands` access scope. Owners can delegate it without granting CWL or other server tools. Commands are exact, case-insensitive names beginning with `!`; replies support plain Discord text and an optional embed card with title, description, HTTPS image URL and color. Saving does not send a message. Commands can be enabled, disabled, edited or deleted, with revision checks for stale updates/deletes and `_id` uniqueness for duplicates.
 
 Storage: `text_commands` in the configured bot_config database (currently settings), IDs `<guild>:<command>`, majority writes, no TTL. This database is included in existing whole-database Mongo backups. Bot and web share validation and collection routing through utils/text_commands.py. Guild-only handler ignores bots/webhooks, suppresses mentions and limits each channel/command to one reply per five seconds. It reads the saved definition on invocation; no restart is needed after editing. No scripting, argument substitution, aliases or wildcard triggers. Native /manage is unchanged.
@@ -128,13 +130,31 @@ Validation: 135 backend tests and 88 frontend tests passed; desktop editor and 3
 Member search now matches case-insensitive substrings in server nicknames, global display names and usernames. A complete Discord member directory is fetched in 1,000-member pages and cached for 60 seconds, with concurrent loads serialized and incomplete loads discarded. Matching results are capped at 100 with a narrow-search indication. Exact ID lookup and ordinary browse pagination are unchanged; mutation authorization still reads live Discord data. Verified against 1,476 live members and 18 relevant passing tests (2026-10-15).
 
 ### Focused settings navigation (2026-10-15)
+
 The sidebar replaces the generic Server management entry with Members & roles, Applications & tickets, FWA tools, Command triggers, Connections, and owner-only Access. Visibility follows existing explicit scopes; Applications & tickets combines the recruitment and tickets scopes without granting either implicitly. CWL return reminders are now under CWL management. Existing editor endpoints, previews, mutation safeguards and native Discord commands are reused unchanged.
 
 Application settings are grouped into Messages, Questions, Staff messages, Channels & access, and Testing. FWA settings separate War messages from Clan tools. Each workspace keeps scoped search and bounded page sizes, and resets editor state when switching areas after the unsaved-change check. Verified with 91 frontend tests, 5 access-boundary tests, production build, and isolated desktop/mobile catalog checks.
 
 ### Unified message editing and publishing (2026-10-15)
+
 Public onboarding message editors now include publishing controls on the same screen. Saved previews load on opening; neither editing nor saving is required to preview. Draft previews remain separate from persistence. Publishing uses only saved content and retains existing queue idempotency, revision/live-post checks and native delivery gates. New-post and existing-post destinations are named separately. Posting channels can be changed inline with the existing optimistic destination editor. Apply can update its existing post; new Apply posts remain ticket-setup controlled. Private ticket/question/war templates continue through their normal bot flows.
 
 Duplicate Publish catalog tiles were removed; their API routes remain supported. Copy from Discord and Reset to default live in a closed More options disclosure, with explicit reset confirmation. Pending publishing disables message edits and duplicate publishing controls while status is polled.
 
 Validation: 93 frontend and 102 backend tests passed. Desktop and mobile fixture checks confirmed saved preview before edits, unsaved-edit publishing lock, and recovery grouping. Read-only live checks passed for all five public onboarding messages and their destinations. No live posts, resets or template edits were made during testing. Rollback: .local/pre-message-publish-20261015-145649.
+
+## Town Hall bases (245) native read contract
+
+FWA bases, upgrade notes and recruitment selectors use the registry snapshot's
+linked FWA variants, highest level first and Merged before Non-merged. Images are
+shared by both variants. Existing `th19` and `th19_new` values still parse; a
+stale selection whose link disappeared returns a private no-link message and
+never posts. Menus keep at most 25 choices through the registry owner. Missing
+snapshots keep the selector unavailable rather than falling back to legacy maps.
+
+Startup and the existing image refresh hook publish delivery-optimized shared
+images under both old cache keys. Failed reads retain the last cache. The queued
+Town Halls refresh accepts the existing admin or base-manager edit permission;
+it refreshes snapshots only and sends no Discord message. Native base delivery
+retains its explicit selected-recipient mention scope. These statements are
+source/fixture contracts, not proof of live Discord delivery.

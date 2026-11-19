@@ -130,3 +130,21 @@
     padding-left: 0;
   }
 }
+
+.town-hall-record-bases {
+  padding-left: calc(32px + var(--wu-space-3));
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+@media (min-width: 900px) {
+  .town-hall-record.has-bases,
+  .town-hall-column-headings.has-bases {
+    grid-template-columns: minmax(0, 1.2fr) minmax(150px, 1fr) minmax(
+        170px,
+        1fr
+      );
+  }
+  .town-hall-record-bases {
+    padding-left: 0;
+  }
+}

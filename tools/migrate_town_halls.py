@@ -97,8 +97,116 @@ def _digest(doc):
     return hashlib.sha256(encoded).hexdigest()
 
 
-async def migrate(mongo, guild_id, *, apply=False):
+BASE_MAPS = ("fwa_base_links", "base_information", "base_upgrade_notes", "war_base_images", "active_base_images")
+
+
+def build_bases_registry(current, legacy):
+    """Copy shared images and variant text without touching either input."""
+    town_halls.validate(current)
+    if not isinstance(legacy, dict) or legacy.get("_id") != "fwa_config":
+        raise ValueError("Legacy FWA base configuration is missing.")
+    result = deepcopy(current)
+    result["schema_version"] = 2
+    result["nonbase_revision"] = current.get("nonbase_revision", current["revision"])
+    copied, differences, hidden = [], [], set()
+    maps = {}
+    for name in BASE_MAPS:
+        values = legacy.get(name, {})
+        if not isinstance(values, dict):
+            raise ValueError(f"Legacy {name} must be a map.")
+        maps[name] = values
+        for key, value in values.items():
+            if value == "":
+                continue
+            if not isinstance(value, str):
+                raise ValueError(f"Legacy {name} contains a non-text base value.")
+            level, variant = town_halls.parse_variant_value(key)
+            if str(level) not in result["levels"]:
+                result["levels"][str(level)] = {"emoji": ""}
+            if level < current["lowest_fwa_town_hall"]:
+                hidden.add(level)
+            bases = result["levels"][str(level)].setdefault("bases", {})
+            if name in ("war_base_images", "active_base_images"):
+                # Select shared image below, after comparing both old variants.
+                continue
+            field = {"fwa_base_links": "link", "base_information": "instructions", "base_upgrade_notes": "upgrade_notes"}[name]
+            bases.setdefault(variant, {})[field] = value
+            copied.append({"source_map": name, "key": key, "destination": f"levels.{level}.bases.{variant}.{field}"})
+    for level, item in result["levels"].items():
+        for name, slot in (("war_base_images", "war_image"), ("active_base_images", "active_image")):
+            merged = maps[name].get(f"th{level}", "")
+            non_merged = maps[name].get(f"th{level}_new", "")
+            if merged and non_merged and merged != non_merged:
+                differences.append({"level": int(level), "slot": slot, "merged_url": merged, "non_merged_url": non_merged, "selected": "Merged"})
+            chosen = merged or non_merged
+            if chosen:
+                item.setdefault("bases", {})[slot] = chosen
+                key = f"th{level}" + ("_new" if not merged else "")
+                copied.append({"source_map": name, "key": key, "destination": f"levels.{level}.bases.{slot}"})
+    town_halls.validate(result)
+    return result, copied, differences, sorted(hidden)
+
+
+def base_counts(doc):
+    entries = (doc or {}).get("levels", {})
+    return {
+        "levels_with_bases": sum("bases" in item for item in entries.values()),
+        "merged_links": sum(bool(item.get("bases", {}).get("merged", {}).get("link")) for item in entries.values()),
+        "non_merged_links": sum(bool(item.get("bases", {}).get("non_merged", {}).get("link")) for item in entries.values()),
+        "war_images": sum(bool(item.get("bases", {}).get("war_image")) for item in entries.values()),
+        "active_images": sum(bool(item.get("bases", {}).get("active_image")) for item in entries.values()),
+    }
+
+
+async def migrate_bases(mongo, guild_id, *, apply=False):
+    """One bases-only migration, with exact legacy readback and no retries."""
+    current = await town_halls.load(mongo, guild_id)
+    if current is None:
+        raise town_halls.TownHallsMissing(town_halls.MISSING_MESSAGE)
+    legacy = await mongo.fwa_data.find_one({"_id": "fwa_config"})
+    legacy_before = deepcopy(legacy)
+    before = {"town_halls_documents": await town_halls.migration_count(mongo),
+              "registry": base_counts(current),
+              "legacy_maps": {name: len((legacy or {}).get(name, {})) for name in BASE_MAPS}}
+    if any("bases" in item for item in current["levels"].values()):
+        proposed, copied, differences, hidden = current, [], [], []
+        status, applied = "already migrated", False
+    else:
+        proposed, copied, differences, hidden = build_bases_registry(current, legacy)
+        applied = await town_halls.apply_bases_migration(mongo, guild_id, current, proposed) if apply and copied else False
+        status = "migrated" if applied else "no base data" if not copied else "dry run" if not apply else "already migrated"
+        if apply and copied and not applied:
+            actual = await town_halls.load(mongo, guild_id)
+            if actual is None or not any("bases" in item for item in actual["levels"].values()):
+                raise ValueError("Town Halls changed during the bases migration; no retry attempted.")
+    actual = await town_halls.load(mongo, guild_id)
+    if actual is None:
+        raise ValueError("The registry readback is missing; no retry attempted.")
+    if applied:
+        expected = {key: value.get("bases") for key, value in proposed["levels"].items()}
+        observed = {key: value.get("bases") for key, value in actual["levels"].items()}
+        if _digest({"bases": expected}) != _digest({"bases": observed}):
+            raise ValueError("The migrated base fields changed after apply; no retry attempted.")
+    legacy_after = await mongo.fwa_data.find_one({"_id": "fwa_config"})
+    if _digest(legacy_before) != _digest(legacy_after):
+        raise ValueError("Legacy FWA configuration changed; no legacy write or restoration attempted.")
+    after = {"town_halls_documents": await town_halls.migration_count(mongo),
+             "registry": base_counts(actual),
+             "legacy_maps": {name: len((legacy_after or {}).get(name, {})) for name in BASE_MAPS}}
+    if before["town_halls_documents"] != after["town_halls_documents"] or before["legacy_maps"] != after["legacy_maps"]:
+        raise ValueError("Migration source counts changed; no retry attempted.")
+    return {"mode": "bases", "status": status, "apply": apply, "applied": applied,
+            "guild_id": str(guild_id), "copied_keys": copied, "image_differences": differences,
+            "copied_below_lowest_fwa": hidden, "counts_before": before, "counts_after": after,
+            "proposed_registry_counts": base_counts(proposed),
+            "legacy_document_sha256_before": _digest(legacy_before),
+            "legacy_document_sha256_after": _digest(legacy_after), "legacy_unchanged": True}
+
+
+async def migrate(mongo, guild_id, *, apply=False, bases=False):
     """Perform a fixture-testable dry run or one insert; no automatic retries."""
+    if bases:
+        return await migrate_bases(mongo, guild_id, apply=apply)
     legacy_collection = collection_from(mongo.fwa_data, "war_weight_settings")
     before = {
         "war_weight_settings": await legacy_collection.count_documents({}),
@@ -144,12 +252,12 @@ async def migrate(mongo, guild_id, *, apply=False):
     }
 
 
-async def _run(uri, guild_id, *, apply=False):
+async def _run(uri, guild_id, *, apply=False, bases=False):
     # Client creation and dotenv loading stay in the CLI, never module import.
     from utils.mongo import MongoClient
     mongo = MongoClient(uri, connect=False)
     try:
-        return await migrate(mongo, guild_id, apply=apply)
+        return await migrate(mongo, guild_id, apply=apply, bases=bases)
     finally:
         await mongo.close()
 
@@ -159,6 +267,7 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", action="store_true", help="report the copy without writing (default)")
     modes.add_argument("--apply", action="store_true", help="insert only after explicit release/migration authorization")
+    parser.add_argument("--bases", action="store_true", help="copy legacy bases into the existing registry (schema2)")
     parser.add_argument("--guild-id", required=True, type=int)
     parser.add_argument("--report", type=Path, help="new JSON report under this checkout's .local directory")
     args = parser.parse_args(argv)
@@ -175,7 +284,7 @@ def main(argv=None):
     report_path = report_path.absolute()
     if not report_path.resolve().is_relative_to(local.resolve()) or report_path.exists():
         parser.error("--report must be a new file under this checkout's .local directory")
-    report = asyncio.run(_run(uri, args.guild_id, apply=args.apply))
+    report = asyncio.run(_run(uri, args.guild_id, apply=args.apply, bases=args.bases))
     encoded = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("x", encoding="utf-8") as stream:

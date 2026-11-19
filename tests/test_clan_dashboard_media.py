@@ -38,17 +38,6 @@ def test_root_dashboard_needs_no_attachment_upload(guild_state):
         guild.make_icon_url.assert_called_once_with(size=256)
 
 
-def test_fwa_editor_preserves_base_images_without_file_uploads():
-    war = "https://img.example.com/war.png"
-    active = "https://img.example.com/active.png"
-    panels = build_th_edit_components("th16", "", "", "", war, active)
-    rest = object.__new__(RESTClientImpl)
-    body, form = rest._build_message_payload(components=panels)
-    assert form is None
-    assert not body.get("attachments")
-    payload = body["components"][0]
-    galleries = [c for c in payload["components"] if c["type"] == 12]
-    assert [g["items"][0]["media"]["url"] for g in galleries] == [war, active]
 
 
 def test_clan_image_panel_redirects_read_only():
@@ -60,72 +49,27 @@ def test_clan_image_panel_redirects_read_only():
     assert "https://img.example.com/logo.png" in text
     assert "https://dash.warriorsunited.cc/clans/%23ABC" in text
 
-def test_fwa_image_panel_targets_each_base_for_selected_town_hall():
-    from extensions.commands.clan.dashboard.fwa_data import fwa_update_images
-    panels = asyncio.run(fwa_update_images.__wrapped__._func(
-        ctx=SimpleNamespace(), action_id="th18_new",
-    ))
-    payload, _ = panels[0].build()
-    buttons = [b for row in payload["components"] if row["type"] == 1
-               for b in row["components"]]
-    assert {"fwa_image_upload:war:th18_new", "fwa_image_upload:active:th18_new"} <= {
-        b["custom_id"] for b in buttons
-    }
 
 
-def test_legacy_image_commands_are_removed_but_native_actions_remain():
-    from extensions.commands.clan import clan
-    from extensions.commands.fwa import fwa
-    from extensions.commands.help_catalog import command_paths
-    from extensions.components import registered_functions
-
-    assert "upload-images" not in clan.subcommands
-    assert "upload-images" not in fwa.subcommands
-    assert "/clan upload-images" not in command_paths()
-    assert "/fwa upload-images" not in command_paths()
-    assert not registered_functions["clan_image_upload"].opens_modal
-    assert registered_functions["fwa_image_upload"].opens_modal
-    assert registered_functions["dashboard_image_submit"].is_modal
 
 
-def test_old_fwa_instruction_button_keeps_native_upload_controls():
-    from extensions.commands.clan.dashboard import fwa_data
-    panels = asyncio.run(fwa_data.fwa_upload_guide.__wrapped__._func(ctx=SimpleNamespace(), action_id="th16"))
-    payload = panels[0].build()[0]
-    rows = [c for c in payload["components"] if c["type"] == 1]
-    assert {"fwa_image_upload:war:th16", "fwa_image_upload:active:th16"} <= {b["custom_id"] for row in rows for b in row["components"]}
 
-def test_managed_fwa_upload_modal_carries_home_through_return_navigation():
+
+
+
+
+def test_fwa_editor_is_link_only_without_attachment_uploads():
+    panels=build_th_edit_components('th19','','','','https://example.org/war.jpg','https://example.org/active.jpg')
+    rest=object.__new__(RESTClientImpl)
+    body,form=rest._build_message_payload(components=panels)
+    assert form is None and not body.get('attachments')
+    assert 'Town Hall bases are managed on the dashboard.' in str(body)
+    assert 'https://example.org/war.jpg' not in str(body)
+
+
+def test_old_image_actions_remain_but_do_not_open_upload_modals():
     from extensions.commands.clan.dashboard import image_uploads
-
-    source = SimpleNamespace(components=(
-        __import__("hikari").impl.ContainerComponentBuilder(components=[
-            __import__("hikari").impl.MessageActionRowBuilder(components=[
-                __import__("hikari").impl.InteractiveButtonBuilder(
-                    style=__import__("hikari").ButtonStyle.SECONDARY,
-                    custom_id="manage_home:shared-token", label="Management Home",
-                )
-            ])
-        ]),
-    ))
-    member = SimpleNamespace(get_roles=lambda: (SimpleNamespace(id=image_uploads.ROLE_ID),))
-    interaction = SimpleNamespace(guild_id=2, user=SimpleNamespace(id=1), channel_id=3, message=SimpleNamespace(id=4, components=source.components))
-    ctx = SimpleNamespace(interaction=interaction, member=member, respond=AsyncMock(), respond_with_modal=AsyncMock())
-    mongo = SimpleNamespace(fwa_data=SimpleNamespace(find_one=AsyncMock(return_value={"war_base_images": {}, "base_upgrade_notes": {}})))
-
-    asyncio.run(image_uploads._open(ctx, "war:th16", mongo, "fwa"))
-    modal_id = ctx.respond_with_modal.await_args.kwargs["custom_id"]
-    target = image_uploads._consume(modal_id.partition(":")[2])
-    assert target is not None and target.manage_token == "shared-token"
-    payload = image_uploads._success_panel(target, "https://img.example.com/war.png")[0].build()[0]
-    buttons = [button for row in payload["components"] if row["type"] == 1 for button in row["components"]]
-    assert {button["custom_id"] for button in buttons} >= {"fwa_update_images:th16", "manage_home:shared-token"}
-    assert payload["accent_color"] == int(image_uploads.WU_GREEN)
-
-
-def test_legacy_clan_upload_navigation_does_not_add_management_home():
-    from extensions.commands.clan.dashboard.image_uploads import UploadTarget, _navigation
-
-    target = UploadTarget("clan", "logo", "#ABC", None, 2, 1, 3, 4)
-    payload = _navigation(target).build()[0]
-    assert all(not button["custom_id"].startswith("manage_home:") for button in payload["components"])
+    from extensions.components import registered_functions
+    assert not registered_functions['clan_image_upload'].opens_modal
+    assert not registered_functions['fwa_image_upload'].opens_modal
+    assert registered_functions['dashboard_image_submit'].is_modal

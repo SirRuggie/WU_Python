@@ -13,7 +13,6 @@ from utils.manage_operations_runtime import revision, runtime_snapshot, refresh_
 
 API = shared.API + '/operations'
 LABELS = {'fwa_points':'FWA points','fwa_sync':'FWA sync reminders','fwa_weight':'TH weight ranges','fwa_blacklist':'Clan blacklist','fwa_bases':'FWA bases','band_monitor':'BAND monitor'}
-BASE_FIELDS = {'fwa_base_links':'Base link','base_information':'Base instructions','base_upgrade_notes':'Upgrade notes','war_base_images':'War base image URL','active_base_images':'Active base image URL'}
 
 def field(key,label,value,kind='text',**kw):
     return dict(key=key,label=label,value=value,type=kind,**kw)
@@ -83,19 +82,7 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
         row = await required(db)
         return town_halls_document(row, 'add' if item == 'new' else item)
     if section=='fwa_bases':
-        row=await db.fwa_data.find_one({'_id':'fwa_config'}) or {}
-        if source_snapshot is not None:source_snapshot.update(copy.deepcopy(row))
-        if not item:
-            from extensions.commands.clan.dashboard.fwa_data import FWA_TH_LEVELS
-            return document(section,row,[],documents=[{'id':th,'label':'Town Hall '+th[2:].replace('_new',' (new upgrade)'),'endpoint':f'/manage/operations/{section}/{th}'} for th in FWA_TH_LEVELS])
-        from extensions.commands.clan.dashboard.fwa_data import FWA_TH_LEVELS
-        if item not in FWA_TH_LEVELS:raise web.HTTPBadRequest(text="Select a Town Hall.")
-        fields=[field(key,label,row.get(key,{}).get(item,''),'textarea' if key in {'base_information','base_upgrade_notes'} else 'text',max_length=4000) for key,label in BASE_FIELDS.items()]
-        for entry in fields:
-            if entry['key'].endswith('_images'):entry['upload_endpoint']=f'/manage/operations/fwa_bases/{item}/upload/{entry["key"]}'
-        # Only this Town Hall participates in the editor revision.
-        selected={key:{item:row[key][item]} for key in BASE_FIELDS if item in row.get(key,{})}
-        return document(section,selected,fields)
+        raise web.HTTPGone(text='FWA bases moved to Town Halls. Refresh this page.')
     if section=='fwa_blacklist':
         rows=await fwa_blacklist.list_blacklisted(db)
         if not item:
@@ -152,6 +139,14 @@ async def check_channel_permissions(request, channel):
 
 async def read(request):
     section=request.match_info['section']; await shared.require_manage(request,section)
+    if section == 'fwa_bases':
+        from utils.town_halls import parse_variant_value
+        item = request.match_info.get('item')
+        try:
+            suffix = '/' + str(parse_variant_value(item)[0]) if item else ''
+        except ValueError:
+            raise web.HTTPBadRequest(text='Select an available base level.') from None
+        raise web.HTTPTemporaryRedirect(location='/api/cwl/manage/town-halls' + suffix)
     if section == 'fwa_weight':
         item = request.match_info.get('item')
         suffix = '/' + ('add' if item == 'new' else item) if item else ''
@@ -162,6 +157,9 @@ async def read(request):
 async def save(request):
     from .app import _json
     section=request.match_info['section']
+    if section == 'fwa_bases':
+        await shared.require_manage(request, 'fwa_bases', write=True)
+        raise web.HTTPGone(text='FWA bases moved to Town Halls. Refresh this page.')
     if section == 'fwa_weight':
         await shared.require_manage(request, 'fwa_weight', write=True)
         raise web.HTTPGone(text='TH weight ranges moved to Town Halls. Refresh this page.')
@@ -184,19 +182,7 @@ async def save(request):
         history_target=shared.API+'/operations/'+section+('/'+item if item else '')
         history_id=await begin(db,history_target,actor,history_fields(current),getattr(request,'history_action','edit')) if section!='fwa_blacklist' and item!='new' else None
         try:
-            if section=='fwa_bases':
-                if not item:raise ValueError("Select a Town Hall first.")
-                row=source_snapshot;changes={};baseline={}
-                for key,value in values.items():
-                    if key=='fwa_base_links' and value and not value.startswith('https://link.clashofclans.com/'):raise ValueError('Use a Clash of Clans base link.')
-                    if key.endswith('_images') and value and not public_url(value):raise ValueError('Use a public HTTPS image URL.')
-                    if value==row.get(key,{}).get(item,''):continue
-                    path=f'{key}.{item}';changes[path]=value
-                    if item in row.get(key,{}):baseline[path]=row[key][item]
-                # Keep a marker so existing documents are never upserted on a conflict.
-                if row:baseline['_id']=row['_id']
-                if changes:await cas(db.fwa_data,'fwa_config',baseline,changes)
-            elif section=='fwa_blacklist':
+            if section=='fwa_blacklist':
                 if item!='new':raise ValueError('Remove and re-add a clan to change its details.')
                 tag=sanitize_tag(values.get('tag',''));name=values.get('name','').strip()
                 if not tag or not name or len(name)>100:raise ValueError('Enter a valid clan tag and name.')
@@ -247,21 +233,7 @@ async def action(request):
     return await shared.queue_action(request,section,action_id,body.get('values',{}),body.get('revision'))
 
 async def upload_base(request):
-    from utils.media_store import MediaStore,MediaStoreError,fwa_base_folder,FWA_WAR_BASE_NAME,FWA_ACTIVE_BASE_NAME
-    from utils.url_safety import MAX_IMAGE_BYTES
-    await shared.require_manage(request,'fwa_bases',write=True)
-    item=request.match_info['item'];slot=request.match_info['slot']
-    if slot not in {'war_base_images','active_base_images'}:raise web.HTTPBadRequest(text="Select a base image.")
-    async with shared.mongo(request) as db:current=await load_document(db,'fwa_bases',item)
-    if request.query.get('revision')!=str(current['revision']):raise web.HTTPConflict(text='Base settings changed. Refresh before uploading.')
-    if request.content_length is not None and request.content_length>MAX_IMAGE_BYTES:raise web.HTTPRequestEntityTooLarge(max_size=MAX_IMAGE_BYTES,actual_size=request.content_length)
-    data=bytearray()
-    async for chunk in request.content.iter_chunked(65536):
-        data.extend(chunk)
-        if len(data)>MAX_IMAGE_BYTES:raise web.HTTPRequestEntityTooLarge(max_size=MAX_IMAGE_BYTES,actual_size=len(data))
-    media=request.app.get('server_management_media') or MediaStore.from_env()
-    try:url=await media.upload_bytes(bytes(data),folder=fwa_base_folder(item),name=FWA_WAR_BASE_NAME if slot=='war_base_images' else FWA_ACTIVE_BASE_NAME)
-    except MediaStoreError:raise web.HTTPBadRequest(text='Image upload failed. Check the file and try again.') from None
-    return web.json_response({'url':url})
+    await shared.require_manage(request, 'fwa_bases', write=True)
+    raise web.HTTPGone(text='FWA bases moved to Town Halls. Refresh this page.')
 
 routes=[web.post(API+'/fwa_bases/{item}/upload/{slot}',upload_base),web.get(API+'/{section}',read),web.patch(API+'/{section}',save),web.get(API+'/{section}/{item}',read),web.patch(API+'/{section}/{item}',save),web.post(API+'/{section}/actions/{action}',action),web.post(API+'/{section}/{item}/actions/{action}',action)]

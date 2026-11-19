@@ -9,10 +9,15 @@ from datetime import datetime, timezone
 import logging
 import re
 
+from bson import BSON
+from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from utils.mongo_routes import collection_from
 
+
+BASE_CONFLICT_MESSAGE = "This base changed. Refresh and review your edit."
+BASE_PATHS = ("war_image", "active_image", "merged.link", "merged.instructions", "merged.upgrade_notes", "non_merged.link", "non_merged.instructions", "non_merged.upgrade_notes")
 
 CONFLICT_MESSAGE = "Town Halls changed. Refresh and review your edit."
 MISSING_MESSAGE = "Town Halls not migrated"
@@ -54,6 +59,8 @@ def _guild_key(value):
 
 def validate(doc):
     """Validate all registry entries together without changing the input."""
+    # Version1 remains readable while the separately authorized bases migration
+    # upgrades the existing244 registry; new base content requires version2.
     if not isinstance(doc, dict) or type(doc.get("schema_version")) is not int or doc["schema_version"] not in (1, 2):
         raise ValueError("Use Town Halls registry schema version 1 or 2.")
     if not set(doc) <= {"_id", "schema_version", "revision", "lowest_fwa_town_hall", "levels", "updated_by", "updated_at", "nonbase_revision"}:
@@ -119,6 +126,68 @@ def _validate_bases(bases):
                 raise ValueError("Keep base instructions and upgrade notes within 4,000 characters.")
 
 
+def parse_variant_value(value):
+    """Accept old Discord values without guessing or accepting arbitrary paths."""
+    match = re.fullmatch(r"th([1-9][0-9]?)(_new)?", value) if isinstance(value, str) else None
+    if match is None:
+        raise ValueError("Select an available base level.")
+    return int(match[1]), "non_merged" if match[2] else "merged"
+
+
+def base_variants(doc):
+    """Linked variants only, newest FWA level first and Merged before Non-merged."""
+    result = []
+    for level in levels(doc):
+        if level < doc["lowest_fwa_town_hall"]:
+            continue
+        bases = doc["levels"][str(level)].get("bases", {})
+        for variant in ("merged", "non_merged"):
+            values = bases.get(variant, {})
+            if not values.get("link"):
+                continue
+            result.append({"level": level, "key": f"th{level}" + ("_new" if variant == "non_merged" else ""),
+                           "variant": variant, "link": values["link"],
+                           "instructions": values.get("instructions", ""),
+                           "upgrade_notes": values.get("upgrade_notes", ""),
+                           "war_image": bases.get("war_image", ""),
+                           "active_image": bases.get("active_image", "")})
+    return result
+
+
+def menu_options(doc):
+    """Transport-neutral Discord choices, within the native25-option limit."""
+    variants = base_variants(doc)
+    if len(variants) > 25:
+        _LOG.warning("Town Hall base menu has more than25 variants; keeping the highest25.")
+    result = []
+    for item in variants[:25]:
+        label = "Non-merged" if item["variant"] == "non_merged" else "Merged"
+        option = {"label": f"TH{item['level']} {label}", "value": item["key"]}
+        emoji = emoji_markup(doc, item["level"])
+        if emoji:
+            option["emoji"] = emoji
+        result.append(option)
+    return result
+
+
+def set_base_field(doc, level, path, value):
+    """Pure draft update; shared image slots cannot become per-variant images."""
+    if path not in BASE_PATHS:
+        raise ValueError("Select a valid base field.")
+    result, key = _edit(doc, level)
+    if level < result["lowest_fwa_town_hall"]:
+        raise ValueError("Bases are for FWA Town Hall levels only.")
+    result["schema_version"] = 2
+    result.setdefault("nonbase_revision", result["revision"])
+    target = result["levels"][key].setdefault("bases", {})
+    parts = path.split(".")
+    if len(parts) == 2:
+        target = target.setdefault(parts[0], {})
+    target[parts[-1]] = value
+    validate(result)
+    return result
+
+
 async def load(mongo, guild_id):
     """Read a registry; missing means not migrated, never implicit defaults."""
     doc = await _collection(mongo).find_one({"_id": _guild_key(guild_id)})
@@ -157,12 +226,12 @@ async def create_for_migration(mongo, guild_id, doc):
     return True
 
 
-async def save(mongo, guild_id, doc, user_id, expected_revision):
-    """Replace the one guild document only when its revision still matches.
+async def save(mongo, guild_id, doc, user_id, expected_revision, *, base_level=None, base_values=None, base_originals=None, base_restore=None):
+    """Save admin fields without overwriting bases or excusing another admin edit.
 
-    The caller owns authorization. Distinct typed failures let its HTTP adapter
-    map conflicts to 409 and missing migration to readiness/unavailable errors.
-    A failed/uncertain write is never retried here.
+    The first CAS uses the client's global revision. A known no-match permits
+    one reload/retry only if every intervening revision was base-only. An
+    exception/uncertain write is propagated immediately, never retried.
     """
     validate(doc)
     _integer(expected_revision, 0, 2**63 - 2, "Use a valid expected registry revision.")
@@ -172,23 +241,206 @@ async def save(mongo, guild_id, doc, user_id, expected_revision):
         raise ValueError("Town Halls belong to a different server.")
     if doc["revision"] != expected_revision:
         raise TownHallsConflict(CONFLICT_MESSAGE)
-    replacement = deepcopy(doc)
-    replacement.update(
-        _id=guild,
-        revision=expected_revision + 1,
-        updated_by=user_id,
-        updated_at=datetime.now(timezone.utc),
-    )
-    if replacement['schema_version'] == 2:
-        replacement['nonbase_revision'] = expected_revision + 1
-    result = await _collection(mongo).replace_one(
-        {"_id": guild, "revision": expected_revision}, replacement, upsert=False
-    )
-    if result.matched_count != 1:
-        if await _collection(mongo).find_one({"_id": guild}, {"_id": 1}) is None:
+    base_query, base_changes, base_unset = ({}, {}, {})
+    if base_values is not None:
+        base_query, base_changes, base_unset = _base_write_parts(doc, base_level, base_values, base_originals, restore=base_restore)
+    revision = expected_revision
+    collection = _collection(mongo)
+    for attempt in range(2):
+        changes = {"lowest_fwa_town_hall": doc["lowest_fwa_town_hall"],
+                   "nonbase_revision": revision + 1, "updated_by": user_id,
+                   "updated_at": datetime.now(timezone.utc)}
+        changes.update(base_changes)
+        unset = dict(base_unset)
+        for level, item in doc["levels"].items():
+            changes[f"levels.{level}.emoji"] = item.get("emoji", "")
+            if "weight" in item:
+                changes[f"levels.{level}.weight"] = deepcopy(item["weight"])
+            else:
+                unset[f"levels.{level}.weight"] = ""
+        update = {"$set": changes, "$inc": {"revision": 1},
+                  "$max": {"schema_version": doc["schema_version"]}}
+        if unset:
+            update["$unset"] = unset
+        saved = await collection.find_one_and_update(
+            {"_id": guild, "revision": revision, **base_query}, update,
+            upsert=False, return_document=ReturnDocument.AFTER)
+        if saved is not None:
+            return deepcopy(saved)
+        if base_restore is not None:
+            raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+        current = await load(mongo, guild)
+        if current is None:
             raise TownHallsMissing(MISSING_MESSAGE)
-        raise TownHallsConflict(CONFLICT_MESSAGE)
-    return deepcopy(replacement)
+        if base_values is not None and any(base_field_snapshot(current, base_level, path) != base_originals[path] for path in base_values):
+            raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+        if (current["revision"] < expected_revision or
+                current.get("nonbase_revision", current["revision"]) > expected_revision or attempt):
+            raise TownHallsConflict(CONFLICT_MESSAGE)
+        revision = current["revision"]
+    raise TownHallsConflict(CONFLICT_MESSAGE)
+
+
+def base_field_snapshot(doc, level, path):
+    """Preserve missing versus explicitly empty fields for a client's base CAS."""
+    if path not in BASE_PATHS:
+        raise ValueError("Select a valid base field.")
+    validate(doc)
+    item = doc["levels"].get(str(_level_number(level)))
+    if item is None:
+        raise ValueError("This Town Hall is not in the list.")
+    target = item.get("bases", {})
+    parts = path.split(".")
+    if len(parts) == 2:
+        target = target.get(parts[0], {})
+    return {"exists": True, "value": target[parts[-1]]} if parts[-1] in target else {"exists": False}
+
+
+def _path_snapshot(value, parts):
+    for part in parts:
+        if not isinstance(value, dict) or part not in value:
+            return {"exists": False}
+        value = value[part]
+    return {"exists": True, "value": deepcopy(value)}
+
+
+def _typed_bytes(value):
+    def canonical(item):
+        return {key: canonical(item[key]) for key in sorted(item)} if isinstance(item, dict) else item
+    return BSON.encode(canonical(value))
+
+
+def _base_leaves(value, prefix=""):
+    if not isinstance(value, dict) or not value:
+        return {prefix.rstrip(".")}
+    return set().union(*(_base_leaves(item, prefix + key + ".") for key, item in value.items()))
+
+
+def _base_write_parts(current, level, values, originals, *, restore=None):
+    _level_number(level)
+    if not isinstance(values, dict) or not values or not set(values) <= set(BASE_PATHS) or not isinstance(originals, dict) or set(originals) != set(values):
+        raise ValueError("Review the changed base fields before saving.")
+    if current["schema_version"] != 2 or "nonbase_revision" not in current:
+        raise TownHallsMissing("Town Hall bases not migrated")
+    if str(level) not in current["levels"] or level < current["lowest_fwa_town_hall"]:
+        raise ValueError("Bases are for FWA Town Hall levels only.")
+    target = opposite = None
+    if restore is not None:
+        if not isinstance(restore, tuple) or len(restore) != 3:
+            raise ValueError("Review the saved base version before restoring.")
+        target, opposite, reviewed_revision = restore
+        if type(reviewed_revision) is not int or current["revision"] != reviewed_revision:
+            raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+        for raw in (target, opposite):
+            validate(raw)
+            if raw.get("_id") != current.get("_id") or str(level) not in raw["levels"]:
+                raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+    query = {"schema_version": 2,
+             "nonbase_revision": {"$exists": True},
+             "lowest_fwa_town_hall": {"$lte": level}, f"levels.{level}": {"$exists": True}}
+    if restore is not None:
+        query["revision"] = reviewed_revision
+    changes, unset = {}, {}
+    proposed = deepcopy(current)
+    prefix = f"levels.{level}.bases"
+    entry = current["levels"][str(level)]
+    for path, value in values.items():
+        original = originals[path]
+        if not isinstance(original, dict) or type(original.get("exists")) is not bool or set(original) != ({"exists", "value"} if original["exists"] else {"exists"}):
+            raise ValueError("Review the original base values before saving.")
+        if original["exists"] and not isinstance(original["value"], str):
+            raise ValueError("Review the original base values before saving.")
+        parts = path.split(".")
+        field = prefix + "." + path
+        query[field] = original["value"] if original["exists"] else {"$exists": False}
+        desired = base_field_snapshot(target, level, path) if target is not None else {"exists": True, "value": value}
+        if desired["exists"]:
+            if type(value) is not str or value != desired["value"]:
+                raise ValueError("Review the saved base value before restoring.")
+            changes[field] = value
+            destination = proposed["levels"][str(level)].setdefault("bases", {})
+            for part in parts[:-1]:
+                destination = destination.setdefault(part, {})
+            destination[parts[-1]] = value
+            continue
+        # Restore exact absence, including an originally missing container. Never
+        # remove a known or racing neighbor that this history entry did not edit.
+        target_entry = target["levels"][str(level)]
+        ancestor = ["bases"]
+        if "bases" in target_entry:
+            ancestor += [parts[0]]
+            if len(parts) == 2 and parts[0] in target_entry["bases"]:
+                ancestor += [parts[1]]
+        expected = _path_snapshot(opposite["levels"][str(level)], ancestor)
+        actual = _path_snapshot(entry, ancestor)
+        if _typed_bytes(actual) != _typed_bytes(expected):
+            raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+        if expected["exists"] and isinstance(expected["value"], dict):
+            relative = ".".join(ancestor[1:])
+            leaves = _base_leaves(expected["value"], relative + "." if relative else "")
+            if not leaves <= set(values):
+                raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+        ancestor_field = f"levels.{level}." + ".".join(ancestor)
+        query[ancestor_field] = expected["value"] if expected["exists"] else {"$exists": False}
+        unset[ancestor_field] = ""
+        destination = proposed["levels"][str(level)]
+        for part in ancestor[:-1]:
+            destination = destination.get(part, {})
+        destination.pop(ancestor[-1], None)
+    if any(field == absent or field.startswith(absent + ".") for field in changes for absent in unset):
+        raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+    validate(proposed)
+    return query, changes, unset
+
+
+async def save_base_fields(mongo, guild_id, level, values, originals, user_id, *, restore=None):
+    """Atomically CAS exactly edited base fields, including explicit restoration."""
+    _integer(user_id, 1, 2**64 - 1, "Use a valid actor ID.")
+    current = await load(mongo, guild_id)
+    if current is None:
+        raise TownHallsMissing(MISSING_MESSAGE)
+    query, changes, unset = _base_write_parts(current, level, values, originals, restore=restore)
+    query["_id"] = _guild_key(guild_id)
+    changes.update(updated_by=user_id, updated_at=datetime.now(timezone.utc))
+    update = {"$set": changes, "$inc": {"revision": 1}}
+    if unset:
+        update["$unset"] = unset
+    saved = await _collection(mongo).find_one_and_update(
+        query, update, upsert=False, return_document=ReturnDocument.AFTER)
+    if saved is None:
+        raise TownHallsConflict(BASE_CONFLICT_MESSAGE)
+    return deepcopy(saved)
+
+
+async def apply_bases_migration(mongo, guild_id, current, proposed):
+    """One reviewed migration CAS; legacy data and all non-base values stay put."""
+    guild = _guild_key(guild_id)
+    validate(current)
+    validate(proposed)
+    if current.get("_id") != guild or proposed.get("_id") != guild:
+        raise ValueError("Town Halls belong to a different server.")
+    if any("bases" in item for item in current["levels"].values()):
+        return False
+    query = {"_id": guild, "revision": current["revision"]}
+    for level in current["levels"]:
+        query[f"levels.{level}.bases"] = {"$exists": False}
+    changes = {"schema_version": 2, "nonbase_revision": current.get("nonbase_revision", current["revision"]),
+               "updated_at": datetime.now(timezone.utc)}
+    for level, item in proposed["levels"].items():
+        if "bases" not in item:
+            continue
+        if level in current["levels"]:
+            changes[f"levels.{level}.bases"] = deepcopy(item["bases"])
+        else:
+            if set(item) != {"emoji", "bases"} or item["emoji"] != "":
+                raise ValueError("A migrated missing level has only bases and a blank emoji.")
+            changes[f"levels.{level}"] = deepcopy(item)
+    if not any(path.startswith("levels.") for path in changes):
+        return False
+    saved = await _collection(mongo).find_one_and_update(
+        query, {"$set": changes, "$inc": {"revision": 1}},
+        upsert=False, return_document=ReturnDocument.AFTER)
+    return saved is not None
 
 
 def levels(doc):

@@ -121,7 +121,7 @@ async def identity(request, *, cached_read=False):
 
 async def allowed(actor, section, db, *, write=False):
     if section == 'town_halls':
-        section = 'fwa_weight'
+        return await allowed(actor, 'fwa_weight', db, write=write) or await allowed(actor, 'fwa_bases', db, write=write)
     if actor.get('dashboard'):
         from .access_control import dashboard_allowed
         return await dashboard_allowed(actor, section, db, write=write)
@@ -178,7 +178,6 @@ async def catalog(request):
             ('fwa_sync', 'FWA sync reminders', 'Manage calendar reminders and their channel.', 'War', '/manage/operations/fwa_sync'),
             ('town_halls', 'Town Halls', 'Emoji, weight range and bases for each Town Hall level.', 'Clan resources', '/manage/town-halls'),
             ('fwa_blacklist', 'Clan blacklist', 'View or change the shared clan blacklist.', 'War', '/manage/operations/fwa_blacklist'),
-            ('fwa_bases', 'FWA bases', 'Manage base links, images, and guidance.', 'War', '/manage/operations/fwa_bases'),
             ('cwl_rosters', 'CWL return reminders', 'Manage saved clans and return reminders.', 'War', '/manage/return-reminders'),
         ):
             sections.append(dict(id=key, label=label, description=description, group=group, endpoint=endpoint,

@@ -27,7 +27,7 @@ from hikari.impl import (
 )
 
 from extensions.commands.recruit import loader, recruit
-from extensions.commands.fwa.helpers import get_fwa_base_object
+from utils.town_hall_base_views import base_choice
 from utils.component_state import insert_state
 from utils import recruit_question_content as question_content
 from utils import recruit_goblin_challenges as goblin_storage
@@ -35,8 +35,6 @@ from utils import recruit_panel_refresh as panel_refresh
 from utils import recruit_message_delivery as delivery
 from utils.constants import (
     WU_GOLD,
-    FWA_WAR_BASE,
-    FWA_ACTIVE_WAR_BASE,
 )
 from utils.emoji import emojis
 from utils.mongo import MongoClient
@@ -608,60 +606,23 @@ async def th_select(
         return
     choice = ctx.interaction.values[0]
     user = await bot.rest.fetch_member(ctx.guild_id, user_id)
-    fwa = await get_fwa_base_object(mongo)
-
-    # Check if FWA data exists
-    if not fwa:
-        await respond_error(ctx,
-            "❌ **FWA Data Not Found**\n\n"
-            "The FWA data is not set up yet. "
-            "Use `/manage section:FWA` to add all FWA data first.",
-            ephemeral=True
-        )
+    base = base_choice(choice)
+    if base is None:
+        await respond_error(ctx, f"No base link is set for {choice}.", ephemeral=True)
         return
-
-    # Format display name properly for _new variants
-    if choice.endswith('_new'):
-        base_th = choice.replace('_new', '')
-        th_number = base_th.lstrip('th')
-        display_name = f"TH{th_number} New"
-        friendly_name = f"Town Hall {th_number} New"
-    else:
-        th_number = choice.lstrip('th')
-        display_name = f"TH{th_number}"
-        friendly_name = f"Town Hall {th_number}"
-
-    base_link = getattr(fwa.fwa_base_links, choice, None)
-
-    # Get base information for this TH level
-    base_info = fwa.base_information.get(choice, "")
-    if not base_info:
-        base_info = (
-            "To continue, switch your active war base to the link above.\n\n"
-            "Then send a screenshot like the example below."
-        )
-
-    # Check if base_link exists
-    if not base_link:
-        await respond_error(ctx,
-            f"❌ **FWA Base Link Not Found**\n\n"
-            f"The FWA base link for {display_name} is not set up. "
-            "Use `/manage section:FWA` to add all FWA base links.",
-            ephemeral=True
-        )
-        return
-
-    # Check if media URLs exist
-    war_base_media = FWA_WAR_BASE.get(choice)
-    active_war_base_media = FWA_ACTIVE_WAR_BASE.get(choice)
-
+    th_number = str(base['level'])
+    friendly_name = base['friendly_name']
+    base_link = base['link']
+    base_info = base['instructions'] or (
+        "To continue, switch your active war base to the link above.\n\n"
+        "Then send a screenshot like the example below."
+    )
+    war_base_media = base['war_image']
+    active_war_base_media = base['active_image']
     if not war_base_media or not active_war_base_media:
         await respond_error(ctx,
-            f"❌ **FWA Base Images Not Found**\n\n"
-            f"The FWA base images for {display_name} are not configured. "
-            "Ask an administrator to add the FWA base images.",
-            ephemeral=True
-        )
+            f"The FWA base images for {base['display_name']} are not configured. Ask an administrator to add them.",
+            ephemeral=True)
         return
 
     try:

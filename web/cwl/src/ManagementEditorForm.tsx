@@ -1,5 +1,6 @@
 import type { Dispatch, SetStateAction } from "react";
 import BandStatusSummary from "./BandStatusSummary";
+import TownHallBasesFields from "./TownHallBasesFields";
 import ManagementFieldInput from "./ManagementFieldInput";
 import TownHallAddFields, { duplicateTownHall } from "./TownHallAddFields";
 import type {
@@ -166,6 +167,12 @@ export default function ManagementEditorForm({
               disabled={busy || !!document.readonly}
               change={change}
               openRecord={onOpenRecord}
+            />
+          ) : document.base_management ? (
+            <TownHallBasesFields
+              document={document}
+              draft={draft}
+              renderField={renderField}
             />
           ) : grouped ? (
             <div className="manage-grouped-fields">
