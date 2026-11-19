@@ -16,13 +16,16 @@ def panel_menu():
     return next(item for item in walk(payload) if item['type'] == hikari.ComponentType.TEXT_SELECT_MENU)
 
 
-def test_panel_menu_is_persistent_and_lists_registry_bases(snapshot):
+def test_panel_menu_is_persistent_and_lists_registry_bases(snapshot, monkeypatch):
+    monkeypatch.setattr(bases_panel, 'town_hall_emoji', lambda level: '<:th16:123456789012345678>' if level == 16 else '')
     menu = panel_menu()
     assert menu['custom_id'] == 'fwa_bases_panel:'
     assert [item['value'] for item in menu['options']] == ['th19', 'th19_new']
     texts = [item.get('content', '') for item in walk(built(bases_panel.panel_components()))]
     assert any('Select your Town Hall' in text for text in texts)
-    assert any('Non-merged' in text and 'Merged' in text for text in texts)
+    note = next(text for text in texts if 'TH16 and higher' in text)
+    assert note.startswith('<:') and '- **Non-merged**' in note and '- **Merged**' in note
+    assert texts[-1] == '-# Only you can see your base.'
     action = registered_functions['fwa_bases_panel']
     assert action.no_return and not action.preload_state and not action.requires_state
 
@@ -56,3 +59,8 @@ def test_unavailable_selection_says_so_privately_and_resets_panel(snapshot):
     first, second = ctx.respond.await_args_list
     assert first.args == ('This base is no longer available.',) and first.kwargs['ephemeral'] is True
     assert second.kwargs['edit'] is True
+
+
+def test_th16_heading_has_no_emoji_without_registry(monkeypatch):
+    monkeypatch.setattr(town_halls, '_snapshot', None)
+    assert bases_panel.th16_note().startswith('**TH16 and higher**')

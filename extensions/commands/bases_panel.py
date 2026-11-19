@@ -19,6 +19,7 @@ from extensions.commands.fwa.bases import base_components
 from extensions.components import register_action
 from utils.constants import WU_GOLD
 from utils.town_hall_base_views import base_choice, base_menu
+from utils.town_halls import town_hall_emoji
 
 loader = lightbulb.Loader()
 
@@ -31,10 +32,15 @@ STEPS = (
 )
 TH16_NOTE = (
     "**TH16 and higher**\n"
-    "**Non-merged**: Use this first. Use it when you are new to the Town Hall "
-    "and your defenses are not merged.\n"
-    "**Merged**: Use this after you merge your defenses."
+    "- **Non-merged**: You are new to this Town Hall. Your defenses are not merged yet.\n"
+    "- **Merged**: You merged your defenses."
 )
+
+
+def th16_note():
+    """Prefix the saved TH16 emoji; plain heading when none is set."""
+    emoji = town_hall_emoji(16)
+    return f"{emoji} {TH16_NOTE}" if emoji else TH16_NOTE
 
 
 def panel_components():
@@ -43,10 +49,10 @@ def panel_components():
         Text(content="## FWA Bases"),
         Text(content=STEPS),
         Separator(divider=True, spacing=hikari.SpacingType.SMALL),
-        Text(content=TH16_NOTE),
+        Text(content=th16_note()),
         ActionRow(components=[base_menu(f"{PANEL_ACTION}:", empty=True)]),
-        Text(content="-# Only you can see your base."),
         Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+        Text(content="-# Only you can see your base."),
     ])]
 
 
