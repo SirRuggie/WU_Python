@@ -194,31 +194,7 @@ async def on_stopping(_: hikari.StoppingEvent) -> None:
 
 @bot.listen(hikari.StartedEvent)
 async def on_bot_start(event: hikari.StartedEvent):
-    """Load FWA URLs from database on startup"""
-    fwa_data = await mongo_client.fwa_data.find_one({"_id": "fwa_config"})
-
-    if fwa_data:
-        from utils.constants import FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
-        from utils.media_urls import DETAIL, optimized
-
-        # Mongo keeps the raw upload URLs; the in-memory dicts hold
-        # delivery-optimized ones, so every render site is covered at once.
-        # Load war base images
-        if "war_base_images" in fwa_data:
-            FWA_WAR_BASE.update({
-                th: optimized(url, width=DETAIL)
-                for th, url in fwa_data["war_base_images"].items()
-            })
-            print(f"[INFO] Loaded {len(fwa_data['war_base_images'])} FWA war base URLs")
-
-        # Load active base images
-        if "active_base_images" in fwa_data:
-            FWA_ACTIVE_WAR_BASE.update({
-                th: optimized(url, width=DETAIL)
-                for th, url in fwa_data["active_base_images"].items()
-            })
-            print(f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs")
-
+    """Load the registry snapshot and its shared base images on startup."""
     from utils.manage_operations_runtime import refresh_town_halls_cache
     await refresh_town_halls_cache(mongo_client, force=True, startup=True)
 

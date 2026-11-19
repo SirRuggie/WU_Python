@@ -16,7 +16,7 @@ Audited 2026-10-15 against current source, not only the older management guide. 
 | Recruitment Questions | Primary/FWA/Explanation/Keep It Moving variants; grouped text, accent, media; preview/save/reset | `recruit_question_content.load_template/save_template/reset_template`; `bot_config` | Manage Server or Administrator |
 | Ticket Settings | Main/FWA channels and recruiter roles; extra viewers; inactivity review and resolved archive timers; setup check; restore entry/console messages | `tickets/settings.py`, `thread_service.py`, `ticket_runtime`; `ticket_setup` config + settings audit | Target-server Administrator |
 | Ticket Testing | Open/close isolated window; expiry and cleanup; tester members/roles/admin toggle; own access; Main/FWA test tickets; clear test tickets | `ticket_testing_control.py`, `tickets/testing_service.py`; isolated test namespace | Target-server Administrator controls; allowed testers can open test tickets |
-| FWA Bases & Guidance | TH selection; base link; war/active image uploads or URLs; descriptions/guide | `clan/dashboard/fwa_data.py`; `fwa_data` `_id=fwa_config` | FWA Representative role `993015846442127420` |
+| Town Hall bases | Dashboard-only shared war/active images and per-variant links/instructions/upgrade notes; Discord edit/upload controls link to each FWA level | `utils/town_halls.py`; registry `levels.<n>.bases`; legacy `fwa_config` retained for migration only | Existing FWA Representative role `993015846442127420` |
 | FWA War Message Templates | Four variants; grouped text, artwork, accent; preview/reset; submitted edits auto-save | `fwa_war_content.load_template/save_template/reset_template`; `bot_config` | FWA Clan Rep role `769130325460254740` (admin alone is not a bypass) |
 | FWA Blacklist | Search/page; add tag/name/reason; remove with confirmation | `utils/fwa_blacklist.py`; `fwa_blacklist` | Server members read; FWA Clan Rep role writes |
 | FWA Points Monitor | Status/results; enable/disable; add/remove manually watched extras | `tasks/fwa_points_monitor.py`; `fwa_points` and monitor config | Administrator |
@@ -50,7 +50,7 @@ One Server Management home with short grouped cards (Recruitment, War tools, Ser
 2. Permission rules are distributed between entry routing and action handlers; maintain a shared capability layer to prevent future Discord/web divergence.
 3. Points monitor disabling cancels process-local retry tasks. A web Mongo-only flag update cannot claim those tasks were cancelled immediately.
 4. BAND debug is runtime-only and resets from environment on restart; label this explicitly or persist intent through the actual bot worker.
-5. FWA Bases & Guidance uses direct field updates without the template revision pattern; concurrent edits need field-aware CAS protection in both interfaces.
+5. Town Hall bases use the registry owner's per-field CAS. Discord base editing and uploads are retired; old controls recheck the existing role and return dashboard links without downloading, uploading or saving data.
 6. Some onboarding edits and channels are saved through different paths; a single generic JSON editor would obscure publication and unsaved-draft semantics.
 7. Full role-member lists depend on Discord member lookup availability; failures must not appear as an empty role.
 8. Native return pings and dashboard assignment rosters have different purposes; call the former Return reminders, not a second Roster builder.
@@ -138,3 +138,19 @@ Public onboarding message editors now include publishing controls on the same sc
 Duplicate Publish catalog tiles were removed; their API routes remain supported. Copy from Discord and Reset to default live in a closed More options disclosure, with explicit reset confirmation. Pending publishing disables message edits and duplicate publishing controls while status is polled.
 
 Validation: 93 frontend and 102 backend tests passed. Desktop and mobile fixture checks confirmed saved preview before edits, unsaved-edit publishing lock, and recovery grouping. Read-only live checks passed for all five public onboarding messages and their destinations. No live posts, resets or template edits were made during testing. Rollback: .local/pre-message-publish-20261015-145649.
+
+## Town Hall bases (245) native read contract
+
+FWA bases, upgrade notes and recruitment selectors use the registry snapshot's
+linked FWA variants, highest level first and Merged before Non-merged. Images are
+shared by both variants. Existing `th19` and `th19_new` values still parse; a
+stale selection whose link disappeared returns a private no-link message and
+never posts. Menus keep at most 25 choices through the registry owner. Missing
+snapshots keep the selector unavailable rather than falling back to legacy maps.
+
+Startup and the existing image refresh hook publish delivery-optimized shared
+images under both old cache keys. Failed reads retain the last cache. The queued
+Town Halls refresh accepts the existing admin or base-manager edit permission;
+it refreshes snapshots only and sends no Discord message. Native base delivery
+retains its explicit selected-recipient mention scope. These statements are
+source/fixture contracts, not proof of live Discord delivery.

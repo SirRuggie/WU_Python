@@ -7,8 +7,6 @@ buttons, links, media, and container structure.
 
 from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
-    TextSelectMenuBuilder as TextSelectMenu,
-    SelectOptionBuilder as SelectOption,
     ContainerComponentBuilder as Container,
     SectionComponentBuilder as Section,
     TextDisplayComponentBuilder as Text,
@@ -18,8 +16,9 @@ from hikari.impl import (
     LinkButtonBuilder as LinkButton,
 )
 from utils.constants import WU_GOLD
-from utils.emoji import fwa_minimum_level, emojis, town_hall_select_emoji, fwa_town_hall_options, fwa_town_hall_menu
+from utils.emoji import fwa_minimum_level, emojis
 from utils.town_halls import town_hall_emoji
+from utils.town_hall_base_views import base_menu
 
 LAZY_CWL_RULES_URL = "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit"
 
@@ -206,97 +205,16 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                     )
                 ]
     if variant == 'fwa_bases_upon_approval':
-        return [
-                    Container(
-                        accent_color=WU_GOLD,
-                        components=[
-                            Text(content="## Select FWA Base Town Hall Level"),
-                            Text(
-                                content="Select the Town Hall level of the recruit in the menu below."),
-                            ActionRow(
-                                components=[
-                                    fwa_town_hall_menu(TextSelectMenu(
-                                        max_values=1,
-                                        custom_id=f"th_select:{action_id}",
-                                        placeholder="Select a Base...",
-                                        options=fwa_town_hall_options([
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(18),
-                                                label="TH18 New",
-                                                value="th18_new"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(18),
-                                                label="TH18",
-                                                value="th18"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(17),
-                                                label="TH17",
-                                                value="th17"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(17),
-                                                label="TH17 New",
-                                                value="th17_new"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(16),
-                                                label="TH16",
-                                                value="th16"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(16),
-                                                label="TH16 New",
-                                                value="th16_new"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(15),
-                                                label="TH15",
-                                                value="th15"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(14),
-                                                label="TH14",
-                                                value="th14"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(13),
-                                                label="TH13",
-                                                value="th13"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(12),
-                                                label="TH12",
-                                                value="th12"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(11),
-                                                label="TH11",
-                                                value="th11"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(10),
-                                                label="TH10",
-                                                value="th10"
-                                            ),
-                                            SelectOption(
-                                                emoji=town_hall_select_emoji(9),
-                                                label="TH9",
-                                                value="th9"
-                                            ),
-                                        ]),
-                                    )),
-                                ]
-                            ),
-                            Media(
-                                items=[
-                                    MediaItem(media="assets/Gold_Footer.png")
-                                ]),
-                            Text(content=f"-# Requested by {recruiter_mention}"),
-                        ]
-                    )
-                ]
+        # Keep the three editable selector text blocks stable even before the
+        # bases migration; the unavailable menu itself carries the empty state.
+        menu = base_menu(f"th_select:{action_id}", empty=True)
+        return [Container(accent_color=WU_GOLD, components=[
+            Text(content="## Select FWA Base Town Hall Level"),
+            Text(content="Select the Town Hall level of the recruit in the menu below."),
+            ActionRow(components=[menu]),
+            Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+            Text(content=f"-# Requested by {recruiter_mention}"),
+        ])]
     if variant == 'what_is_fwa':
         return [
                     Container(

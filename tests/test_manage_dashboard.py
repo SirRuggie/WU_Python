@@ -168,22 +168,21 @@ def _button_ids(panel):
     ]
 
 
-def test_fwa_managed_overview_detail_and_image_back_preserve_home(monkeypatch):
+def test_fwa_managed_overview_detail_and_old_buttons_open_dashboard(monkeypatch):
     from extensions.commands.clan.dashboard import fwa_data
-    monkeypatch.setattr(fwa_data, "get_fwa_data", AsyncMock(return_value={}))
-    ctx = context(roles=(manage.FWA_REP_ROLE_ID,))
-    overview = run(fwa_data.build_fwa_management_screen(ctx, object(), manage_token="home-token"))
-    assert "manage_fwa:home-token" in _button_ids(overview)
-    menu = [node for node in walk([item.build()[0] for item in overview])
-            if node.get("type") == hikari.ComponentType.ACTION_ROW and node.get("components")
-            and node["components"][0].get("type") == hikari.ComponentType.TEXT_SELECT_MENU][0]
-    assert menu["components"][0]["custom_id"] == "fwa_th_select:home-token"
+    from utils import town_halls
+    from test_town_halls_discord_bases_245 import bases_doc, GUILD_ID
+    monkeypatch.setattr(town_halls,'_snapshot',bases_doc())
+    monkeypatch.setattr(town_halls,'_snapshot_guild',str(GUILD_ID))
+    ctx=context(roles=(manage.FWA_REP_ROLE_ID,))
+    overview=run(fwa_data.build_fwa_management_screen(ctx,object(),manage_token='home-token'))
+    assert not _button_ids(overview)
+    assert 'Open Town Hall 19' in str([part.build() for part in overview])
+    detail=fwa_data.build_th_edit_components('th19','','','','','',manage_token='home-token')
+    assert not _button_ids(detail)
+    images=run(fwa_data.fwa_update_images.__wrapped__._func(ctx=ctx,action_id='th19'))
+    assert str([part.build() for part in images])==str([part.build() for part in overview])
 
-    detail = fwa_data.build_th_edit_components("th16", "", "", "", "", "", manage_token="home-token")
-    assert {"manage_fwa:home-token", "fwa_back_to_main:home-token"} <= set(_button_ids(detail))
-    ctx.interaction.message = SimpleNamespace(components=detail)
-    images = run(fwa_data.fwa_update_images.__wrapped__._func(ctx=ctx, action_id="th16"))
-    assert {"manage_fwa:home-token", "fwa_th_select_return:th16|home-token"} <= set(_button_ids(images))
 
 
 def test_bare_manage_defers_once_and_edits_home(monkeypatch):

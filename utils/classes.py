@@ -36,21 +36,6 @@ class Clan:
         self.thread_message_id: int = data.get("thread_message_id", 0)
         self.type: str = data.get("type")
 
-class BaseLinks:
-    def __init__(self, links_dict):
-        for th, link in links_dict.items():
-            setattr(self, th, link)
-    def __getattr__(self, name):
-        return ""
-
-class FWA:
-    def __init__(self, data):
-        self._data = data
-        self.fwa_base_links = BaseLinks(data.get("fwa_base_links", {}))
-        self.base_information = data.get("base_information", {})
-        self.base_upgrade_notes = data.get("base_upgrade_notes", {})
-
-
 class NewRecruit:
     """Represents a new recruit being tracked for 12 days"""
 

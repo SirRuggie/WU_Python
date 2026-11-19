@@ -1,268 +1,67 @@
 import uuid
 import hikari
 import lightbulb
-
+from hikari.impl import (
+    MessageActionRowBuilder as ActionRow, ContainerComponentBuilder as Container,
+    TextDisplayComponentBuilder as Text, MediaGalleryComponentBuilder as Media,
+    MediaGalleryItemBuilder as MediaItem, LinkButtonBuilder as LinkButton,
+)
 from extensions.components import register_action
+from extensions.commands.fwa import loader, fwa
 from utils.component_state import insert_state
 from utils.mongo import MongoClient
-from extensions.commands.fwa import loader, fwa
-from .helpers import get_fwa_base_object
-from utils.emoji import emojis, town_hall_select_emoji, fwa_town_hall_options, fwa_town_hall_menu
-from utils.town_halls import town_hall_emoji
-
-from utils.constants import WU_GOLD, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
-
-from hikari.impl import (
-    MessageActionRowBuilder as ActionRow,
-    TextSelectMenuBuilder as TextSelectMenu,
-    SelectOptionBuilder as SelectOption,
-    ContainerComponentBuilder as Container,
-    SectionComponentBuilder as Section,
-    InteractiveButtonBuilder as Button,
-    TextDisplayComponentBuilder as Text,
-    SeparatorComponentBuilder as Separator,
-    ThumbnailComponentBuilder as Thumbnail,
-    MediaGalleryComponentBuilder as Media,
-    MediaGalleryItemBuilder as MediaItem,
-    LinkButtonBuilder as LinkButton
-)
+from utils.constants import WU_GOLD
+from utils.town_hall_base_views import base_menu, base_choice
 
 
 @fwa.register()
-class NewThUpgrade(
-    lightbulb.SlashCommand,
-    name="new-th-upgrade",
-    description="Display Town Hall upgrade notes for FWA bases",
-):
-    user = lightbulb.user(
-        "discord-user",
-        "User to show this to",
-    )
+class NewThUpgrade(lightbulb.SlashCommand, name="new-th-upgrade", description="Display Town Hall upgrade notes for FWA bases"):
+    user = lightbulb.user("discord-user", "User to show this to")
 
     @lightbulb.invoke
     @lightbulb.di.with_di
-    async def invoke(
-            self,
-            ctx: lightbulb.Context,
-            mongo: MongoClient = lightbulb.di.INJECTED,
-    ) -> None:
+    async def invoke(self, ctx: lightbulb.Context, mongo: MongoClient = lightbulb.di.INJECTED) -> None:
         await ctx.defer(ephemeral=True)
-
         action_id = str(uuid.uuid4())
+        menu = base_menu(f"fwa_new_th_upgrade_th_select:{action_id}")
+        if menu is None:
+            await ctx.respond("No base links are set.", ephemeral=True)
+            return
+        await insert_state(mongo, {"_id": action_id, "user_id": self.user.id})
+        await ctx.respond(components=[Container(accent_color=WU_GOLD, components=[
+            Text(content="## Select FWA Base Town Hall Level"),
+            Text(content="Select the Town Hall level of the recruit in the menu below."),
+            ActionRow(components=[menu]), Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
+        ])], ephemeral=True)
 
-        # Store the user_id in MongoDB like other commands do
-        data = {
-            "_id": action_id,
-            "user_id": self.user.id  # Store as integer
-        }
-        await insert_state(mongo, data)
 
-        components = [
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    Text(content="## Select FWA Base Town Hall Level"),
-                    Text(
-                        content=(
-                            "Select the Town Hall level of the recruit in the menu below."
-                        )
-                    ),
-                    ActionRow(
-                        components=[
-                            fwa_town_hall_menu(TextSelectMenu(
-                                max_values=1,
-                                custom_id=f"fwa_new_th_upgrade_th_select:{action_id}",
-                                placeholder="Select a Base...",
-                                options=fwa_town_hall_options([
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(18),
-                                        label="TH18",
-                                        value="th18"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(18),
-                                        label="TH18 New",
-                                        value="th18_new"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(17),
-                                        label="TH17",
-                                        value="th17"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(17),
-                                        label="TH17 New",
-                                        value="th17_new"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(16),
-                                        label="TH16",
-                                        value="th16"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(16),
-                                        label="TH16 New",
-                                        value="th16_new"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(15),
-                                        label="TH15",
-                                        value="th15"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(14),
-                                        label="TH14",
-                                        value="th14"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(13),
-                                        label="TH13",
-                                        value="th13"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(12),
-                                        label="TH12",
-                                        value="th12"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(11),
-                                        label="TH11",
-                                        value="th11"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(10),
-                                        label="TH10",
-                                        value="th10"
-                                    ),
-                                    SelectOption(
-                                        emoji=town_hall_select_emoji(9),
-                                        label="TH9",
-                                        value="th9"
-                                    ),
-                                ]),
-                            )),
-                        ]
-                    ),
-                    Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
-                ],
-            )
-        ]
-
-        await ctx.respond(components=components, ephemeral=True)
+def upgrade_components(base, *, user_mention, requester_mention):
+    first = [Text(content=f"## {base['friendly_name']}")]
+    if base['war_image']:
+        first.append(Media(items=[MediaItem(media=base['war_image'])]))
+    first.append(ActionRow(components=[LinkButton(url=base['link'], label="Open base link")]))
+    notes = base['upgrade_notes'] or "There are no upgrade notes for this Town Hall level yet.\n\nCheck again later or ask leadership."
+    second = [Text(content=f"### TH{base['level']} Upgrade Notes"), Text(content=notes)]
+    if base['active_image']:
+        second.append(Media(items=[MediaItem(media=base['active_image'])]))
+    second.append(Text(content=f"-# Requested by {requester_mention}"))
+    return [Text(content=user_mention), Container(accent_color=WU_GOLD, components=first), Container(accent_color=WU_GOLD, components=second)]
 
 
 @register_action("fwa_new_th_upgrade_th_select", no_return=True, requires_state=True)
 @lightbulb.di.with_di
-async def fwa_new_th_upgrade_th_select(
-        user_id: int,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        **kwargs
-):
-    print(f"[FWA New TH Upgrade] ========== fwa_new_th_upgrade_th_select CALLED ==========")
-    print(f"[FWA New TH Upgrade] user_id: {user_id}")
-    print(f"[FWA New TH Upgrade] kwargs keys: {list(kwargs.keys())}")
-
-    try:
-        ctx: lightbulb.components.MenuContext = kwargs["ctx"]
-        print(f"[FWA New TH Upgrade] Got ctx successfully")
-
-        # Get the user from the user_id that was stored in MongoDB
-        print(f"[FWA New TH Upgrade] Fetching member...")
-        user = await bot.rest.fetch_member(ctx.guild_id, user_id)
-        print(f"[FWA New TH Upgrade] Got user: {user.username}")
-
-        # Get the selected TH level
-        choice = ctx.interaction.values[0]
-        print(f"[FWA New TH Upgrade] Choice from dropdown: {choice}")
-
-        # Get FWA data
-        print(f"[FWA New TH Upgrade] Getting FWA data...")
-        fwa_data = await get_fwa_base_object(mongo)
-        if not fwa_data:
-            print(f"[FWA New TH Upgrade] ERROR: FWA data not found!")
-            await ctx.respond("Could not find the FWA data.", ephemeral=True)
-            return
-        print(f"[FWA New TH Upgrade] Got FWA data successfully")
-
-        # Format display name properly for _new variants
-        if choice.endswith('_new'):
-            base_th = choice.replace('_new', '')
-            th_number = base_th.lstrip('th')
-            display_name = f"TH{th_number} New"
-            friendly_name = f"Town Hall {th_number} New"
-        else:
-            th_number = choice.lstrip('th')
-            display_name = f"TH{th_number}"
-            friendly_name = f"Town Hall {th_number}"
-
-        base_link = getattr(fwa_data.fwa_base_links, choice, "")
-        print(f"[FWA New TH Upgrade] Base link: {base_link[:50] if base_link else 'NONE'}")
-
-        if not base_link:
-            print(f"[FWA New TH Upgrade] ERROR: No base link found for {choice}")
-            await ctx.respond(f"No base link is set for {choice}.", ephemeral=True)
-            return
-
-        # Get base upgrade notes for this TH level
-        print(f"[FWA New TH Upgrade] Getting base_upgrade_notes...")
-        print(f"[FWA New TH Upgrade] base_upgrade_notes type: {type(fwa_data.base_upgrade_notes)}")
-        print(f"[FWA New TH Upgrade] base_upgrade_notes keys: {list(fwa_data.base_upgrade_notes.keys())}")
-        upgrade_notes = fwa_data.base_upgrade_notes.get(choice, "")
-        print(f"[FWA New TH Upgrade] Retrieved upgrade_notes for '{choice}': {upgrade_notes[:50] if upgrade_notes else 'EMPTY'}")
-    except Exception as e:
-        print(f"[FWA New TH Upgrade] EXCEPTION: {e}")
-        import traceback
-        traceback.print_exc()
+async def fwa_new_th_upgrade_th_select(user_id: int, bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+                                      mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
+    ctx = kwargs['ctx']
+    choice = ctx.interaction.values[0]
+    base = base_choice(choice)
+    if base is None:
+        await ctx.respond(f"No base link is set for {choice}.", ephemeral=True)
         return
-    if not upgrade_notes:
-        upgrade_notes = (
-            "There are no upgrade notes for this Town Hall level yet.\n\n"
-            "Check again later or ask leadership."
-        )
-
-    # Build the response
-    components = [
-        Text(content=f"{user.mention}"),
-        Container(
-            accent_color=WU_GOLD,
-            components=[
-                Text(content=f"## {friendly_name}"),
-                Media(
-                    items=[
-                        MediaItem(media=FWA_WAR_BASE.get(choice, ""))
-                    ]
-                ),
-                ActionRow(
-                    components=[
-                        LinkButton(
-                            url=base_link,
-                            label="Open base link",
-                        )
-                    ]
-                ),
-            ]
-        ),
-        Container(
-            accent_color=WU_GOLD,
-            components=[
-                Text(content=f"### TH{th_number} Upgrade Notes"),
-                Text(content=upgrade_notes),
-                Media(
-                    items=[
-                        MediaItem(media=FWA_ACTIVE_WAR_BASE.get(choice, ""))
-                    ]
-                ),
-                Text(content=f"-# Requested by {ctx.member.mention}")
-            ]
-        )
-    ]
-
+    user = await bot.rest.fetch_member(ctx.guild_id, user_id)
     await bot.rest.create_message(
-        components=components,
-        channel=ctx.channel_id,
-        user_mentions=[user.id],
-        role_mentions=True,
+        components=upgrade_components(base, user_mention=user.mention, requester_mention=ctx.member.mention),
+        channel=ctx.channel_id, user_mentions=[user.id], role_mentions=True,
     )
 
 
