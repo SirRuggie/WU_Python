@@ -1,7 +1,87 @@
-"""Shared bot role-hierarchy checks for the current Roles manager."""
+"""Shared role authorization and bot hierarchy checks; no transport or storage."""
 
 import hikari
-from extensions.commands.recruit import perms
+
+
+def guild_permissions(
+        member: hikari.Member | hikari.InteractionMember | None,
+        guild: hikari.Guild | None,
+) -> hikari.Permissions:
+    """Resolve guild permissions for cached and interaction member shapes."""
+    if member is None:
+        return hikari.Permissions.NONE
+
+    interaction_permissions = getattr(member, "permissions", None)
+    if interaction_permissions is not None:
+        return hikari.Permissions(interaction_permissions)
+
+    if guild is None:
+        return hikari.Permissions.NONE
+    if member.id == guild.owner_id:
+        return hikari.Permissions.ADMINISTRATOR
+
+    permissions = hikari.Permissions.NONE
+    role_ids = set(member.role_ids)
+    role_ids.add(guild.id)  # @everyone is omitted from Discord member payloads.
+    for role_id in role_ids:
+        role = guild.get_role(role_id)
+        if role is not None:
+            permissions |= role.permissions
+    return permissions
+
+
+def actor_can_manage_role(
+        member: hikari.Member | hikari.InteractionMember | None,
+        guild: hikari.Guild,
+        role: hikari.Role,
+) -> bool:
+    """Apply Discord-like hierarchy and privileged-role checks to an actor."""
+    if member is None:
+        return False
+
+    permissions = guild_permissions(member, guild)
+    if permissions & hikari.Permissions.ADMINISTRATOR:
+        return True
+
+    # Delegated bot tools must not grant permissions the actor does not already
+    # possess, even when the role happens to sit below the actor in hierarchy.
+    if role.permissions & ~permissions:
+        return False
+
+    positions = [
+        actor_role.position
+        for role_id in member.role_ids
+        if (actor_role := guild.get_role(role_id)) is not None
+    ]
+    return role.position < max(positions, default=0)
+
+
+def actor_can_manage_member(
+        actor: hikari.Member | hikari.InteractionMember | None,
+        target: hikari.Member | hikari.InteractionMember,
+        guild: hikari.Guild,
+) -> bool:
+    """Prevent delegated role tools from bypassing member hierarchy."""
+    if actor is None:
+        return False
+
+    if target.id == guild.owner_id:
+        return False
+
+    if guild_permissions(actor, guild) & hikari.Permissions.ADMINISTRATOR:
+        return True
+
+    actor_positions = [
+        role.position
+        for role_id in actor.role_ids
+        if (role := guild.get_role(role_id)) is not None
+    ]
+    target_positions = [
+        role.position
+        for role_id in target.role_ids
+        if (role := guild.get_role(role_id)) is not None
+    ]
+    return max(actor_positions, default=0) > max(target_positions, default=0)
 
 
 def bot_top_role_position(guild: hikari.Guild, bot: hikari.GatewayBot) -> int | None:
@@ -38,7 +118,7 @@ def role_is_manageable(
         return False
 
     has_permission = bool(
-        perms.guild_permissions(bot_member, guild)
+        guild_permissions(bot_member, guild)
         & (hikari.Permissions.MANAGE_ROLES | hikari.Permissions.ADMINISTRATOR)
     )
     top_position = bot_top_role_position(guild, bot)

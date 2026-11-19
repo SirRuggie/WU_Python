@@ -184,3 +184,38 @@ def test_bot_manageability_requires_permission_hierarchy_and_unmanaged_role():
     assert not role_is_manageable(guild, bot, equal_role)
     assert not role_is_manageable(guild, bot, managed_role)
     assert not role_is_manageable(guild, bot, guild.get_role(guild.id))
+
+
+def test_extension_reexports_shared_authorization_owner():
+    from utils import role_permissions
+    from cwl_web import manage_roles, member_role_runs
+    for name in ('guild_permissions', 'actor_can_manage_role', 'actor_can_manage_member'):
+        assert getattr(perms, name) is getattr(role_permissions, name)
+        assert getattr(role_permissions, name).__module__ == 'utils.role_permissions'
+    # Existing HTTP test seams still patch the functions actually called.
+    assert manage_roles.perms is member_role_runs.perms is role_permissions
+
+
+def test_shared_owner_denies_missing_actor_and_equal_role_without_permissions():
+    from utils import role_permissions as owner
+    equal = FakeRole(10, 50)
+    guild = FakeGuild(1, 999, [FakeRole(1, 0), equal])
+    actor = FakeMember(100, [10])
+    assert owner.guild_permissions(None, guild) == hikari.Permissions.NONE
+    assert owner.guild_permissions(actor, None) == hikari.Permissions.NONE
+    assert not owner.actor_can_manage_role(None, guild, equal)
+    assert not owner.actor_can_manage_role(actor, guild, equal)
+    assert not owner.actor_can_manage_member(None, actor, guild)
+
+
+def test_shared_owner_preserves_interaction_admin_and_owner_target_denial():
+    from utils import role_permissions as owner
+    guild = FakeGuild(1, 999, [FakeRole(1, 0)])
+    interaction = SimpleNamespace(id=100, role_ids=(), permissions=hikari.Permissions.ADMINISTRATOR)
+    cached_owner = FakeMember(guild.owner_id, [])
+    higher = FakeRole(10, 999, hikari.Permissions.MANAGE_GUILD)
+    assert owner.guild_permissions(interaction, None) == hikari.Permissions.ADMINISTRATOR
+    assert owner.actor_can_manage_role(interaction, guild, higher)
+    assert owner.actor_can_manage_role(cached_owner, guild, higher)
+    assert owner.actor_can_manage_member(interaction, FakeMember(200, [10]), guild)
+    assert not owner.actor_can_manage_member(interaction, cached_owner, guild)

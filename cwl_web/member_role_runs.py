@@ -3,7 +3,7 @@
 import time
 from aiohttp import web
 import hikari
-from extensions.commands.recruit import perms
+from utils import role_permissions as perms
 from utils.member_profiles import member_id
 from utils.member_profile_runs import ProfileRuns
 from utils.role_permissions import role_is_manageable, member_role_ids

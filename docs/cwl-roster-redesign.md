@@ -1,3 +1,27 @@
+## Backend audit Part L, batch 1 — role authorization boundaries (239L)
+
+Status: bounded implementation for review; no merge or release claim. The pure
+cached/interaction guild-permission and actor hierarchy helpers move unchanged
+from recruiter transport into `utils/role_permissions.py`. Recruiter policy stays
+in the extension; compatibility exports and the HTTP `perms` patch seam remain.
+Role HTTP adapters and the management worker now use the shared owner directly.
+No authorization, storage, route, provider or Discord behavior changes.
+
+A generic Git-tracked Python AST regression scans all depths and deferred imports
+in utils, HTTP and extensions. Every remaining legacy violation is an exact
+source/target edge; adding an edge fails, and removing one requires shrinking the
+allowlist. This batch removes the role-authorization edges only. Later Part L
+batches move the remaining content, ticket, worker and history dependencies.
+Preview: N/A (backend). Focused authorization/HTTP/worker/architecture checks:
+141 passed plus 3 subtests; seven changed modules import in the isolated fixture.
+Explicit fixture app startup/config returns 200, with all 76 fixture SQLite table
+counts unchanged. Full backend: 9,320 passed, 134 skipped, 539 subtests; full frontend: 2,750
+passed. Type/build, scoped formatting, diff and the war-reminder gate passed.
+Independent review accepted the source and repeated the focused checks. These
+are isolated fixture results, not live-delivery or production evidence. The generic
+AST inventory shrinks from 64 to 56 exact alias-target edges; none are added.
+No production data or providers are used for development.
+
 ## Town Hall bases (245), November 19, 2026
 
 P0 stacked after 244 (1179–1184): shared war/active images per level; Merged and
