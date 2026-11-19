@@ -133,7 +133,7 @@ it("clears protected member data when refresh loses permission", async () => {
     .mockRejectedValueOnce(new ApiError("Denied", 403));
   await renderPage();
   expect(document.body.textContent).toContain("Ada");
-  await click("Refresh members");
+  await click("Refresh");
   expect(document.body.textContent).not.toContain("Ada");
   expect(document.body.textContent).toContain("Your access changed");
 });

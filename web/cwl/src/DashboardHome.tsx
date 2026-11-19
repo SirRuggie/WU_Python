@@ -14,7 +14,6 @@ import {
 } from "./accountDisplay";
 import { weightText } from "./roster";
 import AccountLinkHelp from "./AccountLinkHelp";
-import AttentionSummary, { type AttentionItem } from "./AttentionSummary";
 import DashboardIcon from "./DashboardIcon";
 import DashboardLink from "./DashboardLink";
 import { dashboardPath } from "./dashboardHistory";
@@ -497,22 +496,6 @@ export default function DashboardHome(props: Props) {
     target.scrollIntoView({ block: "start" });
     target.querySelector("summary")?.focus({ preventScroll: true });
   };
-  const attentionItems: AttentionItem[] = attentionState
-    ? [
-        {
-          title: attentionState.title,
-          detail: attentionState.detail,
-          action:
-            attentionState.kind === "error"
-              ? {
-                  label: attentionState.actionLabel,
-                  onClick: refreshDashboard,
-                  disabled: refreshing,
-                }
-              : { label: attentionState.actionLabel, onClick: openAccountHelp },
-        },
-      ]
-    : [];
   if (!seasonsKnown)
     return (
       <div className="dashboard-home">
@@ -547,7 +530,14 @@ export default function DashboardHome(props: Props) {
           onRefresh={refreshDashboard}
           intervalSeconds={session.can_edit ? 30 : undefined}
           paused={paused}
-          onPauseChange={session.can_edit ? setPaused : undefined}
+          onPauseChange={
+            session.can_edit
+              ? (next) => {
+                  setPaused(next);
+                  if (!next) void refreshRead.current();
+                }
+              : undefined
+          }
           showRefresh={!attentionError && !error && !seasonError}
         />
       </CwlPageHeader>
@@ -578,10 +568,17 @@ export default function DashboardHome(props: Props) {
         busy={refreshing}
         retryContext="dashboard"
       />
-      <AttentionSummary
-        items={attentionState?.kind === "error" ? [] : attentionItems}
-        urgent={attentionState?.kind === "error"}
-      />
+      {attentionState?.kind === "empty" && (
+        <EmptyState
+          title={attentionState.title}
+          line={attentionState.detail}
+          action={
+            <button onClick={openAccountHelp}>
+              {attentionState.actionLabel}
+            </button>
+          }
+        />
+      )}
       {!attentionState && complete && data && season ? (
         <MemberSignupStatus
           signups={data.signups.map((signup) => ({

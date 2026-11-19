@@ -219,7 +219,11 @@ it("permission loss clears loaded protected rows", async () => {
         status: 403,
       }),
   );
-  await chooseActivity("Refresh activity");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('button[aria-label="Refresh"]')!
+      .click(),
+  );
   expect(denied).toHaveBeenCalledOnce();
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(0);
   expect(host.querySelector("[role=alert]")).not.toBeNull();
@@ -849,4 +853,47 @@ it("keeps Sort, Filters and the actions menu reachable while a query is set", as
   const search = host.querySelector(".strike-activity-search")!;
   expect(toolbar.contains(search)).toBe(false);
   expect(search.querySelector("input")!.value).toBe("Risk");
+});
+
+it("publishes one current read control and clears it when the activity surface leaves", async () => {
+  const publish = vi.fn();
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster onChoose={vi.fn()} onRefreshControl={publish} />,
+    ),
+  );
+  expect(host.querySelector('button[aria-label="Refresh"]')).toBeNull();
+  const control = publish.mock.calls.at(-1)![0];
+  const reads = vi.mocked(fetch).mock.calls.length;
+  await act(async () => control.onRefresh());
+  expect(vi.mocked(fetch).mock.calls.length).toBe(reads + 1);
+  const current = publish.mock.calls.at(-1)![0];
+  await act(async () => root.render(<p>Other page</p>));
+  expect(publish).toHaveBeenLastCalledWith(null);
+  const afterLeave = vi.mocked(fetch).mock.calls.length;
+  await act(async () => current.onRefresh());
+  expect(vi.mocked(fetch).mock.calls.length).toBe(afterLeave);
+});
+
+it("a late activity read cannot republish its header control after unmount", async () => {
+  let finish!: (value: Response) => void;
+  vi.mocked(fetch).mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const publish = vi.fn();
+  await act(async () =>
+    root.render(
+      <StrikeActivityRoster onChoose={vi.fn()} onRefreshControl={publish} />,
+    ),
+  );
+  await act(async () => root.render(<p>Other page</p>));
+  const publications = publish.mock.calls.length;
+  await act(async () =>
+    finish(new Response(JSON.stringify({ accounts: [row], clans: [] }))),
+  );
+  expect(publish.mock.calls.length).toBe(publications);
+  expect(publish).toHaveBeenLastCalledWith(null);
 });

@@ -23,12 +23,6 @@
   font-size: var(--wu-text-sm);
 }
 
-.hub-sync button {
-  min-height: 44px;
-  padding: var(--wu-space-1) var(--wu-space-3);
-  font-size: var(--wu-text-md);
-}
-
 .hub-sync .status-dot {
   display: inline-block;
   margin-right: var(--wu-space-2);

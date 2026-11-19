@@ -1,3 +1,7 @@
+import RefreshControl, {
+  useRefreshTime,
+  type RefreshControlProps,
+} from "./RefreshControl";
 import EmptyState from "./EmptyState";
 import { Search, X } from "lucide-react";
 import FilterChips from "./FilterChips";
@@ -17,6 +21,7 @@ import useActivityIdentityRefresh, {
 import {
   useCallback,
   useEffect,
+  useLayoutEffect,
   useMemo,
   useRef,
   useState,
@@ -81,7 +86,9 @@ export default function StrikeActivityRoster({
   trackingSlotRef,
   detailSlot,
   onSlotChoose,
+  onRefreshControl,
 }: {
+  onRefreshControl?: (control: RefreshControlProps | null) => void;
   /** Account actions listed first in the toolbar ⋯ menu. */
   overviewActions?: ActionMenuItem[];
   detailSlot?: ReactNode;
@@ -275,6 +282,24 @@ export default function StrikeActivityRoster({
       pending.current = false;
     };
   }, [read, reload]);
+  const refreshUpdatedAt = useRefreshTime(loading, true, error);
+  const readRef = useRef(read);
+  readRef.current = read;
+  useLayoutEffect(() => {
+    if (!onRefreshControl) return;
+    let active = true;
+    onRefreshControl({
+      updatedAt: refreshUpdatedAt,
+      busy: loading,
+      disabled: bulkBusy,
+      onRefresh: () => (active ? readRef.current() : undefined),
+      showRefresh: !error,
+    });
+    return () => {
+      active = false;
+      onRefreshControl(null);
+    };
+  }, [onRefreshControl, refreshUpdatedAt, loading, bulkBusy, error]);
   useActivityIdentityRefresh({
     endpoint: activityEndpoint,
     enabled:
@@ -612,6 +637,15 @@ export default function StrikeActivityRoster({
         </select>
       </div>
       <div className="strike-activity-toolbar">
+        {!onRefreshControl && (
+          <RefreshControl
+            updatedAt={refreshUpdatedAt}
+            busy={loading}
+            disabled={bulkBusy}
+            onRefresh={read}
+            showRefresh={!error}
+          />
+        )}
         <button
           ref={searchButton}
           type="button"
@@ -666,12 +700,6 @@ export default function StrikeActivityRoster({
                   },
                 ]
               : []),
-            {
-              id: "refresh-activity",
-              label: "Refresh activity",
-              disabled: loading || bulkBusy,
-              onAction: () => void read(),
-            },
           ]}
         />
       </div>
@@ -790,8 +818,9 @@ export default function StrikeActivityRoster({
         note={
           data.accounts.length ? "Showing the last loaded activity." : undefined
         }
-        disabled={loading}
-        onRetry={() => void read()}
+        busy={loading}
+        disabled={bulkBusy}
+        onRetry={read}
       />
       {data.history_warning && (
         <p className="notice error">{data.history_warning}</p>

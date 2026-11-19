@@ -9,11 +9,17 @@ export function ImageGallery({
 }) {
   return (
     <section className="image-gallery">
-      <CwlPageHeader
-        title={<h1>Image gallery</h1>}
-        description="Find and organize images for commands and server messages."
+      <ImageCollection
+        onDirty={onDirty}
+        pageHeader={(control) => (
+          <CwlPageHeader
+            title={<h1>Image gallery</h1>}
+            description="Find and organize images for commands and server messages."
+          >
+            {control}
+          </CwlPageHeader>
+        )}
       />
-      <ImageCollection onDirty={onDirty} />
     </section>
   );
 }

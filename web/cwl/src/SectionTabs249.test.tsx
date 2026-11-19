@@ -67,7 +67,19 @@ it("uses manual activation, roving focus, disabled skipping, wrap, Home/End and 
     outside.remove();
     await act(async () => tabs[2].click());
     expect(change).toHaveBeenCalledExactlyOnceWith("c");
-    const panel = host.querySelector('[role="tabpanel"]')!;
+    for (const tab of tabs) {
+      const target = document.getElementById(
+        tab.getAttribute("aria-controls")!,
+      )!;
+      expect(target).toBeTruthy();
+      expect(target.getAttribute("aria-labelledby")).toBe(tab.id);
+      expect(target.hidden).toBe(tab.getAttribute("aria-selected") !== "true");
+      if (target.hidden) expect(target.textContent).toBe("");
+    }
+    expect(
+      host.querySelectorAll('[role="tabpanel"]:not([hidden])'),
+    ).toHaveLength(1);
+    const panel = host.querySelector('[role="tabpanel"]:not([hidden])')!;
     expect(panel.id).toBe(tabs[2].getAttribute("aria-controls"));
     expect(panel.getAttribute("aria-labelledby")).toBe(tabs[2].id);
     expect(tabs[2].getAttribute("aria-selected")).toBe("true");

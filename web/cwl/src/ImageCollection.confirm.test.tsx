@@ -3,7 +3,7 @@ import { act, useState } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ImageCollection from "./ImageCollection";
-import CommandImageLibrary from "./CommandImageLibrary";
+import CommandImageLibrary, { ImageGallery } from "./CommandImageLibrary";
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({
   ...(await original<typeof import("./api")>()),
@@ -20,7 +20,8 @@ const image = {
 };
 const button = (name: string) =>
   [...document.querySelectorAll("button")].find(
-    (node) => node.textContent === name,
+    (node) =>
+      node.textContent === name || node.getAttribute("aria-label") === name,
   )!;
 async function click(name: string) {
   await act(async () => button(name).click());
@@ -277,4 +278,41 @@ it("closing the tab keeps the native beforeunload guard", async () => {
   expect(event.defaultPrevented).toBe(true);
   expect(document.querySelector(".confirm-dialog")).toBeNull();
   expect(transport).toHaveBeenCalledTimes(1);
+});
+
+it("places full-gallery refresh in its header and exposes only one busy error retry", async () => {
+  await act(async () => root.render(<ImageGallery />));
+  const refresh = host.querySelector<HTMLButtonElement>(
+    '.cwl-page-header button[aria-label="Refresh"]',
+  )!;
+  expect(refresh).toBeTruthy();
+  expect(
+    host.querySelector('.gallery-toolbar button[aria-label="Refresh gallery"]'),
+  ).toBeNull();
+  transport.mockRejectedValueOnce(new Error("Gallery offline"));
+  await act(async () => refresh.click());
+  expect(host.querySelector('button[aria-label="Refresh"]')).toBeNull();
+  const retry = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Try again",
+  )!;
+  let finish!: (value: { images: (typeof image)[] }) => void;
+  transport.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const reads = transport.mock.calls.length;
+  await act(async () => retry.click());
+  const pendingRefresh = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Refresh"]',
+  )!;
+  expect(pendingRefresh.disabled).toBe(true);
+  await act(async () => {
+    pendingRefresh.click();
+    await Promise.resolve();
+    pendingRefresh.click();
+  });
+  expect(transport.mock.calls.length).toBe(reads + 1);
+  await act(async () => finish({ images: [image] }));
 });

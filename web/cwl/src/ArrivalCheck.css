@@ -12,13 +12,11 @@
   line-height: 20px;
 }
 .arrival-check .declaration-help,
-.declaration-refresh,
 .declaration-copy small {
   color: var(--roster-text-muted);
   font-size: var(--wu-text-xs);
   line-height: 16px;
 }
-.declaration-refresh,
 .declaration-pools {
   display: flex;
   align-items: center;
@@ -225,10 +223,7 @@
   background: var(--roster-surface);
   color: var(--roster-text-muted);
 }
-.arrival-check .declaration-refresh {
-  flex-wrap: nowrap;
-  justify-content: space-between;
-}
+
 .roster-ui .declaration-player {
   padding-top: var(--wu-space-1);
 }

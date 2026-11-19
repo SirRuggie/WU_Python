@@ -248,7 +248,8 @@ it("keeps one toolbar row of Search, Sort, Filters and a menu, with the tab rule
     [...document.querySelectorAll('[role="menuitem"]')].map((node) =>
       node.textContent?.trim(),
     ),
-  ).toEqual(["Copy list", "Refresh activity"]);
+  ).toEqual(["Copy list"]);
+  expect(host.querySelector('button[aria-label="Refresh"]')).not.toBeNull();
   expect(host.textContent).not.toContain("Help");
 });
 

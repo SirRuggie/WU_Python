@@ -1,3 +1,5 @@
+import { RefreshButton } from "../RefreshControl";
+import LoadError from "../LoadError";
 import { formatDateTime, formatTime } from "../format";
 import HelpButton from "../HelpButton";
 import CwlPageHeader from "../CwlPageHeader";
@@ -40,12 +42,21 @@ type Clan = {
   membership_checked_at?: string | null;
 };
 const clanProgress = (clan: Clan) =>
-  `${clan.weighed_count == null || clan.members_count == null
-    ? (clan.status === "loading" ? "Loading progress…" : "Progress unavailable")
-    : `${clan.weighed_count}/${clan.members_count} weighed`}${clan.status === "stale"
-      ? clan.membership_checked_at ? ` · members checked ${formatDateTime(new Date(clan.membership_checked_at))}` : " · members need checking"
-      : ""}`;
-const rememberedClanKey = (viewerId: string) => `wu-clan-weights:last-clan:${viewerId}`;
+  `${
+    clan.weighed_count == null || clan.members_count == null
+      ? clan.status === "loading"
+        ? "Loading progress…"
+        : "Progress unavailable"
+      : `${clan.weighed_count}/${clan.members_count} weighed`
+  }${
+    clan.status === "stale"
+      ? clan.membership_checked_at
+        ? ` · members checked ${formatDateTime(new Date(clan.membership_checked_at))}`
+        : " · members need checking"
+      : ""
+  }`;
+const rememberedClanKey = (viewerId: string) =>
+  `wu-clan-weights:last-clan:${viewerId}`;
 const message = (error: unknown) =>
   error instanceof Error ? error.message : "Could not complete this action.";
 export default function WeightTrial({
@@ -90,7 +101,7 @@ export default function WeightTrial({
   const [notice, setNotice] = useState("");
   const [attempt, setAttempt] = useState(0);
   const [directoryAttempt, setDirectoryAttempt] = useState(0);
-  const errorPanel = useRef<HTMLParagraphElement | null>(null);
+  const errorPanel = useRef<HTMLDivElement | null>(null);
   useEffect(() => {
     if (error) errorPanel.current?.focus();
   }, [error]);
@@ -372,22 +383,48 @@ export default function WeightTrial({
     }
   };
   useEffect(() => {
-    if (!viewerId || targetClan || targetPlayer || selected || directoryLoading || accessDenied) return;
+    if (
+      !viewerId ||
+      targetClan ||
+      targetPlayer ||
+      selected ||
+      directoryLoading ||
+      accessDenied
+    )
+      return;
     try {
       const remembered = localStorage.getItem(rememberedClanKey(viewerId));
-      if (remembered && clans.some(clan => clan.tag === remembered)) setSelected(remembered);
-    } catch { /* Storage is optional; the picker remains usable. */ }
-  }, [viewerId, targetClan, targetPlayer, selected, directoryLoading, accessDenied, clans]);
+      if (remembered && clans.some((clan) => clan.tag === remembered))
+        setSelected(remembered);
+    } catch {
+      /* Storage is optional; the picker remains usable. */
+    }
+  }, [
+    viewerId,
+    targetClan,
+    targetPlayer,
+    selected,
+    directoryLoading,
+    accessDenied,
+    clans,
+  ]);
   useEffect(() => {
-    if (!viewerId || !selected || roster?.clan.tag !== selected || accessDenied) return;
-    try { localStorage.setItem(rememberedClanKey(viewerId), selected); }
-    catch { /* A storage failure must not block editing weights. */ }
+    if (!viewerId || !selected || roster?.clan.tag !== selected || accessDenied)
+      return;
+    try {
+      localStorage.setItem(rememberedClanKey(viewerId), selected);
+    } catch {
+      /* A storage failure must not block editing weights. */
+    }
   }, [viewerId, selected, roster, accessDenied]);
   return (
     <div
       className="weight-trial"
       onFocusCapture={(event) => {
-        if (event.target instanceof HTMLInputElement && event.currentTarget.contains(event.target))
+        if (
+          event.target instanceof HTMLInputElement &&
+          event.currentTarget.contains(event.target)
+        )
           editFocus.current = event.target;
       }}
     >
@@ -417,7 +454,10 @@ export default function WeightTrial({
         className="weight-trial-header"
         title={<h1>Clan weights</h1>}
         help={
-          <HelpButton title="How weights are used" className="weight-help-panel">
+          <HelpButton
+            title="How weights are used"
+            className="weight-help-panel"
+          >
             <p>Clan weights and roster Details share the same saved weight.</p>
             <p>
               Weights follow each player across clans. Save explicitly in either
@@ -431,24 +471,34 @@ export default function WeightTrial({
           </HelpButton>
         }
       >
-        {!accessDenied && <RosterMenu
-          label="Clan"
-          aria-label={selected && clans.find(clan => clan.tag === selected) ? `Clan: ${clans.find(clan => clan.tag === selected)!.name}` : "Select a clan"}
-          placeholder="Select a clan"
-          value={selected}
-          onValueChange={select}
-          disabled={anyBusy}
-          searchable
-          searchLabel="Find a clan"
-          panelClassName="weight-clan-picker-panel"
-          options={clans.map(clan => ({
-            value: clan.tag,
-            label: clan.name,
-            description: clanProgress(clan),
-            statusTone: clan.weighed_count == null || clan.members_count == null
-              ? undefined : clan.weighed_count >= clan.members_count ? "success" : "warning",
-          }))}
-        />}
+        {!accessDenied && (
+          <RosterMenu
+            label="Clan"
+            aria-label={
+              selected && clans.find((clan) => clan.tag === selected)
+                ? `Clan: ${clans.find((clan) => clan.tag === selected)!.name}`
+                : "Select a clan"
+            }
+            placeholder="Select a clan"
+            value={selected}
+            onValueChange={select}
+            disabled={anyBusy}
+            searchable
+            searchLabel="Find a clan"
+            panelClassName="weight-clan-picker-panel"
+            options={clans.map((clan) => ({
+              value: clan.tag,
+              label: clan.name,
+              description: clanProgress(clan),
+              statusTone:
+                clan.weighed_count == null || clan.members_count == null
+                  ? undefined
+                  : clan.weighed_count >= clan.members_count
+                    ? "success"
+                    : "warning",
+            }))}
+          />
+        )}
       </CwlPageHeader>
       <p>Type each player's loot. Full weight = loot × storages.</p>
       {!!outside && (
@@ -531,21 +581,25 @@ export default function WeightTrial({
                   </p>
                 )}
               </div>
-              {selected && (
-                <button disabled={anyBusy || loading} onClick={refresh}>
-                  Refresh members
-                </button>
+              {selected && !error && (
+                <RefreshButton
+                  busy={loading}
+                  disabled={anyBusy}
+                  onRefresh={refresh}
+                  label="Refresh members"
+                />
               )}
             </div>
             {error && (
-              <p
-                ref={errorPanel}
-                tabIndex={-1}
-                className="notice error"
-                role="alert"
-              >
-                {error}
-              </p>
+              <div ref={errorPanel} tabIndex={-1}>
+                <LoadError
+                  message={error}
+                  onRetry={refresh}
+                  busy={loading}
+                  disabled={anyBusy}
+                  retryContext="member weights"
+                />
+              </div>
             )}
             {notice && (
               <p role="status" className="notice">

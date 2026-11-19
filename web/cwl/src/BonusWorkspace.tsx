@@ -980,8 +980,14 @@ export default function BonusWorkspace({
       {error && !(data && (candidateOpen || reviewAccount)) && (
         <div className="notice error" role="alert">
           {error}{" "}
-          <button type="button" disabled={busy} onClick={refresh}>
-            Refresh saved status
+          <button
+            type="button"
+            disabled={busy}
+            aria-busy={busy || undefined}
+            aria-label="Try again: saved bonus status"
+            onClick={refresh}
+          >
+            Try again
           </button>
         </div>
       )}

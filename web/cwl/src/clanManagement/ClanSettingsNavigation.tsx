@@ -16,6 +16,7 @@ export default function ClanSettingsNavigation<T extends string>({
   return (
     <SectionTabs
       id="clan-settings"
+      allPanelsMounted
       className="clan-tabs section-tabs--flow"
       label="Clan settings"
       items={sections.map((section, index) => ({

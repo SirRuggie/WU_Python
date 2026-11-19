@@ -1288,7 +1288,11 @@ export default function RosterWorkspace({
               />
             )}
           </div>
-          <SectionTabPanel id="roster-workspace-views" value={mode}>
+          <SectionTabPanel
+            id="roster-workspace-views"
+            value={mode}
+            enabled={canRoster}
+          >
             <div hidden={mode !== "assign"}>
               <RosterClanChips
                 key={seasonId}

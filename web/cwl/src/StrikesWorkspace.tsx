@@ -1,3 +1,4 @@
+import RefreshControl, { type RefreshControlProps } from "./RefreshControl";
 import CwlPageHeader from "./CwlPageHeader";
 import useDiscordIdentities from "./useDiscordIdentities";
 import StrikeReviewResolution from "./StrikeReviewResolution";
@@ -108,6 +109,8 @@ export default function StrikesWorkspace({
       : { job: null, preview: null, excluded: [] },
   );
   const [accessLost, setAccessLost] = useState(false);
+  const [activityRefreshControl, setActivityRefreshControl] =
+    useState<RefreshControlProps | null>(null);
   const [trackingSlot, setTrackingSlot] = useState<HTMLDivElement | null>(null);
   // A tab the viewer cannot see falls back to the first visible tab.
   const initialTab = () => {
@@ -538,7 +541,11 @@ export default function StrikesWorkspace({
       <CwlPageHeader
         title={<h1>Strikes &amp; replacements</h1>}
         help={<StrikeHelp limit={settings?.strike_limit} />}
-      />
+      >
+        {activityRefreshControl && (
+          <RefreshControl {...activityRefreshControl} />
+        )}
+      </CwlPageHeader>
       <div className="strikes-navigation">
         <SectionTabs
           id="strike-sections"
@@ -719,6 +726,7 @@ export default function StrikesWorkspace({
                   })
                 }
                 trackingSlotRef={setTrackingSlot}
+                onRefreshControl={setActivityRefreshControl}
                 overviewActions={[
                   ...(access.add
                     ? [

@@ -312,6 +312,7 @@ export default function TodoWorkspace({
           data ? "Showing your last update. It may be out of date." : undefined
         }
         onRetry={() => setRefresh((value) => value + 1)}
+        busy={loading}
       />
       {!data && !error && (
         <div className="card todo-loading" role="status">

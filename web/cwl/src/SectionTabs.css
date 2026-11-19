@@ -157,3 +157,7 @@
     inset 0 -2px var(--wu-accent),
     inset 0 0 0 2px var(--wu-focus);
 }
+
+.section-tabs-inactive-panel[hidden] {
+  display: none !important;
+}

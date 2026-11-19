@@ -487,8 +487,8 @@ it("Clear selection remains available after a refreshed directory loses a select
   );
   departed = true;
   const refresh = [
-    ...host.querySelectorAll<HTMLButtonElement>(".members-actions button"),
-  ].find((button) => button.textContent === "Refresh members")!;
+    ...host.querySelectorAll<HTMLButtonElement>(".cwl-page-header button"),
+  ].find((button) => button.getAttribute("aria-label") === "Refresh")!;
   expect(refresh).toBeTruthy();
   await act(async () => refresh.click());
   const clear = button("Select none");
@@ -560,8 +560,8 @@ it("manual refresh accepts the server TTL and retains visible members", async ()
   await render();
   expect(host.textContent).toContain("Recent member list");
   const refresh = [
-    ...host.querySelectorAll<HTMLButtonElement>(".members-actions button"),
-  ].find((button) => button.textContent === "Refresh members")!;
+    ...host.querySelectorAll<HTMLButtonElement>(".cwl-page-header button"),
+  ].find((button) => button.getAttribute("aria-label") === "Refresh")!;
   await act(async () => refresh.click());
   expect(host.textContent).toContain("Updating member list…");
   expect(host.textContent).toContain("Person 0");

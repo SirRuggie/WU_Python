@@ -1,3 +1,4 @@
+import RefreshControl, { useRefreshTime } from "../RefreshControl";
 import EmptyState from "../EmptyState";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { useClock } from "../activity/useClock";
@@ -91,6 +92,7 @@ export default function MembersPage({
     allowed && !denied,
   );
   const data = directory.data;
+  const updatedAt = useRefreshTime(directory.loading, !!data, directory.error);
   const rows = data
     ? sortMembers(filterMembers(data.members, filters, selected), sort)
     : [];
@@ -231,7 +233,15 @@ export default function MembersPage({
             <p>{t.nicknameExplanation}</p>
           </HelpButton>
         }
-      />
+      >
+        <RefreshControl
+          updatedAt={data?.directory_cache?.checked_at || updatedAt}
+          busy={directory.loading}
+          disabled={busy || panelDirty}
+          onRefresh={() => directory.load()}
+          showRefresh={!directory.error}
+        />
+      </CwlPageHeader>
       <LoadError
         message={directory.error}
         onRetry={() => void directory.load()}
@@ -253,14 +263,6 @@ export default function MembersPage({
       {data && (
         <>
           <div className="members-actions">
-            <button
-              type="button"
-              disabled={busy || panelDirty || directory.loading}
-              aria-busy={directory.loading || undefined}
-              onClick={() => void directory.load()}
-            >
-              {t.refresh}
-            </button>
             <button
               type="button"
               disabled={busy || panelDirty || unknown}

@@ -1,3 +1,5 @@
+import { RefreshButton } from "./RefreshControl";
+import LoadError from "./LoadError";
 import { formatDateTime } from "./format";
 import { useState } from "react";
 import { api } from "./api";
@@ -43,15 +45,15 @@ export default function CommandActivity({ command }: { command: string }) {
         Roles added or removed by this trigger’s buttons. Pings do not appear
         here.
       </p>
-      <button
-        aria-busy={busy || undefined}
-        type="button"
-        disabled={busy}
-        onClick={() => void load()}
-      >
-        {busy ? "Loading…" : "Refresh activity"}
-      </button>
-      {error && <p role="alert">{error}</p>}
+      {!error && (
+        <RefreshButton busy={busy} onRefresh={load} label="Refresh activity" />
+      )}
+      <LoadError
+        message={error}
+        onRetry={load}
+        busy={busy}
+        retryContext="role activity"
+      />
       {!busy && !error && !rows.length && <p>No role actions yet.</p>}
       <div>
         {rows.map((row) => (

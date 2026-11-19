@@ -168,10 +168,15 @@ export default function MemberAssignments({
             />
           )}
           {!data.accounts.length && (
-            <div className="member-signup-summary">
-              <section className="member-signup-empty">
-                <h2>You have not signed up any accounts yet.</h2>
-                {memberSignupsOpen(season) ? (
+            <EmptyState
+              title="No accounts signed up"
+              line={
+                memberSignupsOpen(season)
+                  ? "Select your accounts on Sign up."
+                  : "Signups are closed. Ask staff for help."
+              }
+              action={
+                memberSignupsOpen(season) ? (
                   onSignup ? (
                     <DashboardLink href="/signup" onNavigate={onSignup}>
                       Sign up for CWL ›
@@ -179,11 +184,9 @@ export default function MemberAssignments({
                   ) : (
                     <a href="/signup">Sign up for CWL ›</a>
                   )
-                ) : (
-                  <p>Signups are closed. Ask staff for help.</p>
-                )}
-              </section>
-            </div>
+                ) : undefined
+              }
+            />
           )}
           {data.accounts.length > 0 && assignedGroups === 0 && (
             <section className="card member-unpublished-status">

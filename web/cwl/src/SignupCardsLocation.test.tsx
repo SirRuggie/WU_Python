@@ -130,9 +130,7 @@ it("preserves the empty assignment card", async () => {
   await act(async () =>
     root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
   );
-  expect(host.textContent).toContain(
-    "You have not signed up any accounts yet.",
-  );
+  expect(host.textContent).toContain("No accounts signed up");
   expect(host.textContent).not.toContain("Waiting for a clan");
   expect(
     host
