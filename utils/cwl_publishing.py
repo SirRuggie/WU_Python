@@ -29,7 +29,7 @@ _log = logging.getLogger(__name__)
 
 
 def _fingerprint(message):
-    from extensions.commands.content import canonical_media_url
+    from utils.content_media import canonical_media_url
 
     def node(component):
         result = {"type": int(component.type)}
@@ -238,7 +238,7 @@ async def _render_post_update(
         or int(message.components[0].type) != 17
     ):
         raise ValueError("This post layout is not supported by the roster text editor")
-    from extensions.commands.content import media_galleries, media_url
+    from utils.content_media import media_galleries, media_url
 
     galleries = []
     for gallery in media_galleries(message.components):
@@ -523,7 +523,7 @@ async def update_published_post(
         rendered = await _render_post_update(
             draft, cycle, key, audience, message, preserve_media=preserve_media
         )
-        from extensions.commands.content import (
+        from utils.content_media import (
             discord_attachment_id,
             media_galleries,
             media_url,

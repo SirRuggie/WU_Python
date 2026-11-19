@@ -1,3 +1,30 @@
+## Backend audit Part L, batch 3 — pure content media helpers (239L)
+
+Status: bounded implementation for review, stacked on L2 head
+`7158895542bcb8a30c6203e10dcb8be3694d46e0`; each batch requires its own approval.
+Five unchanged gallery/media helpers move from the native content editor into
+`utils/content_media.py`; native names remain compatibility reexports and the
+publisher imports the pure owner directly. No editor state, transport, storage,
+authorization or rendering policy changes. Existing hosted-image URL transforms
+and upload-state modules remain separate, as does the HTTP delivery snapshot.
+
+The exact boundary allowlist shrinks 53 → 49 by removing only four publisher
+helper edges. Gallery order, one-image-slot errors, media member shapes and
+attachment IDs remain unchanged. Discord attachment canonicalization keeps its
+existing three-host/path rule and strips only `ex`, `is` and `hm`, preserving
+other query pairs, order and blank values; external URLs are unchanged.
+Preview: N/A (backend). Focused media, publisher/native compatibility, worker and
+architecture checks passed: 127 tests. Three changed modules imported in the
+isolated fixture; config returned 200 and all 76 SQLite fixture table counts
+remained unchanged. Full backend passed 9,352 tests and 577 subtests (134 skips);
+full frontend passed 2,750 tests. Type/build, scoped formatting, diff and the
+war-reminder gate passed. Independent source, focused and full checks passed.
+These are isolated fixture results, not live-delivery or production evidence.
+The urgent picker text follow-up retains release priority under Shaka 1195;
+this batch does not touch its files or authorize production. Shaka 1196 approves
+L1/L2 separately; unapproved L3 is excluded from their combined release.
+Later Part L batches retain API content, fingerprint and history dependencies.
+
 ## Backend audit Part L, batch 2 — ticket-settings contract (239L)
 
 Status: bounded implementation for review, stacked on L1 head
