@@ -67,6 +67,23 @@ public.
   traceback, while preserving visibility of real failures. Retain M unchanged;
   this note does not authorize implementation.
 
+- **`REL-007` — Priority: report the known CWL bridge startup wait as INFO.**
+  Shaka 1134/1137 (2026-11-18), reaffirmed by 1189 (2026-11-19): before the
+  first schedule load completes, the bridge poll can raise an expected
+  `ValueError`. Change this exact startup state to INFO without a traceback.
+  Match only job `cwl-web-roster-bridge.schedule-sync`, frames
+  `_poll_web_roster_bridge` → `reconcile_campaign_changes`, and the exact message
+  `No schedule load completed; nothing was acknowledged`, within the first
+  60 seconds after start. Do not bind the match to source line numbers. That
+  failed reconciliation acknowledged and sent nothing; this is not a claim
+  about other jobs or deliveries.
+  The saved batch 245 journal shows the same case during the initial 103f5d26
+  smoke and recovered 244 (8bf50092) startup. The missing 1137 exclusion made the
+  245 smoke fail; this known case alone is not evidence of a 245 migration or
+  code regression. Every other traceback, including any `NetworkTimeout` or
+  `ExecutionTimeout`, remains fatal. This backlog entry authorizes no product
+  change and does not block the separately approved code-only 245 retry.
+
 ### P2 — deferred validation
 
 - **`TODO-001` — Completed 2026-09-26.** The operator confirmed live Raid Weekend behavior works.
