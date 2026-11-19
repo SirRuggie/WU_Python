@@ -208,15 +208,15 @@ export default function PublicationWorkspace({
   const hasWarnings = checks.some((check) => check.accounts.length > 0);
   const canPublish = Boolean(
     draft &&
-      canManage &&
-      !locked &&
-      !loading &&
-      !error &&
-      !archived &&
-      instructions.length <= 2000 &&
-      changesReady &&
-      draft.preview.accounts.length &&
-      (draft.preview.unassigned_count === 0 || acknowledged),
+    canManage &&
+    !locked &&
+    !loading &&
+    !error &&
+    !archived &&
+    instructions.length <= 2000 &&
+    changesReady &&
+    draft.preview.accounts.length &&
+    (draft.preview.unassigned_count === 0 || acknowledged),
   );
 
   const publishReason = publicationBlockingReason({
