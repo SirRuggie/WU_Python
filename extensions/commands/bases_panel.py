@@ -11,6 +11,7 @@ from hikari.impl import (
     MediaGalleryComponentBuilder as Media,
     MediaGalleryItemBuilder as MediaItem,
     MessageActionRowBuilder as ActionRow,
+    SeparatorComponentBuilder as Separator,
     TextDisplayComponentBuilder as Text,
 )
 
@@ -22,14 +23,29 @@ from utils.town_hall_base_views import base_choice, base_menu
 loader = lightbulb.Loader()
 
 PANEL_ACTION = "fwa_bases_panel"
+STEPS = (
+    "**How to get your base**\n"
+    "1. Select your Town Hall in the menu below.\n"
+    "2. Select **Open base link**. The base opens in Clash of Clans.\n"
+    "3. Copy the base and set it as your war base."
+)
+TH16_NOTE = (
+    "**TH16 and higher**\n"
+    "**Non-merged**: Use this first. Use it when you are new to the Town Hall "
+    "and your defenses are not merged.\n"
+    "**Merged**: Use this after you merge your defenses."
+)
 
 
 def panel_components():
     """The public panel; the menu is disabled while no base links are set."""
     return [Container(accent_color=WU_GOLD, components=[
         Text(content="## FWA Bases"),
-        Text(content="Select your Town Hall to see its base."),
+        Text(content=STEPS),
+        Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+        Text(content=TH16_NOTE),
         ActionRow(components=[base_menu(f"{PANEL_ACTION}:", empty=True)]),
+        Text(content="-# Only you can see your base."),
         Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
     ])]
 
