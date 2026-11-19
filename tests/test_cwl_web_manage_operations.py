@@ -31,15 +31,14 @@ class ManageOperationsTests(unittest.IsolatedAsyncioTestCase):
         collection.update_one.side_effect=DuplicateKeyError('duplicate')
         with self.assertRaises(web.HTTPConflict):await cas(collection,'config',{}, {'enabled':True})
 
-    async def test_base_list_and_leaf_are_bounded(self):
-        db=SimpleNamespace(bot_config=ConfigCollection(),fwa_data=SimpleNamespace(find_one=AsyncMock(return_value={'_id':'fwa_config','fwa_base_links':{'th18':'https://link.clashofclans.com/a'}})))
-        parent=await load_document(db,'fwa_bases')
-        self.assertEqual(parent['fields'],[])
-        self.assertEqual(len(parent['documents']),13)
-        leaf=await load_document(db,'fwa_bases','th18')
-        self.assertEqual(len(leaf['fields']),5)
-        self.assertEqual(leaf['fields'][0]['value'],'https://link.clashofclans.com/a')
-        with self.assertRaises(web.HTTPBadRequest):await load_document(db,'fwa_bases','TH18.$bad')
+    async def test_retired_base_documents_are_gone_without_legacy_reads(self):
+        collection=SimpleNamespace(find_one=AsyncMock(),update_one=AsyncMock())
+        db=SimpleNamespace(fwa_data=collection)
+        for item in (None,'th18','TH18.$bad'):
+            with self.assertRaises(web.HTTPGone):
+                await load_document(db,'fwa_bases',item)
+        collection.find_one.assert_not_awaited()
+        collection.update_one.assert_not_awaited()
 
     async def test_old_weight_read_redirects_to_registry_without_storage_access(self):
         from unittest.mock import patch
@@ -64,39 +63,28 @@ class ManageOperationsTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(web.HTTPBadRequest):
                 await check_channel_permissions({}, {'permission_overwrites':[{'id':'222','type':0,'deny':str(1<<11),'allow':'0'}]})
 
-    async def test_source_snapshot_matches_revision_and_ignores_other_town_halls(self):
-        row={'_id':'fwa_config','base_information':{'th18':'old','th17':'other'}}
-        db=SimpleNamespace(bot_config=ConfigCollection(),fwa_data=SimpleNamespace(find_one=AsyncMock(return_value=row)))
-        before={}
-        loaded=await load_document(db,'fwa_bases','th18',source_snapshot=before)
-        row['base_information']['th17']='updated elsewhere'
-        self.assertEqual(loaded['revision'],(await load_document(db,'fwa_bases','th18'))['revision'])
-        row['base_information']['th18']='changed natively'
-        self.assertEqual(before['base_information']['th18'],'old')
-        self.assertNotEqual(loaded['revision'],(await load_document(db,'fwa_bases','th18'))['revision'])
-
-    async def test_native_change_between_web_read_and_save_is_not_overwritten(self):
-        from contextlib import asynccontextmanager
+    async def test_old_base_read_redirects_only_valid_variants_without_storage(self):
         from unittest.mock import patch
         from cwl_web import manage_operations as operations
-        row={'_id':'fwa_config','base_information':{'th18':'old'}}
-        collection=SimpleNamespace(find_one=AsyncMock(return_value=row))
-        db=SimpleNamespace(bot_config=ConfigCollection(),fwa_data=collection)
-        initial=await load_document(db,'fwa_bases','th18')
-        async def update(query, change, **kwargs):
-            # Native modal saves just after the web handler read its snapshot.
-            row['base_information']['th18']='native edit'
-            self.assertEqual(query['base_information.th18'],'old')
-            return SimpleNamespace(matched_count=0,upserted_id=None)
-        collection.update_one=AsyncMock(side_effect=update)
-        @asynccontextmanager
-        async def mongo(_):yield db
+        for item,suffix in ((None,''),('th18','/18'),('th18_new','/18')):
+            req=SimpleNamespace(match_info={'section':'fwa_bases',**({'item':item} if item else {})})
+            with patch.object(operations.shared,'require_manage',AsyncMock()) as auth, patch.object(operations.shared,'mongo',side_effect=AssertionError('legacy storage read')):
+                with self.assertRaises(web.HTTPTemporaryRedirect) as error:
+                    await operations.read(req)
+                self.assertEqual(error.exception.location,'/api/cwl/manage/town-halls'+suffix)
+                auth.assert_awaited_once_with(req,'fwa_bases')
+        req=SimpleNamespace(match_info={'section':'fwa_bases','item':'TH18.$bad'})
+        with patch.object(operations.shared,'require_manage',AsyncMock()), patch.object(operations.shared,'mongo',side_effect=AssertionError('legacy storage read')):
+            with self.assertRaises(web.HTTPBadRequest):await operations.read(req)
+
+    async def test_old_base_save_is_gone_before_parse_or_storage(self):
+        from unittest.mock import patch
+        from cwl_web import manage_operations as operations
         req=SimpleNamespace(match_info={'section':'fwa_bases','item':'th18'})
-        with patch.object(operations.shared,'mongo',mongo), patch.object(operations.shared,'require_manage',AsyncMock(return_value={'user_id':'1'})), patch('cwl_web.app._json',AsyncMock(return_value={'revision':initial['revision'],'values':{'base_information':'web edit'}})):
-            with self.assertRaises(web.HTTPConflict):await operations.save(req)
-        self.assertEqual(row['base_information']['th18'],'native edit')
-        # Exactly one database read during save, rather than a fresh unsafe baseline.
-        self.assertEqual(collection.find_one.await_count,2)
+        with patch.object(operations.shared,'require_manage',AsyncMock()) as auth, patch.object(operations.shared,'mongo',side_effect=AssertionError('legacy write')), patch('cwl_web.app._json',AsyncMock()) as body:
+            with self.assertRaises(web.HTTPGone):await operations.save(req)
+        auth.assert_awaited_once_with(req,'fwa_bases',write=True)
+        body.assert_not_awaited()
 
     async def test_sync_save_uses_original_read_after_validation(self):
         from contextlib import asynccontextmanager

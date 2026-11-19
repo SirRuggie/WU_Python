@@ -484,33 +484,27 @@ def test_existing_text_modal_submission_still_reads_hikari_action_rows(monkeypat
     asyncio.run(check())
 
 
-def test_stale_clan_raw_upload_routes_through_dispatcher_without_writes(monkeypatch):
+@pytest.mark.parametrize("action_id,authorized", [("clan-native", True), ("#ABC", True), ("clan-native", False)])
+def test_stale_clan_raw_upload_routes_through_dispatcher_without_writes(monkeypatch, action_id, authorized):
     from extensions.commands.clan.dashboard import image_uploads
+    from extensions.commands.clan.dashboard.read_only_clan import ROLE_ID
 
     async def check():
-        custom_id = "dashboard_image_submit:clan-native"
+        custom_id = "dashboard_image_submit:" + action_id
         _capture(_raw_payload(601, custom_id))
         interaction = _ModalInteraction(601, custom_id)
         interaction.channel_id = 30
         interaction.member = SimpleNamespace(
-            get_roles=lambda: [SimpleNamespace(id=image_uploads.ROLE_ID)]
+            get_roles=lambda: [SimpleNamespace(id=ROLE_ID)] if authorized else []
         )
         ctx = _ModalContext(interaction)
-        target = image_uploads.UploadTarget(
-            kind="clan", slot="banner", key="#ABC", old_value=None,
-            guild_id=20, owner_id=10, source_channel_id=30, source_message_id=40,
-            clan_name="Test Clan", clan_id="clan-row",
-        )
-        monkeypatch.setitem(image_uploads._PENDING, "clan-native", (
-            image_uploads.time.monotonic(), target,
-        ))
         mongo = SimpleNamespace(clans=SimpleNamespace(
             find_one=AsyncMock(return_value={"_id": "clan-row", "tag": "#ABC", "name": "Test Clan"}),
             update_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)),
         ))
         history = SimpleNamespace(insert_one=AsyncMock())
         mongo.bot_config = SimpleNamespace(database=SimpleNamespace(get_collection=lambda *a, **kw: history))
-        media = SimpleNamespace(upload_bytes=AsyncMock(return_value="https://media.example/banner.png"))
+        media = SimpleNamespace(upload_bytes=AsyncMock())
         action = components.registered_functions["dashboard_image_submit"]
 
         async def invoke(**kwargs):
@@ -518,16 +512,28 @@ def test_stale_clan_raw_upload_routes_through_dispatcher_without_writes(monkeypa
 
         monkeypatch.setitem(components.registered_functions, "dashboard_image_submit",
                             dataclasses.replace(action, fn=invoke))
-        monkeypatch.setattr(image_uploads, "download_image_blocking", lambda url: b"valid-image")
         await components._dispatch(ctx, mongo)
-        assert interaction.initial_responses == [hikari.ResponseType.DEFERRED_MESSAGE_UPDATE]
         media.upload_bytes.assert_not_awaited()
         mongo.clans.update_one.assert_not_awaited()
         history.insert_one.assert_not_awaited()
-        payload = interaction.edits[-1]["components"][0].build()[0]
-        assert "Clan editing moved to Dashboard" in str(payload)
-        assert discord_file_upload.pop_file_upload(601, custom_id, "image") is None
-        assert "clan-native" not in image_uploads._PENDING
+        if authorized:
+            assert interaction.initial_responses == []
+            assert len(ctx.responses) == 1
+            payload = ctx.responses[-1]
+            assert "Clan editing has moved to the dashboard" in payload[0][0]
+            assert "Town Halls" not in payload[0][0]
+            assert payload[1]["user_mentions"] is payload[1]["role_mentions"] is payload[1]["mentions_everyone"] is False
+            if action_id == "#ABC":
+                mongo.clans.find_one.assert_awaited_once_with({"tag": "#ABC"})
+                assert "%23ABC" in payload[0][0]
+            else:
+                mongo.clans.find_one.assert_not_awaited()
+            assert discord_file_upload.pop_file_upload(601, custom_id, "image") is None
+        else:
+            assert "role required" in ctx.responses[-1][0][0]
+            mongo.clans.find_one.assert_not_awaited()
+            # Dispatcher denies before executing the compatibility handler.
+            discord_file_upload.pop_file_upload(601, custom_id, "image")
 
     asyncio.run(check())
 

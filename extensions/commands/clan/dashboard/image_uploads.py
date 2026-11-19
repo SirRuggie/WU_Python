@@ -33,11 +33,10 @@ async def fwa_image_upload(ctx: Any, action_id: str, mongo: MongoClient = lightb
 
 @register_action('dashboard_image_submit', is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
-async def dashboard_image_submit(ctx: Any, action_id: str, **_: Any) -> None:
-    # Consume the old gateway upload cache; never download, upload or persist it.
-    interaction=ctx.interaction
-    pop_file_upload(interaction.id,interaction.custom_id,'image')
-    if not await require_dashboard_role(ctx,FWA_REP_ROLE_ID,'FWA Clan Rep'):
-        return
-    await ctx.respond(components=town_hall_base_card(),ephemeral=True,
-                      user_mentions=False,role_mentions=False,mentions_everyone=False)
+async def dashboard_image_submit(ctx: Any, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_: Any) -> None:
+    # Old opaque upload tokens carry no trusted destination. Consume the raw
+    # gateway cache, then use the existing read-only clan fallback; never upload.
+    interaction = ctx.interaction
+    pop_file_upload(interaction.id, interaction.custom_id, 'image')
+    from .read_only_clan import show_clan
+    await show_clan(ctx, mongo, action_id)
