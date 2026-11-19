@@ -1,0 +1,132 @@
+.town-hall-records {
+  display: grid;
+  gap: var(--wu-space-4);
+  max-width: 880px;
+}
+.town-hall-add {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  justify-content: center;
+  padding: var(--wu-space-2) var(--wu-space-4);
+  color: var(--wu-accent-ink);
+  background: var(--wu-accent);
+  border: 1px solid var(--wu-accent);
+  border-radius: var(--wu-radius-md);
+  font-weight: var(--wu-weight-medium);
+  text-decoration: none;
+}
+.town-hall-add:hover {
+  filter: brightness(1.08);
+}
+.town-hall-setting,
+.town-hall-record {
+  color: var(--wu-text);
+  text-decoration: none;
+}
+.town-hall-setting {
+  display: flex;
+  min-height: 56px;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--wu-space-3);
+  padding: var(--wu-space-3);
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
+}
+.town-hall-records h2 {
+  margin: 0 0 var(--wu-space-2);
+  font-size: 1rem;
+  font-weight: var(--wu-weight-medium);
+}
+.town-hall-record-list {
+  border: 1px solid var(--wu-border);
+  border-radius: var(--wu-radius-md);
+  overflow: hidden;
+}
+.town-hall-record {
+  display: grid;
+  min-height: 56px;
+  gap: var(--wu-space-1);
+  padding: var(--wu-space-3);
+}
+.town-hall-record + .town-hall-record {
+  border-top: 1px solid var(--wu-border);
+}
+.town-hall-setting:hover,
+.town-hall-record:hover {
+  background: var(--wu-surface-raised);
+}
+.town-hall-record-name {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-3);
+  font-size: 1rem;
+  font-weight: var(--wu-weight-medium);
+}
+.town-hall-record-name img,
+.town-hall-record-name .town-hall-fallback {
+  flex: 0 0 32px;
+}
+.town-hall-record-meta,
+.town-hall-no-weight {
+  padding-left: calc(32px + var(--wu-space-3));
+  font-size: 0.875rem;
+  color: var(--wu-text-muted);
+}
+.town-hall-no-weight {
+  color: var(--wu-warning);
+}
+.town-hall-column-headings {
+  display: none;
+}
+.town-hall-other > summary {
+  display: list-item;
+  min-height: 44px;
+  box-sizing: border-box;
+  padding-block: 10px;
+  line-height: 24px;
+  cursor: pointer;
+  list-style: disclosure-closed inside;
+}
+.town-hall-other[open] > summary {
+  list-style: disclosure-open inside;
+}
+.town-hall-switcher {
+  display: grid;
+  gap: var(--wu-space-3);
+  max-width: 560px;
+}
+.town-hall-switcher > a {
+  display: flex;
+  min-height: 44px;
+  align-items: center;
+  width: fit-content;
+}
+.town-hall-records a:focus-visible,
+.town-hall-other > summary:focus-visible,
+.town-hall-switcher > a:focus-visible {
+  outline: 2px solid var(--wu-focus);
+  outline-offset: -2px;
+}
+@media (min-width: 900px) {
+  .town-hall-add {
+    justify-self: end;
+  }
+  .town-hall-record,
+  .town-hall-column-headings {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 1fr);
+    align-items: center;
+  }
+  .town-hall-column-headings {
+    display: grid;
+    gap: var(--wu-space-3);
+    padding: var(--wu-space-2) var(--wu-space-3);
+    color: var(--wu-text-muted);
+    font-size: 0.875rem;
+  }
+  .town-hall-record-meta,
+  .town-hall-no-weight {
+    padding-left: 0;
+  }
+}

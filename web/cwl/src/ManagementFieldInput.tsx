@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import TownHallEmojiPicker from "./TownHallEmojiPicker";
 import MemberPicker, { type MemberOption } from "./MemberPicker";
 import { previewUrl } from "./previewFormatting";
 import { apiUpload } from "./api";
@@ -13,7 +14,9 @@ export default function Field({
   revision,
   onMemberOptions,
   memberRoles,
+  townHallLevel,
 }: {
+  townHallLevel?: number;
   field: ManagementField;
   value: ManagementValue;
   onChange: (value: ManagementValue) => void;
@@ -41,6 +44,19 @@ export default function Field({
     !!field.source ||
     ["role", "channel", "member", "multiselect"].includes(field.type);
   const multiple = field.type === "multiselect" || Array.isArray(value);
+  if (field.type === "emoji")
+    return (
+      <TownHallEmojiPicker
+        label={field.label}
+        value={String(value || "")}
+        level={townHallLevel || 0}
+        onChange={onChange}
+        disabled={disabled || !!field.readonly}
+        endpoint={apiPath(
+          field.options_endpoint || "/manage/town-halls/emojis",
+        )}
+      />
+    );
   if (field.type === "member" || field.source === "members")
     return (
       <MemberPicker

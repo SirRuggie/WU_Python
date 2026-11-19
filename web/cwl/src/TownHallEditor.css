@@ -1,0 +1,23 @@
+.manage-grouped-fields {
+  display: grid;
+  gap: var(--wu-space-5);
+}
+.manage-field-group > legend {
+  margin-bottom: var(--wu-space-3);
+  color: var(--wu-accent);
+  font-size: 1rem;
+  font-weight: var(--wu-weight-medium);
+}
+.town-hall-weight-group {
+  grid-column: 1 / -1;
+}
+.town-hall-weight-pair {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--wu-space-3);
+}
+.town-hall-create-fields {
+  display: grid;
+  gap: var(--wu-space-4);
+  max-width: 560px;
+}

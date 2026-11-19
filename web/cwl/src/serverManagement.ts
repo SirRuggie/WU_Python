@@ -13,9 +13,12 @@ export type ManagementField = {
     | "channel"
     | "role"
     | "member"
-    | "multiselect";
+    | "multiselect"
+    | "emoji";
   value: ManagementValue;
   description?: string;
+  group?: string;
+  options_endpoint?: string;
   source?: "roles" | "members" | "channels";
   options?: ManagementOption[];
   required?: boolean;
@@ -39,6 +42,11 @@ export type ReturnStatus = {
   every_minutes: number | null;
 };
 export type ManagementSection = {
+  list_role?: "add" | "setting" | "level";
+  list_group?: "fwa" | "other";
+  meta?: string;
+  value?: string;
+  emoji_url?: string | null;
   return_status?: ReturnStatus;
   id: string;
   label: string;
@@ -49,6 +57,13 @@ export type ManagementSection = {
   destination?: string;
 };
 export type ManagementDocument = ManagementSection & {
+  create?: boolean;
+  submit_label?: string;
+  level?: number;
+  lowest_fwa_town_hall?: number;
+  help?: string;
+  history_saved?: boolean;
+  saved?: boolean;
   member_refresh?: number;
   action_only?: boolean;
   documents?: ManagementSection[];

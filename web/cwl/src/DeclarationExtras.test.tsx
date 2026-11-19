@@ -1,7 +1,13 @@
 // @vitest-environment happy-dom
+vi.mock("./townHallRegistry", async () => {
+  const { townHallRegistryTestFixture } = await import(
+    "./townHallRegistryTestFixture"
+  );
+  return townHallRegistryTestFixture();
+});
 import { act } from "react";
 import { createRoot } from "react-dom/client";
-import { beforeEach, afterEach, expect, it } from "vitest";
+import { beforeEach, afterEach, expect, it, vi } from "vitest";
 import DeclarationExtras from "./DeclarationExtras";
 let root: ReturnType<typeof createRoot>, host: HTMLDivElement;
 beforeEach(() => {

@@ -1,8 +1,14 @@
 // @vitest-environment happy-dom
+vi.mock("./townHallRegistry", async () => {
+  const { townHallRegistryTestFixture } = await import(
+    "./townHallRegistryTestFixture"
+  );
+  return townHallRegistryTestFixture();
+});
 import { Window } from "happy-dom";
 import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import ComparePlayerCard from "./ComparePlayerCard";
 import CompareClanHeader from "./CompareClanHeader";
 import type { RosterAccount, RosterClan } from "./roster";

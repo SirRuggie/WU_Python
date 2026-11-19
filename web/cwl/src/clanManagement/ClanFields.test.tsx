@@ -76,3 +76,56 @@ it("shows leader name and avatar, with IDs only on hover, and shares ordered rol
     host.remove();
   }
 });
+
+it("shows an unknown saved minimum Town Hall unchanged alongside registry choices", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  const change = vi.fn();
+  const current = { ...clan, th_requirements: "99", profile: "" };
+  try {
+    await act(async () =>
+      root.render(
+        <ClanFields
+          section="Details"
+          draft={current}
+          saved={current}
+          disabled={false}
+          dirty={false}
+          data={{ types: ["CWL"], town_halls: ["19", "18", "1"] }}
+          channels={[]}
+          roles={[]}
+          memberQuery=""
+          setMemberQuery={vi.fn()}
+          members={[]}
+          memberError=""
+          change={change}
+          action={vi.fn()}
+          upload={vi.fn()}
+        />,
+      ),
+    );
+    const select = [...host.querySelectorAll<HTMLSelectElement>("select")].find(
+      (node) => node.parentElement?.textContent?.includes("Minimum Town Hall"),
+    )!;
+    expect(select.value).toBe("99");
+    expect(select.selectedOptions[0].textContent).toBe("TH 99");
+    expect([...select.options].map((option) => option.value)).toEqual([
+      "",
+      "99",
+      "19",
+      "18",
+      "1",
+    ]);
+    expect(change).not.toHaveBeenCalled();
+    await act(async () => {
+      select.value = "19";
+      select.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    expect(change).toHaveBeenCalledWith("th_requirements", "19");
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
