@@ -106,7 +106,14 @@ export default function WarReminders({
       historyTurn === historyGeneration.current
     ) {
       setData((old) =>
-        old ? { ...old, history: result.history, status: result.status } : old,
+        old
+          ? {
+              ...old,
+              history: result.history,
+              status: result.status,
+              health: result.health,
+            }
+          : old,
       );
     }
   }, [base]);

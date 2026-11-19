@@ -44,6 +44,8 @@ def health(config, status, delivery, now):
     age = (now-checked).total_seconds()
     if age > STALE_SECONDS or age < -60:
         return 'attention', 'Check overdue', 'The latest check is out of date. Check bot availability.'
+    if status.get('error') == 'Maintenance':
+        return 'maintenance', 'Clash maintenance', 'Reminders continue when it ends.'
     if status.get('error'):
         return 'attention', 'Check failed', status.get('detail') or 'The bot could not check or deliver reminders.'
     return 'tracking', 'Monitoring', status.get('detail') or 'The bot is monitoring this clan.'

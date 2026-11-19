@@ -88,6 +88,12 @@ public.
 
 ### P2 — MongoDB organization and test isolation
 
+- **`MAINT-RETENTION-242` — Define retention for closed maintenance receipts.**
+  Shaka1164 retains about one small immutable render receipt per maintenance
+  window in the existing `maintenance_alert` collection. Late known callbacks can
+  reactivate a reconciled receipt. No pruning, index, migration or backfill is
+  authorized in242; design retention separately without losing edit ownership.
+
 - **`DB-003` — Deferred: move dashboard sessions and push claims to local SQLite.**
   Owner decision relayed by Shaka1127 on 2026-11-18 at 16:19 UTC: defer A2/D9
   (`sessions` and `push_deliveries`). Logout atomicity, migration-aware rollback

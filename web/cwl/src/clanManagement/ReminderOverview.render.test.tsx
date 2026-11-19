@@ -354,3 +354,23 @@ it("finds a clan by name and keeps the placeholder with an ellipsis", async () =
   expect(input.placeholder).toBe("Clan name, tag or channel…");
   expect(host.textContent).toContain("Find a clan");
 });
+
+it("renders maintenance as a gold status in the shared desktop/mobile record without an error switch", async () => {
+  await render([
+    row("#MNT", "Maintenance clan", {
+      health: {
+        category: "maintenance",
+        label: "Clash maintenance",
+        detail: "Reminders continue when it ends.",
+      },
+    }),
+  ]);
+  const notice = li("Maintenance clan").querySelector(
+    ".notice.reminder-maintenance",
+  );
+  expect(notice?.getAttribute("role")).toBe("status");
+  expect(notice?.textContent).toContain("Clash maintenance");
+  expect(notice?.textContent).toContain("Reminders continue when it ends.");
+  expect(li("Maintenance clan").classList.contains("is-problem")).toBe(false);
+  expect(onOpen).not.toHaveBeenCalled();
+});

@@ -3,6 +3,8 @@ import hikari
 # The production Warriors United Discord server. Features that migrate older
 # globally keyed configuration use this as their guild boundary.
 WARRIORS_UNITED_GUILD_ID = 644963518025826315
+# Existing staff log destination shared by announcements and maintenance alerts.
+LOG_CHANNEL_ID = 947166650321494067
 # Staff-only channel for the "New Warrior" join alert.
 NEW_WARRIOR_ALERT_CHANNEL_ID = 967257753804505108
 

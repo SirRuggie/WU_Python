@@ -112,6 +112,10 @@ class WarReminderStore:
     async def recent_deliveries(self, tag, limit=15):
         return await self.deliveries.find({'clan_tag': tag}, {'_id': 0}).sort('at', -1).limit(limit).to_list(length=limit)
 
+    async def latest_scheduled_delivery(self, tag):
+        rows = await self.deliveries.find({'clan_tag': tag, 'test': False}, {'_id': 0}).sort('at', -1).limit(1).to_list(length=1)
+        return rows[0] if rows else None
+
     async def get_status(self, tag):
         return await self.status.find_one({'_id': tag}, {'_id': 0})
 
@@ -141,6 +145,8 @@ class WarReminderStore:
                     if identity[0] is None or identity[0] < stored[0]:
                         return False
             status = {key: value for key, value in values.items() if key != 'checked_at'}
+            if values.get('error') == 'Maintenance':
+                status['maintenance_since'] = (before or {}).get('maintenance_since') or values['checked_at']
             same_identity = checked_settings(config, before) if bound and before else not bound
             checked = values.get('checked_at')
             previous = before.get('checked_at') if before else None
@@ -162,12 +168,14 @@ class WarReminderStore:
                     if 0 <= (timestamp(checked) - timestamp(previous)).total_seconds() < 120:
                         return False
             saved = dict(values)
+            if values.get('error') == 'Maintenance':
+                saved['maintenance_since'] = status['maintenance_since']
             if bound:
                 saved.update(settings_updated_at=identity[0], settings_version=identity[1])
             # Match the exact observation so a newer scan winning after our
             # read cannot be overwritten by this result. Retry against its row.
             query = {'_id': tag}
-            for key in ('checked_at', 'settings_updated_at', 'settings_version'):
+            for key in ('checked_at', 'settings_updated_at', 'settings_version', 'maintenance_since', 'war_start'):
                 query[key] = before[key] if before and key in before else {'$exists': False}
             try:
                 result = await self.status.update_one(query, {'$set': saved}, upsert=before is None)
@@ -177,6 +185,35 @@ class WarReminderStore:
                 continue  # Another scan inserted this clan before our upsert.
             if result.matched_count or result.upserted_id is not None:
                 return True
+
+    async def current_maintenance_window(self, config, maintenance_since, war_start):
+        """Fresh read boundary for clearing the original recovery window."""
+        tag = config['_id']
+        fresh = await self.get_settings(tag)
+        if (not fresh or not fresh.get('enabled')
+                or settings_identity(fresh.get('updated_at'), fresh.get('version'))
+                != settings_identity(config.get('updated_at'), config.get('version'))
+                or not await self.clan_exists(tag)):
+            return False
+        state = await self.get_status(tag) or {}
+        since = timestamp(maintenance_since)
+        return (since is not None and state.get('error') is None
+                and checked_settings(fresh, state)
+                and _status_value(state.get('maintenance_since')) == _status_value(since)
+                and _status_value(state.get('war_start')) == _status_value(war_start))
+
+    async def clear_maintenance(self, config, maintenance_since, war_start):
+        """Clear ONLY the original paused window, not one observed during delivery."""
+        if not await self.current_maintenance_window(config, maintenance_since, war_start):
+            return False
+        updated, version = settings_identity(config.get('updated_at'), config.get('version'))
+        result = await self.status.update_one(
+            {'_id': config['_id'], 'maintenance_since': timestamp(maintenance_since),
+             'war_start': timestamp(war_start), 'settings_updated_at': updated,
+             'settings_version': version, 'error': None},
+            {'$set': {'maintenance_since': None}},
+        )
+        return bool(result.matched_count)
 
     async def delivered_or_claimed(self, key):
         return await self.deliveries.find_one({'_id': key}) is not None

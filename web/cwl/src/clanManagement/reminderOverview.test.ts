@@ -211,3 +211,36 @@ describe("Product wording", () => {
       ).not.toMatch(/\bthe bot\b|bot’s/i);
   });
 });
+
+it("keeps maintenance outside attention while destination problems retain priority", () => {
+  const maintenance: OverviewRow = {
+    ...row,
+    health: {
+      category: "maintenance",
+      label: "Clash maintenance",
+      detail: "Reminders continue when it ends.",
+    },
+  };
+  expect(rowHealth(maintenance, new Set(["123"]), true).category).toBe(
+    "maintenance",
+  );
+  expect(
+    visibleRows(
+      [maintenance],
+      "",
+      "attention",
+      new Map([["123", "staff"]]),
+      true,
+    ),
+  ).toEqual([]);
+  expect(
+    visibleRows(
+      [maintenance],
+      "",
+      "enabled",
+      new Map([["123", "staff"]]),
+      true,
+    ),
+  ).toHaveLength(1);
+  expect(rowHealth(maintenance, new Set(), true).category).toBe("attention");
+});

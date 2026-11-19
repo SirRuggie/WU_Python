@@ -28,7 +28,6 @@ Deploy backend and frontend together through the existing manual deployment proc
 
 Validated with reminder, clan-management, and war-operations backend tests; preview, channel-search, clan-filter, and Discord preview frontend tests; a production frontend build; and desktop/mobile inspection using mocked local clan data. Actual Discord notification delivery requires a test from the deployed dashboard.
 
-
 ## Code ownership
 
 - `utils/war_reminders.py`: validation, war snapshots, timing, and the common message renderer. No database or HTTP access.
@@ -132,7 +131,6 @@ See `docs/dashboard-interaction-standard.md` for design comparisons, shared rule
 and the manual/adversarial checklist. No notification renderer or Discord payload
 changed in this overview release.
 
-
 ## Audit 239 polling decision (D7, Shaka 1073)
 
 The worker's membership checks use `clan_exists`, projecting only `_id`. Web
@@ -197,3 +195,56 @@ in [background-jobs.md](background-jobs.md). A partial clan scan does not advanc
 the whole-job successful completion clock. This adds no persisted health writes
 and does not change the 120-second D7 status refresh, 180-second health window,
 claim/receipt semantics or the handling of possibly accepted Discord deliveries.
+
+## Clash maintenance (242)
+
+A dedicated `coc.Maintenance` branch records the first `maintenance_since` in
+`war_reminder_status`, preserves it through repeated failures/restarts, and reports
+"Clash maintenance — Reminders continue when it ends." Expected maintenance logs
+one warning per observed window per process, without a traceback. Successful
+current-war reads feed the shared observation log. No polling request or scan
+cadence was added.
+
+Successful scans also save `war_start` in this same status document (approved by
+Shaka1141). Recovery reads the **prior** identity before writing the new snapshot.
+Unknown legacy identity or a different war cannot catch up: no migration/backfill
+is needed. For a matching war still in battle day, occurrences from
+`maintenance_since - 60 seconds` through strictly more than five minutes ago are
+considered. Only the latest missed occurrence can send, and only while players
+still have pending attacks. Earlier occurrences do not write delivery receipts or reserve occurrence keys.
+Earlier offsets with existing delivery claims are excluded from the skipped list
+and count. The completed catch-up logs one INFO line listing the unclaimed earlier
+offsets and records their count in its existing status detail, with no new stored
+field (Shaka1156). The existing window-clear CAS owns that line, so concurrent
+scans cannot duplicate it. Existing
+occurrence keys for actual sends, unique claims, settings/destination rechecks and
+uncertain-send non-retry rules are retained. If the newest missed occurrence already has a claim in **any** state (uncertain,
+sending, sent or skipped), nothing is sent; older occurrences are only listed in the INFO log and counted
+in scan status detail. No fallback to an older event is allowed (Shaka1149). Normal occurrences within five minutes keep their normal path.
+
+A delayed message keeps the normal text layout, adds "delayed by Clash
+maintenance" on its first line and uses the actual time left when sending. Catch-up waits for a successful scan with shared `in_maintenance()` false after
+the existing 90-second grace. A cached success inside that grace preserves the
+paused window and claims nothing; no request or cadence was added (Shaka1149). A
+successful recovery scan clears only its original `maintenance_since` by a CAS
+matching settings identity and war identity; interrupted/provider or
+transport failures retain it for reconciliation without replaying claimed sends.
+No completed/different war sends, and fully attacked rosters send nothing.
+
+Maintenance is a gold notice with black text in the family overview and clan
+editor. Off, destination and unconfirmed-delivery states keep priority; maintenance
+is not counted by Needs attention. Stale/settings-identity checks remain intact.
+The editor reads the latest scheduled delivery independently of its bounded
+history page; all existing delivery health behavior is preserved.
+No new UI action, save, permission or notification endpoint was added.
+
+An earlier event can become normally due after a same-war end-time shift. Because
+catch-up did not claim that event, the normal path can send it once using its
+unchanged occurrence key. Concurrent scans still compete on the existing unique
+claim; catch-up never sends an older missed event. Regressions cover the shifted
+end, concurrent scans, and every existing claim state for the newest event. The
+unreleased1153skip-claim method, owner checks, health filtering and race exception
+were removed rather than promoted to a CAS transition. No migration, transaction,
+claim deletion or new stored field was introduced. Original-window clearCAS and
+BSON/status safety remain. An exact five-minute threshold boundary retains the
+window for the next existing scan, without sending early or adding a poll.

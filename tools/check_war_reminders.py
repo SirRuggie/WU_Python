@@ -6,6 +6,9 @@ import tempfile
 
 ROOT = Path(__file__).resolve().parents[1]
 BACKEND = [
+    'tests/test_maintenance_alert_242.py',
+    'tests/test_maintenance_catchup_242.py',
+    'tests/test_coc_maintenance.py',
     'tests/test_war_reminders.py',
     'tests/test_war_reminder_overview.py',
     'tests/test_cwl_web_war_reminders.py',

@@ -41,6 +41,9 @@ _since: datetime | None = None
 # When the most recent 503 was observed. Exists only for the clearing rule
 # below - it is not the same as _since and must not be rendered.
 _last_seen: datetime | None = None
+_last_success: datetime | None = None
+_window_since: datetime | None = None
+_window_clear_since: datetime | None = None
 
 # How recent a 503 has to be for a success to be ignored rather than treated
 # as recovery.
@@ -72,8 +75,12 @@ def note_maintenance() -> None:
     HTTPException, so a broader clause listed first swallows it and this is
     never reached. That ordering is the entire detection mechanism.
     """
-    global _since, _last_seen
+    global _since, _last_seen, _window_since, _window_clear_since
     now = _now()
+    if (_window_since is None or _window_clear_since is not None
+            and (now - _window_clear_since).total_seconds() >= 300):
+        _window_since = now
+    _window_clear_since = None
     _last_seen = now
     if _since is None:
         _since = now
@@ -87,15 +94,19 @@ def note_success() -> None:
     CLEAR_GRACE_SECONDS - see the comment on that constant for why a bare
     "any success clears it" is wrong.
     """
-    global _since, _last_seen
+    global _since, _last_success, _window_clear_since
+    _last_success = _now()
     if _since is None:
+        if _window_clear_since is None:
+            _window_clear_since = _last_success
         return
     if _last_seen is not None and (_now() - _last_seen).total_seconds() < CLEAR_GRACE_SECONDS:
         return
     duration = int((_now() - _since).total_seconds())
     print(f"[maintenance] Clash API answering again after ~{duration}s", flush=True)
     _since = None
-    _last_seen = None
+    # Keep the last 503 across clears: an alert tick can miss an entire flap.
+    _window_clear_since = _last_success
 
 
 def in_maintenance() -> bool:
@@ -111,11 +122,26 @@ def started_at() -> datetime | None:
     return _since
 
 
+def window_started_at() -> datetime | None:
+    """First observed503 across detector clears shorter than the alert5min grace."""
+    return _window_since
+
+
+def observation() -> dict:
+    """Detached actual observations, never a provider prediction/end timestamp."""
+    return dict(maintenance=_since is not None, started_at=_since,
+                last_success_at=_last_success, last_maintenance_at=_last_seen,
+                clear_since=_window_clear_since, window_started_at=_window_since)
+
+
 def reset() -> None:
     """Drop all state. For tests; nothing in the bot should call this."""
-    global _since, _last_seen
+    global _since, _last_seen, _last_success, _window_since, _window_clear_since
     _since = None
     _last_seen = None
+    _last_success = None
+    _window_since = None
+    _window_clear_since = None
 
 
 def banner(prefix: str = "🔧") -> str:

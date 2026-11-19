@@ -12,13 +12,12 @@ from hikari.impl import (
     MessageActionRowBuilder as ActionRow,
 )
 
-from utils.constants import WU_GOLD
+from utils.constants import LOG_CHANNEL_ID, WU_GOLD
 
 loader = lightbulb.Loader()
 
 # Constants
 ALLOWED_ROLE_ID = 993015846442127420
-LOG_CHANNEL_ID = 947166650321494067
 
 
 @loader.command
