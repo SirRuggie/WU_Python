@@ -163,6 +163,9 @@ async def save(request):
             if not isinstance(originals, dict) or set(originals) != {bases.PREFIX + key for key in base_values}:
                 raise ValueError('Review the original base values before saving.')
             base_originals = {key: originals[bases.PREFIX + key] for key in base_values}
+            restore = getattr(request, 'history_base_restore', None)
+            if restore is not None and getattr(request, 'history_action', None) != 'restore':
+                raise ValueError('Review the saved base version before restoring.')
             if admin_values and current.get('nonbase_revision', current['revision']) > body['revision']:
                 raise registry.TownHallsConflict(registry.CONFLICT_MESSAGE)
             if item == 'add':
@@ -186,9 +189,9 @@ async def save(request):
             if admin_values:
                 updated['revision'] = body['revision']
                 saved = await registry.save(db, shared.GUILD_ID, updated, int(actor['user_id']), body['revision'],
-                                            **({'base_level': int(item), 'base_values': base_values, 'base_originals': base_originals} if base_values else {}))
+                                            **({'base_level': int(item), 'base_values': base_values, 'base_originals': base_originals, **({'base_restore': restore} if restore is not None else {})} if base_values else {}))
             else:
-                saved = await registry.save_base_fields(db, shared.GUILD_ID, int(item), base_values, base_originals, int(actor['user_id']))
+                saved = await registry.save_base_fields(db, shared.GUILD_ID, int(item), base_values, base_originals, int(actor['user_id']), **({'restore': restore} if restore is not None else {}))
             target = '/api/cwl' + PATH + '/' + destination
             if base_values or current['lowest_fwa_town_hall'] != saved['lowest_fwa_town_hall']:
                 from .base_bank import invalidate

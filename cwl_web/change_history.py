@@ -130,6 +130,20 @@ async def restore(request):
             if current is None or type(body.get('revision')) is not int or current['revision'] != body['revision']:
                 raise web.HTTPConflict(text=registry.CONFLICT_MESSAGE)
             proxy._body['originals'] = {key: registry.base_field_snapshot(current, int(match['item']), key[len('bases.'):]) for key in base_keys}
+            target_raw = row.get('raw_' + body['side'])
+            opposite_raw = row.get('raw_' + ('after' if body['side'] == 'before' else 'before'))
+            if not isinstance(target_raw, dict) or not isinstance(opposite_raw, dict):
+                raise web.HTTPConflict(text='This saved base version cannot be restored exactly.')
+            try:
+                for raw in (target_raw, opposite_raw):
+                    registry.validate(raw)
+                    if raw.get('_id') != str(GUILD_ID):
+                        raise ValueError('Wrong saved server.')
+                desired = {key: registry.base_field_snapshot(target_raw, int(match['item']), key[len('bases.'):]) for key in base_keys}
+            except ValueError:
+                raise web.HTTPConflict(text='This saved base version cannot be restored exactly.') from None
+            proxy._body['values'].update({key: value.get('value', '') for key, value in desired.items()})
+            proxy.history_base_restore = (target_raw, opposite_raw, body['revision'])
         return await save(proxy)
     if kind=='content':
         from .manage_content import item_handler

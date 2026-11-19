@@ -54,7 +54,7 @@ class AtomicCollection:
         self.calls.append((deepcopy(query), deepcopy(update)))
         for path, expected in query.items():
             exists, actual = get(self.row, path)
-            if isinstance(expected, dict):
+            if isinstance(expected, dict) and any(key.startswith("$") for key in expected):
                 if "$exists" in expected and exists != expected["$exists"]:
                     return None
                 if "$lte" in expected and (not exists or actual > expected["$lte"]):
@@ -232,3 +232,93 @@ def test_mixed_conflict_never_partially_saves_the_other_section(monkeypatch, con
                        base_level=19, base_values={"merged.instructions": "My stale draft"},
                        base_originals={"merged.instructions": {"exists": False}}))
     assert collection.row == before
+
+
+@pytest.mark.parametrize("ancestor", ["bases", "merged", "leaf", "empty"])
+def test_restore_preserves_exact_base_presence(monkeypatch, ancestor):
+    from bson import BSON
+    target = v2()
+    if ancestor == "bases":
+        target["levels"]["19"].pop("bases")
+    elif ancestor == "merged":
+        target["levels"]["19"]["bases"] = {"war_image": "https://images.example/shared.png"}
+    elif ancestor == "empty":
+        target = store.set_base_field(target, 19, "merged.instructions", "")
+    opposite = store.set_base_field(target, 19, "merged.instructions", "Added notes")
+    opposite["revision"] += 1
+    collection = install(monkeypatch, opposite)
+    restored = run(store.save_base_fields(object(), 123, 19,
+        {"merged.instructions": ""},
+        {"merged.instructions": store.base_field_snapshot(opposite, 19, "merged.instructions")},
+        456, restore=(target, opposite, opposite["revision"])))
+    assert BSON.encode(restored["levels"]["19"]) == BSON.encode(target["levels"]["19"])
+    update = collection.calls[0][1]
+    if ancestor == "empty":
+        assert "$unset" not in update
+    else:
+        expected = {"bases": "levels.19.bases", "merged": "levels.19.bases.merged", "leaf": "levels.19.bases.merged.instructions"}[ancestor]
+        assert update["$unset"] == {expected: ""}
+
+
+def test_restore_missing_container_rejects_known_neighbor_and_partial_history(monkeypatch):
+    target = v2(); target["levels"]["19"].pop("bases")
+    opposite = store.set_base_field(target, 19, "merged.instructions", "Added notes")
+    current = store.set_base_field(opposite, 19, "non_merged.link", LINK)
+    collection = install(monkeypatch, current)
+    originals = {"merged.instructions": store.base_field_snapshot(current, 19, "merged.instructions")}
+    for raw_after in (opposite, current):
+        with pytest.raises(store.TownHallsConflict):
+            run(store.save_base_fields(object(), 123, 19, {"merged.instructions": ""}, originals, 456,
+                restore=(target, raw_after, current["revision"])))
+    assert collection.calls == [] and collection.row == current
+
+
+def test_restore_missing_container_rejects_racing_neighbor(monkeypatch):
+    target = v2(); target["levels"]["19"].pop("bases")
+    opposite = store.set_base_field(target, 19, "merged.instructions", "Added notes")
+    collection = install(monkeypatch, opposite)
+    write = collection.find_one_and_update
+    async def race(query, update, **kwargs):
+        collection.row = store.set_base_field(collection.row, 19, "non_merged.link", LINK)
+        return await write(query, update, **kwargs)
+    collection.find_one_and_update = race
+    with pytest.raises(store.TownHallsConflict):
+        run(store.save_base_fields(object(), 123, 19, {"merged.instructions": ""},
+            {"merged.instructions": store.base_field_snapshot(opposite, 19, "merged.instructions")},
+            456, restore=(target, opposite, opposite["revision"])))
+    assert collection.row["levels"]["19"]["bases"]["merged"]["instructions"] == "Added notes"
+    assert collection.row["levels"]["19"]["bases"]["non_merged"]["link"] == LINK
+
+
+def test_mixed_restore_unsets_base_and_changes_admin_in_one_cas(monkeypatch):
+    target = v2(); target["levels"]["19"].pop("bases")
+    opposite = store.set_base_field(target, 19, "merged.instructions", "Added notes")
+    collection = install(monkeypatch, opposite)
+    changed = store.set_emoji(opposite, 19, "")
+    saved = run(store.save(object(), 123, changed, 456, 7, base_level=19,
+        base_values={"merged.instructions": ""},
+        base_originals={"merged.instructions": store.base_field_snapshot(opposite, 19, "merged.instructions")},
+        base_restore=(target, opposite, opposite["revision"])))
+    assert len(collection.calls) == 1
+    assert "bases" not in saved["levels"]["19"] and saved["levels"]["19"]["emoji"] == ""
+    assert saved["revision"] == saved["nonbase_revision"] == 8
+
+
+@pytest.mark.parametrize("racing", [False, True])
+def test_restore_rejects_reviewed_revision_drift_even_on_other_field(monkeypatch, racing):
+    target = store.set_base_field(v2(), 19, "merged.instructions", "")
+    opposite = store.set_base_field(target, 19, "merged.instructions", "Added notes")
+    collection = install(monkeypatch, opposite)
+    if racing:
+        write = collection.find_one_and_update
+        async def race(query, update, **kwargs):
+            collection.row["revision"] += 1
+            return await write(query, update, **kwargs)
+        collection.find_one_and_update = race
+    else:
+        collection.row["revision"] += 1
+    with pytest.raises(store.TownHallsConflict):
+        run(store.save_base_fields(object(), 123, 19, {"merged.instructions": ""},
+            {"merged.instructions": store.base_field_snapshot(opposite, 19, "merged.instructions")},
+            456, restore=(target, opposite, 7)))
+    assert collection.row["levels"]["19"]["bases"]["merged"]["instructions"] == "Added notes"

@@ -119,7 +119,13 @@ uses both conditions in one atomic CAS, never sequential partial writes. Same
 base field conflicts return “This base changed. Refresh and review your edit.”
 History records only the edited fields for a partial level Save; the existing
 post-CAS history failure/crash limitation above still applies. Restores are
-explicit, permission-checked and compare the reviewed current values.
+explicit, permission-checked and compare the reviewed current revision and values.
+Raw history preserves missing versus empty fields. Undo removes the highest
+originally absent base container or field only when its whole current value still
+matches the opposite saved image and every removed leaf belongs to that history
+entry. Known or racing neighbor edits conflict; no unrelated field is removed.
+The final restored document is validated before the same atomic CAS. A history
+entry without raw presence information cannot be restored by guessing empty text.
 
 The existing `fwa_weight` permission owns Add, Lowest, emoji and weight. The
 existing `fwa_bases` permission owns shared images and variant fields. Either can

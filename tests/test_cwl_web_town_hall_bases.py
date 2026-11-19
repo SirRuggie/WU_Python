@@ -152,7 +152,7 @@ def test_history_base_restore_binds_reviewed_revision_and_current_field_original
     target = api.API + '/19'
     values = {'bases.merged.instructions': 'Saved historical notes'}
     row = {'kind': 'dashboard_history', 'target': target, 'status': 'saved',
-           'before': values, 'after': values}
+           'before': values, 'after': values, 'raw_before': api.registry.set_base_field(fixture(), 19, 'merged.instructions', 'Saved historical notes'), 'raw_after': fixture()}
     db = SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=row)))
     @asynccontextmanager
     async def history_mongo(_):
@@ -168,7 +168,25 @@ def test_history_base_restore_binds_reviewed_revision_and_current_field_original
             asyncio.run(change_history.restore(request))
             proxy = save.call_args.args[0]
             assert proxy.history_action == 'restore'
+            assert proxy.history_base_restore == (row['raw_before'], row['raw_after'], 7)
             assert asyncio.run(proxy.json()) == {'revision': 7, 'values': values,
                 'originals': {'bases.merged.instructions': {'exists': False}}}
         permission.assert_awaited_once_with(request, 'town_halls', write=True)
         assert load.call_args.args[1] == shared.GUILD_ID
+
+
+def test_history_without_raw_presence_cannot_guess_empty_restore():
+    from cwl_web import change_history
+    target = api.API + '/19'
+    row = {'kind': 'dashboard_history', 'target': target, 'status': 'saved',
+           'before': {'bases.merged.instructions': ''}, 'after': {'bases.merged.instructions': 'Later'}}
+    db = SimpleNamespace(bot_config=SimpleNamespace(find_one=AsyncMock(return_value=row)))
+    @asynccontextmanager
+    async def history_mongo(_):
+        yield db
+    request = SimpleNamespace(app={}, query={'target': target},
+        json=AsyncMock(return_value={'id': 'history-fixture', 'side': 'before', 'revision': 7}))
+    with patch.object(change_history, 'require_manage', AsyncMock()), patch.object(change_history, 'mongo', history_mongo), patch.object(api.registry, 'load', AsyncMock(return_value=fixture())), patch.object(api, 'save', AsyncMock()) as save:
+        with pytest.raises(web.HTTPConflict):
+            asyncio.run(change_history.restore(request))
+    save.assert_not_awaited()
