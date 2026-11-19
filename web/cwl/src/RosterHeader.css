@@ -131,21 +131,5 @@
   margin-bottom: 0;
 }
 
-@media (min-width: 1100px) {
-  .roster-header-title-row {
-    grid-area: 1 / 1;
-  }
-  .roster-header-title-row .cwl-page-header-title {
-    flex: 0 0 220px;
-    margin-right: auto;
-  }
-  .roster-header > .roster-header-summary {
-    grid-area: 1 / 1;
-    margin-inline: 232px 212px;
-    align-self: center;
-  }
-  .roster-header:has(.roster-header-title-row > .roster-ui-button)
-    > .roster-header-summary {
-    margin-right: 268px;
-  }
-}
+/* Keep title/actions and summary in separate flow rows: refresh status, season
+   labels and publication state can each change their required width. */
