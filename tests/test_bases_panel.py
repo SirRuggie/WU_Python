@@ -20,6 +20,9 @@ def test_panel_menu_is_persistent_and_lists_registry_bases(snapshot):
     menu = panel_menu()
     assert menu['custom_id'] == 'fwa_bases_panel:'
     assert [item['value'] for item in menu['options']] == ['th19', 'th19_new']
+    texts = [item.get('content', '') for item in walk(built(bases_panel.panel_components()))]
+    assert any('Select your Town Hall' in text for text in texts)
+    assert any('Non-merged' in text and 'Merged' in text for text in texts)
     action = registered_functions['fwa_bases_panel']
     assert action.no_return and not action.preload_state and not action.requires_state
 
