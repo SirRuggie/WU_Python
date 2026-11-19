@@ -53,7 +53,7 @@ class FakeCollection:
 
 def test_help_catalog_covers_every_registered_slash_path_after_role_addition():
     paths = command_paths()
-    expected_catalog_total = 32
+    expected_catalog_total = 33
 
     # Retired event and management commands are absent; management lives in /manage.
     assert len(paths) == expected_catalog_total
