@@ -46,6 +46,7 @@ def th16_note():
 def panel_components():
     """The public panel; the menu is disabled while no base links are set."""
     return [Container(accent_color=WU_GOLD, components=[
+        Media(items=[MediaItem(media="assets/FWA_Bases_Banner.jpg")]),
         Text(content="## FWA Bases"),
         Text(content=STEPS),
         Separator(divider=True, spacing=hikari.SpacingType.SMALL),
