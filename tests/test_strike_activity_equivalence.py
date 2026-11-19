@@ -82,9 +82,6 @@ def test_randomized_war_rich_rows_equal_frozen_955_except_explicit_neutral_veto(
             activity.append(item)
     clans = [{'tag': '#FAMILY', 'name': 'Family'}]
     tags = {row['tag'] for row in activity}
-    old_profiles = [p for p in profiles if p['current_clan_tag'] == '#FAMILY'
-                    or p['player_tag'] in tags or (p.get('departed_clan_tag') == '#FAMILY'
-                    and p['departed_last_seen_at'] >= now-timedelta(days=90))]
     totals = {}
     for profile in profiles:
         ledger = [r for r in records if r['player_tag'] == profile['player_tag'] and r['kind'] == 'strike']
@@ -98,24 +95,50 @@ def test_randomized_war_rich_rows_equal_frozen_955_except_explicit_neutral_veto(
         {key: value for key, value in item.items() if key in ('tag', 'current_clan_tag', 'left_at')}
         for item in activity]
     before = deepcopy((core, activity, records))
-    base = family_activity_rows_reference(activity, old_profiles, records, clans,
-                                               replacements=[], strike_limit=3, now=now)
+    # 241's explicit membership changes are projected independently here;
+    # the frozen 955 signal/count implementation remains the oracle.
+    by_activity = {row['tag']: row for row in activity}
+    keep_profiles, keep_activity = [], []
+    for profile in profiles:
+        item = by_activity.get(profile['player_tag'], {})
+        clan = item.get('current_clan_tag', profile.get('current_clan_tag'))
+        left = bool(item.get('left_at') or (clan != '#FAMILY' and profile.get('departed_clan_tag')))
+        departed = item.get('left_at') or profile.get('departed_last_seen_at')
+        if not left or not departed or departed >= now-timedelta(hours=48):
+            keep_profiles.append(profile)
+    by_profile = {row['player_tag']: row for row in profiles}
+    for item in activity:
+        profile = by_profile.get(item['tag'], {})
+        clan = item.get('current_clan_tag', profile.get('current_clan_tag'))
+        left = bool(item.get('left_at') or (clan != '#FAMILY' and profile.get('departed_clan_tag')))
+        departed = item.get('left_at') or profile.get('departed_last_seen_at')
+        if not left or not departed or departed >= now-timedelta(hours=48):
+            keep_activity.append(item)
     veto_keys = {(r['player_tag'], r['war_key']) for r in records if is_neutral(r)}
-    # Independent expected correction: mask only the colliding monitored war
-    # provenance for the frozen reference, then run its unchanged implementation.
-    # Every ledger record/date/kind remains, including active monitored strikes;
-    # the manual source makes just that signal observation ineligible.
     resolved = [{**r, 'source': 'manual'} if is_monitored(r) and not is_neutral(r)
                 and (r['player_tag'], r.get('war_key')) in veto_keys else r for r in records]
-    expected = family_activity_rows_reference(activity, old_profiles, resolved, clans,
-                                               replacements=[], strike_limit=3, now=now)
+    def expected_rows(ledger_records):
+        rows = family_activity_rows_reference(keep_activity, keep_profiles, ledger_records, clans,
+                                             replacements=[], strike_limit=3, now=now)
+        for row in rows:
+            row['left_history'] = False
+            if row['left_clan']:
+                item = by_activity.get(row['player_tag'], {})
+                observed = item.get('current_clan_tag', by_profile[row['player_tag']].get('current_clan_tag'))
+                row['last_clan_tag'] = row['last_clan_tag'] or (observed if observed == '#FAMILY' else None)
+                row['last_clan_name'] = 'Family' if row['last_clan_tag'] == '#FAMILY' else None
+                row['current_clan_tag'] = row['last_clan_tag']
+                row['current_clan_name'] = row['last_clan_name']
+            else:
+                row['departed_at'] = None
+        return rows
+    expected = expected_rows(resolved)
     actual = family_activity_rows(activity, **activity_view_context(core, activity, records, now=now), now=now)
     assert actual == expected
+    base = expected_rows(records)
     assert [r['player_tag'] for r in base] == [r['player_tag'] for r in actual]
     monitored_keys = {(r['player_tag'], r['war_key']) for r in records if is_monitored(r) and not is_neutral(r)}
     collision_players = {player for player, _ in veto_keys & monitored_keys}
-    # The retained veto is the sole permitted difference from base. Count and
-    # replacement columns cannot change even on the deliberately mixed rows.
     for old, new in zip(base, actual):
         if old['player_tag'] not in collision_players:
             assert old == new

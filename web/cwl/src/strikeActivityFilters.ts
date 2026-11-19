@@ -1,4 +1,5 @@
 /** Account-list view rules. API status is deliberately ignored here. */
+import { parseSlotExpansion } from "./slotSearchState";
 import type { ActivityAccount, ActivityPriority } from "./strikeActivityView";
 export const activityViews = [
   "not_attacking",
@@ -64,6 +65,8 @@ export type ActivityFilters = {
   slotWeights: number[];
   slotClans: string[];
   slotMember: string;
+  slotTownHall: number | null;
+  slotExpanded: Record<string, number>;
   sort: ActivitySort;
   direction: "asc" | "desc";
   page: number;
@@ -89,6 +92,8 @@ export const activityFilterKeys = [
   "slot_weight",
   "slot_clan",
   "slot_member",
+  "slot_th",
+  "slot_expanded",
   "sort",
   "direction",
   "page",
@@ -182,6 +187,16 @@ const range = (value: string | null) =>
     ? Number(value)
     : null;
 export function normalizeActivityView(value: ActivityFilters): ActivityFilters {
+  if (value.left === "left")
+    return {
+      ...value,
+      clans: [],
+      marked: false,
+      noAttackMin: 0,
+      quietMin: 0,
+      raidMin: 0,
+      group: "none",
+    };
   return {
     ...value,
     noAttackMin:
@@ -200,7 +215,13 @@ export function parseActivityFilters(
   const p = new URLSearchParams(search);
   const requested =
     p.get("activity_view") ||
-    (["slot_weight", "slot_clan", "slot_member"].some((key) => p.has(key))
+    ([
+      "slot_weight",
+      "slot_clan",
+      "slot_member",
+      "slot_th",
+      "slot_expanded",
+    ].some((key) => p.has(key))
       ? "replacements"
       : p.get("view"));
   const view: ActivityView = activityViews.includes(requested as ActivityView)
@@ -286,6 +307,13 @@ export function parseActivityFilters(
       ),
     ].slice(0, 25),
     slotMember: discordId(p.get("slot_member")),
+    slotTownHall:
+      threshold(
+        p.get("slot_th"),
+        Array.from({ length: 99 }, (_, i) => i + 1),
+        0,
+      ) || null,
+    slotExpanded: parseSlotExpansion(p.getAll("slot_expanded")),
     sort: selectedSort,
     direction:
       p.get("direction") === "asc" || p.get("direction") === "desc"
@@ -326,6 +354,11 @@ export function activityFilterQuery(f: ActivityFilters) {
   for (const weight of f.slotWeights) p.append("slot_weight", String(weight));
   for (const tag of f.slotClans) p.append("slot_clan", tag);
   if (f.slotMember) p.set("slot_member", f.slotMember);
+  if (f.slotTownHall) p.set("slot_th", String(f.slotTownHall));
+  for (const [key, count] of Object.entries(f.slotExpanded || {}).sort(
+    ([a], [b]) => a.localeCompare(b),
+  ))
+    p.append("slot_expanded", `${key}:${count}`);
   p.set("sort", f.sort);
   p.set("direction", f.direction);
   if (f.page) p.set("page", String(f.page));
@@ -362,6 +395,8 @@ export function clearActivityFilters(f: ActivityFilters): ActivityFilters {
     slotWeights: f.slotWeights,
     slotClans: f.slotClans,
     slotMember: f.slotMember,
+    slotTownHall: f.slotTownHall,
+    slotExpanded: f.slotExpanded,
   };
 }
 export function replacementMatches(row: ActivityAccount, includeLow: boolean) {
@@ -457,6 +492,12 @@ export function visibleActivityAccounts(
       );
     })
     .sort((a, b) => {
+      if (f.left === "left") {
+        const departureOrder =
+          (Date.parse(b.departed_at || "") || 0) -
+          (Date.parse(a.departed_at || "") || 0);
+        if (departureOrder) return departureOrder;
+      }
       const av = activitySortValue(a, f.sort),
         bv = activitySortValue(b, f.sort);
       if (av === null && bv !== null) return 1;
@@ -527,6 +568,7 @@ export function memberName(
 }
 /** The tab rule in words, shown under the view chips. */
 export function activityRuleText(f: ActivityFilters, member?: string | null) {
+  if (f.left === "left") return "Left history · newest first";
   if (f.member)
     return `All accounts of ${member ? `@${member}` : "this member"}`;
   switch (f.view) {

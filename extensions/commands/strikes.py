@@ -315,8 +315,8 @@ def replacement_slot_line(row, clan_names, *, index=None, disputed=(), note_limi
     gap = row.get('weight_difference')
     gap_text = f' · Gap {compact_weight(gap)}' if isinstance(gap, int) else ''
     strikes = int(row.get('active_strikes') or 0)
-    flags = (' · Left clan' if row.get('departed') else '') + (
-        ' · Last known' if row.get('clan_is_current') is False else '') + (
+    flags = (' · ' + (row.get('left_label') or 'Left clan') if row.get('departed') else '') + (
+        ' · ' + (row.get('last_seen_label') or 'Last known') if row.get('clan_is_current') is False and not row.get('departed') else '') + (
         ' · Linked to two Discord users' if row['player_tag'] in disputed else '')
     note = safe(row.get('replacement_note'), NOTE_LIMIT)
     if len(note) > note_limit:
@@ -338,6 +338,7 @@ def replacement_dashboard_link(state):
     query += [('slot_weight', str(value)) for value in state.get('weights') or []]
     if state.get('member_id'):
         query.append(('slot_member', str(state['member_id'])))
+    query += [('slot_expanded', f'{key}:13') for key in state.get('expanded', [])]
     clans = state.get('clan_tags') or []
     kept = []
     for value in clans:
@@ -379,29 +380,49 @@ async def replacement_panel(store, state, *, notice=''):
     weights_chosen = list(state.get('weights') or [])
     member_id = state.get('member_id')
     chosen_clans = [value for value in state.get('clan_tags') or [] if value in fwa_tags]
-    profiles = await store.mongo.strike_profiles.find({'guild_id': guild}, {'player_tag': 1}).to_list(length=None)
-    cached = cached_weights([row['player_tag'] for row in profiles])
-    rows = await store.replacement(guild, None, browse_all=True, family_scope='all',
-                                   limit=5000, weights=cached)
-    member_tags = None
+    profiles = await store.replacement_profiles(guild, clans)
+    tags = [row['player_tag'] for row in profiles]
+    feed = cached_weights(tags)
+    member_tags = set()
     disputed = set()
     links_notice = ''
     if member_id:
-        links = await recruit_links.resolve(int(member_id))
-        member_tags, disputed, partial = member_slot_tags(links)
-        if member_tags is None:
-            member_tags, links_notice = set(), 'Account links are unavailable. Try again.'
-        elif partial:
+        if state.get('links_member_id') != member_id:
+            links = await recruit_links.resolve(int(member_id))
+            linked, conflicts, partial = member_slot_tags(links)
+            changes = {'links_member_id': member_id, 'linked_tags': sorted(linked or []),
+                       'link_disputed': sorted(conflicts), 'member_partial': partial,
+                       'links_unavailable': linked is None}
+            await update_state(store.mongo, state['_id'], {'$set': changes})
+            state.update(changes)
+        member_tags = set(state.get('linked_tags') or [])
+        disputed = set(state.get('link_disputed') or [])
+        if state.get('links_unavailable'):
+            links_notice = 'Account links are unavailable. Try again.'
+        elif state.get('member_partial'):
             links_notice = 'Some linked accounts were left out.'
-    pool = slot_pool(rows, fwa_tags=fwa_tags, member_tags=member_tags)
+    from utils.clan_weights import replacement_saved_weights, replacement_weights, recruit_weight_groups
+    saved = await asyncio.to_thread(replacement_saved_weights,
+                                   os.getenv('CWL_WEB_DB_PATH', '').strip(), tags + sorted(member_tags))
+    recruit = recruit_weight_groups(member_tags, saved,
+                                   weights=weights_chosen if weights_chosen else None,
+                                   disputed=disputed, profiles=profiles)
+    if not weights_chosen and member_id:
+        weights_chosen = [group['weight'] for group in recruit['groups']]
+    rows = await store.replacement(guild, None, browse_all=True, family_scope='all',
+                                   limit=None, weights=replacement_weights(profiles, saved, feed),
+                                   profiles=profiles, clans=clans)
+    if member_id and state.get('links_unavailable'):
+        rows = []
+    pool = slot_pool(rows, fwa_tags=fwa_tags)
     counts = {}
     for row in pool:
         counts[row['last_seen_clan_tag']] = counts.get(row['last_seen_clan_tag'], 0) + 1
     ranked = sorted(counts, key=lambda value: (value not in chosen_clans, -counts[value],
                                                str(clan_names.get(value, value)).casefold(), value))
     menu_tags = ranked[:CLAN_MENU_LIMIT]
-    weights_text = ('Weights ' + ', '.join(compact_weight(value) for value in weights_chosen)
-                    if weights_chosen else 'No weights')
+    weights_text = ('Weights ' + ', '.join(safe(group['label'], 45) for group in recruit['groups'])
+                    if recruit['groups'] else 'No weights')
     clan_labels = [safe(clan_names.get(value, value), 30) for value in chosen_clans]
 
     def summary_text(count_only=False):
@@ -416,13 +437,27 @@ async def replacement_panel(store, state, *, notice=''):
     messages = []
     if state.get('refresh_warning'):
         messages.append('Could not update some clans. The data shown is old.')
-    link, clans_left_out = replacement_dashboard_link({**state, 'clan_tags': chosen_clans})
+    expanded = [('a' + group['account_tag'] if group['source'] == 'saved' else
+                 'w' + str(group['weight'])) for group in recruit['groups']]
+    link, clans_left_out = replacement_dashboard_link({**state, 'clan_tags': chosen_clans,
+                                                      'expanded': expanded})
     if len(ranked) > CLAN_MENU_LIMIT:
         messages.append('Some clans hidden; use the dashboard.')
     if clans_left_out:
         messages.append('Some clans not in link')
     if links_notice:
         messages.append(links_notice)
+    if member_id and recruit['member_notice']:
+        messages.append(recruit['member_notice'])
+    missing = [account for account in recruit['member_accounts']
+               if not (type(account['saved_weight']) is int and account['saved_weight'] > 0)]
+    missing_lines = [(
+        f"{safe(account['name'], len(account['name']))} {account['tag']}"
+        if account['name'] != account['tag'] else account['tag']) for account in missing]
+    missing_summary = (f'No saved weight: {len(missing)} accounts. '
+                       f'[View all on the dashboard]({link}).')
+    if tags and (time.monotonic() - _weight_cache_at >= _WEIGHT_TTL_SECONDS or set(tags) - _weight_cached_tags):
+        messages.append('Some weights may be old')
     if notice:
         messages.append(safe(notice, 180))
     pages = 1
@@ -430,18 +465,21 @@ async def replacement_panel(store, state, *, notice=''):
     footer = []
     if weights_chosen:
         groups = find_slots(rows, weights_chosen, fwa_tags=fwa_tags,
-                            clan_tags=chosen_clans or None, member_tags=member_tags)
+                            clan_tags=chosen_clans or None)
+        for group, metadata in zip(groups, recruit['groups']):
+            group.update(metadata)
 
         def slot_texts(note_limit, keep, name_limit):
-            return [f"### {compact_weight(group['weight'])}\n" + ('\n\n'.join(
+            return [f"### {safe(group['label'], 45)}" +
+                    (' · Linked to two Discord users' if group.get('link_disputed') else '') + '\n' + ('\n\n'.join(
                 replacement_slot_line(row, clan_names, disputed=disputed, note_limit=note_limit,
                                       name_limit=name_limit)
                 for row in group['slots'][:keep]) or 'No slot in these clans.') for group in groups]
 
-        rows_dropped = lambda keep: any(len(group['slots']) > keep for group in groups)
+        rows_dropped = lambda keep: any(group['total'] > keep for group in groups)
     else:
-        listed = sorted(slot_pool(rows, fwa_tags=fwa_tags, clan_tags=chosen_clans or None,
-                                  member_tags=member_tags), key=priority_key)
+        listed = ([] if member_id else sorted(
+            slot_pool(rows, fwa_tags=fwa_tags, clan_tags=chosen_clans or None), key=priority_key))
         pages = max(1, math.ceil(len(listed) / REPLACEMENT_PAGE_SIZE))
         page = min(max(0, int(state.get('page', 0))), pages - 1)
         start = page * REPLACEMENT_PAGE_SIZE
@@ -455,16 +493,20 @@ async def replacement_panel(store, state, *, notice=''):
                 for number, row in enumerate(showing, 1)) or 'No accounts match these filters.']
         rows_dropped = lambda keep: False
 
-    # Fit the Discord text limit in a fixed order; mentions and weights are never cut:
-    # notes, then the summary's clan list as a count, then notice lines, then the lower
-    # ranked rows of each weight (the best row per weight stays), then names. The last
-    # stage fits any real input: five weights, 15-character names.
-    def compose(note_limit=NOTE_LIMIT, count_only=False, line_cap=None, keep=3, name_limit=24):
+    # Full missing-account lines never pass through generic notice truncation.
+    # At each fitting stage, try the whole list before its exact count/link.
+    # Preserve the existing notes/clan labels/notices/rows/names priority.
+    # Mentions and weight labels are never cut; the best row per weight stays.
+    def compose(note_limit=NOTE_LIMIT, count_only=False, line_cap=None, keep=3,
+                name_limit=24, compact_missing=False):
         lines = messages if line_cap is None else [
             line if len(line) <= line_cap else line[:line_cap - 1] + '…' for line in messages]
         texts = [Text(content='## Replacements'), Text(content=summary_text(count_only))]
         if lines:
             texts.append(Text(content='\n'.join(lines)))
+        if missing:
+            texts.append(Text(content=missing_summary if compact_missing else
+                              'No saved weight:\n' + '\n'.join(missing_lines)))
         texts += [Text(content=value) for value in slot_texts(note_limit, keep, name_limit)]
         if rows_dropped(keep):
             texts.append(Text(content='More slots on the dashboard.'))
@@ -481,6 +523,10 @@ async def replacement_panel(store, state, *, notice=''):
         texts = compose(**stage)
         if sum(text_units(item.content) for item in texts) <= PANEL_TEXT_LIMIT:
             break
+        if missing:
+            texts = compose(**stage, compact_missing=True)
+            if sum(text_units(item.content) for item in texts) <= PANEL_TEXT_LIMIT:
+                break
     children = texts
     token = state['_id']
     if menu_tags:
@@ -556,7 +602,7 @@ async def replacement_member(ctx, action_id, mongo: MongoClient = lightbulb.di.I
     if values and not str(values[0]).isdigit():
         return panel('Replacements', 'Select a member from the menu.', accent=WU_RED)
     return await _replacement_update(ctx, mongo, action_id,
-                                     {'member_id': int(values[0]) if values else None, 'page': 0})
+                                     {'member_id': int(values[0]) if values else None, 'links_member_id': None, 'page': 0})
 
 
 @register_action('strike_replace_page', preload_state=False)
@@ -574,7 +620,7 @@ async def replacement_page(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
 @lightbulb.di.with_di
 async def replacement_clear(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **kwargs):
     return await _replacement_update(ctx, mongo, action_id,
-        {'clan_tags': [], 'member_id': None, 'weights': [], 'page': 0})
+        {'clan_tags': [], 'member_id': None, 'links_member_id': None, 'weights': [], 'page': 0})
 
 
 @register_action('strike_replace_weight', opens_modal=True, no_return=True, preload_state=False)
@@ -621,7 +667,7 @@ async def replacement_weight_submit(ctx, action_id, mongo: MongoClient = lightbu
 @strikes.register()
 class Replacements(lightbulb.SlashCommand, name='replacements',
                    description='Find the closest replacement slots for recruit weights'):
-    member = lightbulb.user('member', 'Only this member’s accounts', default=None)
+    member = lightbulb.user('member', 'Recruit whose saved account weights are matched', default=None)
 
     @lightbulb.invoke
     @lightbulb.di.with_di
@@ -701,7 +747,7 @@ async def live_weights(tags):
         result = await _provider_weights(tags)
     except ProviderUnavailable:
         result = {}
-    return {**result, **_manual_weights()}
+    return {**result, **await asyncio.to_thread(_manual_weights)}
 
 
 async def _refresh_weight_cache(tags):
@@ -727,7 +773,7 @@ def cached_weights(tags):
         if _weight_refresh_task is None or _weight_refresh_task.done():
             _weight_refresh_task = asyncio.create_task(_refresh_weight_cache(list(dict.fromkeys(tags))),
                                                         name='strike-weight-refresh')
-    return {**_weight_cache, **_manual_weights()}
+    return dict(_weight_cache)
 
 
 async def _warm_weight_cache(mongo):

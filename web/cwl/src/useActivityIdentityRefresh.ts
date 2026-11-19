@@ -33,6 +33,7 @@ export function mergeIdentityAccounts(
 export default function useActivityIdentityRefresh({
   enabled,
   generation,
+  endpoint = "/strikes/accounts?activity=true",
   busy,
   onResult,
   onDenied,
@@ -40,17 +41,21 @@ export default function useActivityIdentityRefresh({
 }: {
   enabled: boolean;
   generation: number;
+  endpoint?: string;
   busy: () => boolean;
   onResult: (result: IdentitySnapshot) => void;
   onDenied: () => void;
   readVersion?: () => string | number;
 }) {
+  const currentEndpoint = useRef(endpoint);
+  currentEndpoint.current = endpoint;
   const callbacks = useRef({ busy, onResult, onDenied, readVersion });
   callbacks.current = { busy, onResult, onDenied, readVersion };
   useEffect(() => {
     if (!enabled) return;
     let alive = true,
       attempts = 0,
+      controller: AbortController | null = null,
       timer: ReturnType<typeof setTimeout>;
     const schedule = (delay = 2000) => {
       if (alive) timer = setTimeout(poll, delay);
@@ -64,33 +69,54 @@ export default function useActivityIdentityRefresh({
       attempts++;
       const version = callbacks.current.readVersion();
       try {
-        const result = await api<IdentitySnapshot>(
-          "/strikes/accounts?activity=true",
-        );
-        if (!alive || !Array.isArray(result.accounts)) return;
-        if (callbacks.current.busy() || version !== callbacks.current.readVersion()) {
+        controller = new AbortController();
+        const result = await api<IdentitySnapshot>(endpoint, "GET", undefined, {
+          signal: controller.signal,
+        });
+        if (
+          !alive ||
+          endpoint !== currentEndpoint.current ||
+          !Array.isArray(result.accounts)
+        )
+          return;
+        if (
+          callbacks.current.busy() ||
+          version !== callbacks.current.readVersion()
+        ) {
           schedule();
           return;
         }
         callbacks.current.onResult(result);
-        if (result.identity_updating || result.identity_warning || result.activity_updating) {
-          schedule((result.identity_updating || result.activity_updating) && attempts < 6 ? 2000 : 120_000);
+        if (
+          result.identity_updating ||
+          result.identity_warning ||
+          result.activity_updating
+        ) {
+          schedule(
+            (result.identity_updating || result.activity_updating) &&
+              attempts < 6
+              ? 2000
+              : 120_000,
+          );
           if (attempts >= 6) attempts = 0;
         }
       } catch (cause) {
         if (
           alive &&
+          endpoint === currentEndpoint.current &&
           cause instanceof ApiError &&
           [401, 403].includes(cause.status)
         )
           callbacks.current.onDenied();
-        else if (alive) schedule(120_000);
+        else if (alive && endpoint === currentEndpoint.current)
+          schedule(120_000);
       }
     };
     schedule();
     return () => {
       alive = false;
+      controller?.abort();
       clearTimeout(timer);
     };
-  }, [enabled, generation]);
+  }, [enabled, generation, endpoint]);
 }

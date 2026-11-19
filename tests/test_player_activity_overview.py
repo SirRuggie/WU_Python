@@ -22,6 +22,8 @@ async def ready_activity_accounts(request):
     """564 fixture setup: finish the on-demand job before checking warm output."""
     from cwl_web import strikes
     from cwl_web.strike_activity_cache import snapshots
+    if not hasattr(request, 'query'):
+        request.query = {}
     await strikes.activity_accounts(request)
     task = snapshots(request.app).entries[strikes.GUILD_ID].task
     if task is not None:
@@ -54,7 +56,7 @@ def test_family_with_zero_strikes_and_departed_accounts_is_visible():
     rows=family_activity_rows(activity,profiles,[],[{'tag':'#CLAN','name':'Family'}],now=NOW)
     assert len(rows)==2
     left=next(row for row in rows if row['player_tag']=='#PQQ')
-    assert left['left_clan'] and left['current_clan_tag'] is None
+    assert left['left_clan'] and left['current_clan_tag']=='#CLAN' and not left['left_history']
     assert next(row for row in rows if row['player_tag']=='#PYY')['active_strikes']==0
 
 
@@ -104,7 +106,7 @@ def test_activity_response_clans_carry_is_fwa_from_the_clan_type():
             {'tag': '#CWL', 'name': 'Lazy', 'type': 'normal'},
             {'tag': '#OLD', 'name': 'Untyped'},
             {'tag': '#WARN'}]})
-        request = SimpleNamespace(app={'store': object(), 'providers': object()})
+        request = SimpleNamespace(query={}, app={'store': object(), 'providers': object()})
         with patch.object(strikes.shared, 'mongo', mongo), patch.object(strikes, 'service', AsyncMock(return_value=ledger)), \
              patch('utils.player_activity_store.PlayerActivityStore.overview', AsyncMock(return_value=[])):
             result = json.loads((await ready_activity_accounts(request)).body)
@@ -130,7 +132,7 @@ def test_route_uses_public_weight_owner_and_preserves_rows_on_upstream_failure()
             yield SimpleNamespace(player_activity=SimpleNamespace())
         ledger = activity_ledger({
             'profiles': [], 'records': [], 'clans':[{'tag':'#CLAN','name':'Family'}]})
-        request = SimpleNamespace(app={'store':object(),'providers':object()})
+        request = SimpleNamespace(query={}, app={'store':object(),'providers':object()})
         activity=[{'tag':'#PYY','name':'Healthy','current_clan_tag':'#CLAN','last_seen_at':NOW}]
         weights = AsyncMock(return_value={'#PYY':{'weight':149000}})
         saved_blank = [False]
@@ -245,7 +247,7 @@ def test_activity_outage_preserves_strike_rows_and_directory_names_without_profi
         recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={'#PYY':'123456789012345678'})
         ledger=activity_ledger({'profiles':[profile], 'records':[],
             'clans':[{'tag':'#CLAN','name':'Family'}]})
-        request=SimpleNamespace(app={'store':object(),'providers':object()})
+        request=SimpleNamespace(query={}, app={'store':object(),'providers':object()})
         directory=AsyncMock(return_value=[{'nick':'Real display name','user':{'id':'123456789012345678','username':'fixture'}}])
         with patch.object(strikes.shared,'mongo',mongo), patch.object(strikes,'service',AsyncMock(return_value=ledger)), \
              patch('utils.player_activity_store.PlayerActivityStore.overview',AsyncMock(side_effect=PyMongoError('isolated outage'))), \
@@ -285,7 +287,7 @@ def test_production_profile_without_member_id_gets_cached_bulk_link_identity(mon
     from cwl_web import manage_roles
     from utils import recruit_links
     async def run():
-        request=SimpleNamespace(app={})
+        request=SimpleNamespace(query={}, app={})
         recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={'#PYY':'123456789012345678'})
         monkeypatch.setattr(manage_roles, 'searchable_members', AsyncMock(return_value=[
             {'nick':'Display','user':{'id':'123456789012345678','username':' display_user '}}]))
@@ -332,7 +334,7 @@ def test_page_does_not_wait_for_names_and_failure_refresh_is_cached(monkeypatch)
             await blocked.wait()
             raise RuntimeError('name provider offline')
         recruit_links.resolve_players.side_effect=slow
-        request=SimpleNamespace(app={'store':object(),'providers':object()})
+        request=SimpleNamespace(query={}, app={'store':object(),'providers':object()})
         ledger=activity_ledger({
             'profiles':[{'player_tag':'#PYY','current_clan_tag':'#CLAN'}],
             'records':[], 'clans':[{'tag':'#CLAN'}]})
@@ -401,7 +403,7 @@ def test_identity_failure_cooldown_can_recover_and_pending_is_not_failure(monkey
     async def run():
         clock = [0]
         monkeypatch.setattr(identity.time, "monotonic", lambda: clock[0])
-        request = SimpleNamespace(app={})
+        request = SimpleNamespace(query={}, app={})
         recruit_links.resolve_players.side_effect = [TimeoutError(), recruit_links.PlayerOwners(owners={"#PYY": "123456789012345678"})]
         monkeypatch.setattr(manage_roles, "searchable_members", AsyncMock(return_value=[{"nick":"Recovered", "user":{"id":"123456789012345678","username":"recovered_u"}}]))
         assert (await identity.account_identities(request,["#PYY"])) == ({},False)
@@ -429,7 +431,7 @@ def test_background_identity_lookup_can_complete_after_the_old_eight_second_limi
             return recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678"})
         recruit_links.resolve_players.side_effect = slow
         monkeypatch.setattr(manage_roles, "searchable_members", AsyncMock(return_value=[{"nick":"Cold success", "user":{"id":"123456789012345678"}}]))
-        request = SimpleNamespace(app={})
+        request = SimpleNamespace(query={}, app={})
         assert await identity.account_identities(request,["#PYY"]) == ({},False)
         await request.app["activity_identity_cache"]["task"]
         rows, warning = await identity.account_identities(request,["#PYY"])
@@ -448,7 +450,7 @@ def test_partial_provider_preserves_cache_warns_and_recovers(monkeypatch, caplog
         clock=[0]
         monkeypatch.setattr(identity.time,"monotonic",lambda:clock[0])
         old={"#PYY":{"discord_id":"123456789012345678","discord_name":"Prior","discord_username":"prior_u"}, "#PQQ":{"discord_id":"234567890123456789","discord_name":"Still healthy","discord_username":"healthy_u"}}
-        request=SimpleNamespace(app={"activity_identity_cache":{"identities":old}} if warm else {})
+        request=SimpleNamespace(query={}, app={"activity_identity_cache":{"identities":old}} if warm else {})
         recruit_links.resolve_players.side_effect=[recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678"},unavailable=("ClashKing",)),recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678","#PQQ":"234567890123456789"})]
         monkeypatch.setattr(manage_roles,"searchable_members",AsyncMock(return_value=[{"nick":"Refreshed","user":{"id":"123456789012345678","username":"fresh_u"}},{"nick":"Recovered","user":{"id":"234567890123456789"}}]))
         await identity.account_identities(request,["#PYY","#PQQ"])
@@ -556,7 +558,7 @@ def test_identity_failure_retains_prior_discord_username(monkeypatch):
         clock=[0]
         monkeypatch.setattr(identity.time,"monotonic",lambda:clock[0])
         old={"#PYY":{"discord_id":"123456789012345678","discord_name":"Prior","discord_username":"prior_u"}}
-        request=SimpleNamespace(app={"activity_identity_cache":{"identities":old}})
+        request=SimpleNamespace(query={}, app={"activity_identity_cache":{"identities":old}})
         recruit_links.resolve_players.side_effect=None
         recruit_links.resolve_players.return_value=recruit_links.PlayerOwners(owners={"#PYY":"123456789012345678"})
         monkeypatch.setattr(manage_roles,"searchable_members",AsyncMock(side_effect=RuntimeError("down")))

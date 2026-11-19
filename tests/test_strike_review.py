@@ -271,7 +271,7 @@ async def _replacement_uses_effective_weights_after_filler_and_strikes():
             return Cursor([{'tag': '#2UVGQU9'}])
 
     class Profiles:
-        def find(self, query):
+        def find(self, query, projection=None):
             assert 'roster_seen_at' in query
             now = datetime.now(timezone.utc)
             rows = [
@@ -315,7 +315,7 @@ async def _import_caches_leave_reads_per_run_but_rechecks_before_apply():
     class PastLeaves(Collection):
         reads = 0
 
-        def find(self, query):
+        def find(self, query, projection=None):
             self.reads += 1
             return super().find(query)
 

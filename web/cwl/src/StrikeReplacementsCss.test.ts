@@ -14,6 +14,15 @@ it("left-aligns slot results at every width", () => {
   expect(css).toMatch(/justify-content:\s*stretch/);
   expect(css).toMatch(/text-align:\s*left/);
 });
+it("clips duplicate settled announcements without removing them from accessibility", () => {
+  const hidden = block(roster, ".strike-slot-live.sr-only");
+  expect(hidden).toMatch(/position:\s*absolute/);
+  expect(hidden).toMatch(/width:\s*1px/);
+  expect(hidden).toMatch(/height:\s*1px/);
+  expect(hidden).toMatch(/clip-path:\s*inset\(50%\)/);
+  expect(hidden).not.toMatch(/display:\s*none|visibility:\s*hidden/);
+  expect(roster).toMatch(/\.strike-slot-live\.sr-only\s*\{\s*min-height:\s*0/);
+});
 
 it("keeps slot results at full contrast even when not openable", () => {
   expect(roster).toMatch(
@@ -21,13 +30,15 @@ it("keeps slot results at full contrast even when not openable", () => {
   );
 });
 
-it("gives the Find slots controls two rows without truncating labels", () => {
-  expect(block(roster, ".strike-find-slots-top")).toMatch(
-    /grid-template-columns:\s*minmax\(0, 1fr\) auto/,
+it("lays out inline filters in four columns and stacks them on phones", () => {
+  expect(block(roster, ".strike-slot-filters")).toMatch(
+    /grid-template-columns:\s*minmax\(160px, 1fr\) minmax\(150px, 1fr\) minmax\(190px, 1\.2fr\)\s*minmax\(110px, 0\.6fr\)/,
   );
-  expect(block(roster, ".strike-find-slots-row")).toMatch(
-    /grid-template-columns:\s*repeat\(2, minmax\(0, 1fr\)\)/,
+  const phone = roster.slice(roster.indexOf("@media (max-width: 760px)"));
+  expect(block(phone, ".strike-slot-filters")).toMatch(
+    /grid-template-columns:\s*minmax\(0, 1fr\)/,
   );
+  expect(block(phone, ".strike-slot-results")).toMatch(/max-height:\s*55dvh/);
 });
 
 it("styles the Tracking status as a gold text link, not a bordered chip", () => {

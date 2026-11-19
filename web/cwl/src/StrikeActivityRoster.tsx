@@ -20,6 +20,7 @@ import {
   useRef,
   useState,
   type RefObject,
+  type ReactNode,
 } from "react";
 import { api, ApiError } from "./api";
 import { spendPanelEntry } from "./actionPanelHistory";
@@ -50,7 +51,7 @@ import { countLabel } from "./countLabel";
 
 type Response = {
   accounts: ActivityAccount[];
-  clans: { tag: string; name: string }[];
+  clans: { tag: string; name: string; is_fwa?: boolean }[];
   weight_warning?: string;
   identity_warning?: string;
   activity_warning?: string;
@@ -77,9 +78,13 @@ export default function StrikeActivityRoster({
   onDenied,
   overviewActions,
   trackingSlotRef,
+  detailSlot,
+  onSlotChoose,
 }: {
   /** Account actions listed first in the toolbar ⋯ menu. */
   overviewActions?: ActionMenuItem[];
+  detailSlot?: ReactNode;
+  onSlotChoose?: (account: ActivityAccount) => void;
   trackingSlotRef?: (slot: HTMLDivElement | null) => void;
   state?: string;
   canManage?: boolean;
@@ -208,6 +213,9 @@ export default function StrikeActivityRoster({
     },
     [onWorking],
   );
+  const historyOnly = filters.left === "left";
+  const activityEndpoint = `/strikes/accounts?activity=true${historyOnly ? "&left=true" : ""}`;
+  const readAbort = useRef<AbortController | null>(null);
   const request = useRef(0),
     pending = useRef(false),
     restored = useRef(false);
@@ -220,7 +228,11 @@ export default function StrikeActivityRoster({
     setLoading(true);
     setError("");
     try {
-      const result = await api<Response>("/strikes/accounts?activity=true");
+      const controller = new AbortController();
+      readAbort.current = controller;
+      const result = await api<Response>(activityEndpoint, "GET", undefined, {
+        signal: controller.signal,
+      });
       if (!Array.isArray(result.accounts) || !Array.isArray(result.clans))
         throw new Error(
           "Family activity response is incomplete. Refresh to try again.",
@@ -252,15 +264,18 @@ export default function StrikeActivityRoster({
         setLoading(false);
       }
     }
-  }, []);
+  }, [activityEndpoint]);
   useEffect(() => {
+    setData({ accounts: [], clans: [] });
     void read();
     return () => {
       request.current++;
+      readAbort.current?.abort();
       pending.current = false;
     };
   }, [read, reload]);
   useActivityIdentityRefresh({
+    endpoint: activityEndpoint,
     enabled:
       !!data.identity_updating ||
       !!data.identity_warning ||
@@ -416,7 +431,13 @@ export default function StrikeActivityRoster({
   }, [loading, data.accounts, filterIdentity, phone]);
   const countsPending = loading || !!data.activity_updating;
   const countText = (view: (typeof activityViews)[number]) =>
-    countsPending ? "…" : error && !data.accounts.length ? "–" : counts[view];
+    historyOnly
+      ? "–"
+      : countsPending
+        ? "…"
+        : error && !data.accounts.length
+          ? "–"
+          : counts[view];
   const viewLabels = {
     not_attacking: "Not attacking",
     inactive: "Inactive",
@@ -425,13 +446,17 @@ export default function StrikeActivityRoster({
   } as const;
   const clanOf = (row: ActivityAccount) =>
     (row.left_clan ? row.last_clan_tag : row.current_clan_tag) || "";
-  const clanOptions = [
-    ...data.clans,
-    ...(filters.clans.length === 1 &&
-    !data.clans.some((clan) => clan.tag === filters.clans[0])
-      ? [{ tag: filters.clans[0], name: filters.clans[0] }]
-      : []),
-  ]
+  const clanOptions = (
+    historyOnly
+      ? []
+      : [
+          ...data.clans,
+          ...(filters.clans.length === 1 &&
+          !data.clans.some((clan) => clan.tag === filters.clans[0])
+            ? [{ tag: filters.clans[0], name: filters.clans[0] }]
+            : []),
+        ]
+  )
     .map((clan) => ({
       tag: clan.tag,
       name: clan.name,
@@ -452,6 +477,7 @@ export default function StrikeActivityRoster({
       count: data.accounts.filter((row) => row.town_hall === hall).length,
     }));
   const findSlots = filters.view === "replacements" &&
+    !historyOnly &&
     !(loading && !data.accounts.length) && (
       <FindSlots
         clans={data.clans}
@@ -460,10 +486,12 @@ export default function StrikeActivityRoster({
           slotWeights: filters.slotWeights,
           slotClans: filters.slotClans,
           slotMember: filters.slotMember,
+          slotTownHall: filters.slotTownHall,
+          slotExpanded: filters.slotExpanded,
         }}
         disabled={bulkBusy}
         onSearch={(next) => change(next, false)}
-        onChoose={choose}
+        onChoose={onSlotChoose || choose}
       />
     );
   return (
@@ -513,11 +541,32 @@ export default function StrikeActivityRoster({
           />
         )}
       </div>
+      {findSlots}
+      {detailSlot}
       <div className="strike-activity-selectors">
+        <label>
+          Membership
+          <select
+            aria-label="Membership"
+            disabled={bulkBusy}
+            value={filters.left}
+            onChange={(event) =>
+              change({
+                left: event.target.value as ActivityFilters["left"],
+                clans: [],
+                page: 0,
+              })
+            }
+          >
+            <option value="all">Current and recent leavers</option>
+            <option value="current">Current members</option>
+            <option value="left">Left</option>
+          </select>
+        </label>
         <select
           aria-label="Clan"
           value={filters.clans.length > 1 ? "many" : (filters.clans[0] ?? "")}
-          disabled={bulkBusy}
+          disabled={bulkBusy || historyOnly}
           onChange={(event) =>
             change({ clans: event.target.value ? [event.target.value] : [] })
           }
@@ -650,7 +699,6 @@ export default function StrikeActivityRoster({
           </button>
         </div>
       )}
-      {findSlots}
       {sortTrigger && (
         <StrikeSortPanel
           filters={filters}

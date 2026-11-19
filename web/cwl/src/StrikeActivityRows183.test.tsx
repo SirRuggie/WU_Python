@@ -152,7 +152,7 @@ it("orders name, reason and TH/clan/Left/weight meta, retaining the seeded title
     "~ Last seen: first value taken from ClashKing",
   );
   expect(content.querySelector(".account-card-meta")?.textContent).toBe(
-    "TH— · Previous clan · Left · —",
+    "TH— · Previous clan · Left clan · —",
   );
   expect(content.querySelector(".account-card-action")?.textContent).toBe(
     "2 strikes",

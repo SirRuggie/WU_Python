@@ -57,15 +57,10 @@ def test_plain_header_timeout_maps_to_the_core_service_unavailable_error():
     asyncio.run(run())
 
 
-def test_clan_failure_keeps_known_counts_and_tag_label_without_hiding_profile():
+def test_clan_failure_fails_closed_instead_of_expanding_stored_profile_scope():
     async def run():
-        core = await fixture(clan_error=True).activity_core(123)
-        assert core['clan_warning'] is True
-        rows = family_activity_rows([], **activity_view_context(core, None, None))
-        assert len(rows) == 1
-        assert rows[0]['current_clan_name'] == '#2UVGQU9'
-        assert rows[0]['active_strikes'] == 3 and rows[0]['total_strikes'] == 5
-        assert rows[0]['new_this_week'] is True and rows[0]['over_limit'] is False
+        with pytest.raises(NetworkTimeout, match='Family clans could not be checked'):
+            await fixture(clan_error=True).activity_core(123)
     asyncio.run(run())
 
 

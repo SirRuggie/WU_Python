@@ -20,6 +20,12 @@ from utils.clash_tags import normalize
 DEFAULT_EXEMPT_ROLE = 769130325460254740
 STRIKE_LIMIT = 4
 REPLACEMENT_GRACE = timedelta(hours=48)
+REPLACEMENT_PROFILE_FIELDS = {name: 1 for name in (
+    'player_tag', 'player_name', 'guild_id', 'member_id', 'discord_name', 'town_hall',
+    'weight', 'current_clan_tag', 'departed_clan_tag', 'departed_last_seen_at',
+    'roster_seen_at', 'replacement_listed', 'replacement_clan_tag',
+    'replacement_priority', 'replacement_note', 'filler', 'filler_clan_tag', 'revision')}
+REPLACEMENT_PROFILE_FIELDS['_id'] = 0
 STRIKE_DAYS = 60
 IMPORT_DAYS = 60
 
@@ -662,9 +668,7 @@ class StrikeService:
         if isinstance(clan_rows, BaseException) and not clan_warning:
             raise clan_rows
         if clan_warning:
-            tags = {profile.get(field) for profile in profiles
-                    for field in ('current_clan_tag', 'departed_clan_tag') if profile.get(field)}
-            clan_rows = [{'tag': value, 'name': value} for value in sorted(tags)]
+            raise NetworkTimeout('Family clans could not be checked') from clan_rows
         all_tags = {row['tag'] for row in clan_rows if row.get('tag')}
         replacement_profiles = [profile for profile in profiles
             if profile.get('current_clan_tag') in all_tags or (
@@ -999,9 +1003,19 @@ class StrikeService:
              '$set': {'filler': False, 'replacement_updated_by': int(actor_id),
                       'replacement_updated_at': datetime.now(timezone.utc)}})
 
+    async def replacement_profiles(self, guild_id, clans):
+        """One projected family snapshot, reusable by weight and ledger reads."""
+        allowed = [row['tag'] for row in clans]
+        return await self.mongo.strike_profiles.find({
+            'guild_id': int(guild_id), '$or': [
+                {'current_clan_tag': {'$in': allowed}},
+                {'departed_clan_tag': {'$in': allowed},
+                 'departed_last_seen_at': {'$gte': datetime.now(timezone.utc) - REPLACEMENT_GRACE}},
+            ]}, REPLACEMENT_PROFILE_FIELDS).to_list(length=None)
+
     async def replacement(self, guild_id: int, recruit_weight: int | None = None, *,
                           clan_tag=None, limit=100, weights=None, browse_all=False,
-                          family_scope='fwa', town_hall=None) -> list[dict]:
+                          family_scope='fwa', town_hall=None, profiles=None, clans=None) -> list[dict]:
         """Family list or weight matching across FWA/all registered clans."""
         matching = recruit_weight is not None
         if family_scope not in ('fwa', 'all'):
@@ -1021,14 +1035,18 @@ class StrikeService:
             query['roster_seen_at'] = {'$gt': cutoff}
         if clan_tag:
             chosen = tag(clan_tag)
-            clan = await self.mongo.clans.find_one({'tag': chosen}, {'_id': 1, 'type': 1})
+            clan = (next((row for row in clans if row.get('tag') == chosen), None)
+                    if clans is not None else
+                    await self.mongo.clans.find_one({'tag': chosen}, {'_id': 1, 'type': 1}))
             if not clan or (matching and family_scope == 'fwa' and clan.get('type') != 'FWA'):
                 raise ValueError('Select a registered FWA clan.' if matching else 'Select a registered family clan.')
             query['current_clan_tag'] = chosen
         else:
             allowed = {'type': 'FWA'} if matching and family_scope == 'fwa' else {}
-            clans = await self.mongo.clans.find(allowed, {'tag': 1}).to_list(length=None)
-            query['current_clan_tag'] = {'$in': [tag(row['tag']) for row in clans]}
+            if clans is None:
+                clans = await self.mongo.clans.find(allowed, {'tag': 1, 'type': 1}).to_list(length=None)
+            query['current_clan_tag'] = {'$in': [tag(row['tag']) for row in clans
+                if not allowed or row.get('type') == 'FWA']}
         if not matching:
             clan_filter = query.pop('current_clan_tag')
             query['$or'] = [
@@ -1036,7 +1054,15 @@ class StrikeService:
                 {'departed_clan_tag': clan_filter,
                  'departed_last_seen_at': {'$gte': now - REPLACEMENT_GRACE}},
             ]
-        profiles = await self.mongo.strike_profiles.find(query).to_list(length=None)
+        if profiles is None:
+            profiles = await self.mongo.strike_profiles.find(
+                query, REPLACEMENT_PROFILE_FIELDS).to_list(length=None)
+        if clans is not None:
+            family = {row['tag'] for row in clans}
+            profiles = [row for row in profiles if row.get('current_clan_tag') in family or (
+                row.get('departed_clan_tag') in family and
+                isinstance(row.get('departed_last_seen_at'), datetime) and
+                utc(row['departed_last_seen_at']) >= now - REPLACEMENT_GRACE)]
         player_tags = [profile['player_tag'] for profile in profiles]
         counts = {}
         if player_tags:
@@ -1055,16 +1081,11 @@ class StrikeService:
                           clan_tag=None, limit=100, weights=None, browse_all=False):
         """Same eligibility rules for live reads and the activity snapshot."""
         rows = []
-        cutoff = now - timedelta(minutes=30)
         matching = recruit_weight is not None
         chosen = tag(clan_tag) if clan_tag else None
         for profile in profiles:
             old_clan = profile.get('departed_clan_tag')
-            marked_departure = old_clan and old_clan in (
-                profile.get('replacement_clan_tag'), profile.get('filler_clan_tag'))
-            departed = bool(not matching and old_clan and
-                            profile.get('current_clan_tag') != old_clan and
-                            (marked_departure or not profile.get('current_clan_tag')))
+            departed = bool(not matching and old_clan and not profile.get('current_clan_tag'))
             # Reads must not expose an overdue original-clan mark merely because
             # the current family clan matched. Durable cleanup remains sync-owned.
             if (departed and isinstance(profile.get('departed_last_seen_at'), datetime)
@@ -1086,10 +1107,18 @@ class StrikeService:
             if not matching and not browse_all and not (marked or legacy_filler or count):
                 continue
             seen = profile.get('roster_seen_at')
+            last_seen = profile.get('departed_last_seen_at') if departed else seen
+            age = max(0, int((now - utc(last_seen)).total_seconds())) if isinstance(last_seen, datetime) else None
+            ago = (f'{age // 86400} d ago' if age is not None and age >= 86400 else
+                   f'{age // 3600} h ago' if age is not None and age >= 3600 else
+                   f'{age // 60} min ago' if age is not None else 'time unknown')
+            stale = not isinstance(seen, datetime) or utc(seen) < now - timedelta(hours=24)
             rows.append({**profile, 'weight': weight, 'clan_seen_at': seen,
+                         'stale': stale, 'left_label': f'Left clan · {ago}' if departed else '',
+                         'last_seen_label': f'Last seen {ago}' if stale and not departed else '',
                          'departed': departed, 'last_seen_clan_tag': current_clan,
                          'last_seen_at': profile.get('departed_last_seen_at') if departed else seen,
-                         'clan_is_current': bool(not departed and isinstance(seen, datetime) and utc(seen) > cutoff),
+                         'clan_is_current': bool(not departed and not stale),
                          'filler': priority == 'replace_first' and (marked or legacy_filler),
                          'replacement_listed': marked or legacy_filler, 'is_manual': marked or legacy_filler,
                          'replacement_priority': priority,

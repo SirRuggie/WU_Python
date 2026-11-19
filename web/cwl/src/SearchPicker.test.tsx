@@ -259,3 +259,31 @@ it("picking the current value closes without a write, like a native select", asy
   expect(host.querySelector(".search-picker-panel")).toBeNull();
   expect(document.activeElement).toBe(trigger);
 });
+
+it("reports open, query and close only when the optional hook is supplied", async () => {
+  phone(false);
+  const query = vi.fn();
+  const changed = vi.fn();
+  await mount(
+    <SearchPicker
+      label="Member"
+      options={OPTIONS}
+      value=""
+      onChange={changed}
+      placeholder="Select member"
+      searchPlaceholder="Search members"
+      emptyText="No members"
+      onSearchChange={query}
+    />,
+  );
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>(".search-picker-trigger")!.click(),
+  );
+  expect(query).toHaveBeenLastCalledWith("");
+  const input = host.querySelector<HTMLInputElement>('input[role="combobox"]')!;
+  await type(input, "lou");
+  expect(query).toHaveBeenLastCalledWith("lou");
+  await key(input, "Escape");
+  expect(query).toHaveBeenLastCalledWith(null);
+  expect(changed).not.toHaveBeenCalled();
+});

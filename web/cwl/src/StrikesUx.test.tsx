@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, useState } from "react";
+import { act, useEffect, useState } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import StrikesWorkspace, { type Entry } from "./StrikesWorkspace";
@@ -15,6 +15,12 @@ import {
   typeInPicker,
 } from "./searchPickerTestUtils";
 import { ApiError } from "./api";
+import { DashboardHistory, dashboardTarget } from "./dashboardHistory";
+import {
+  slotCandidates241,
+  slotClans241,
+  slotFixtureReply241,
+} from "../tests/fixtures/slotFixture241";
 const transport = vi.hoisted(() => vi.fn());
 vi.mock("./api", async (original) => ({
   ...(await original<object>()),
@@ -918,3 +924,124 @@ it("offers a fill for the open slot and all accounts of its member, without a ra
   await act(async () => named("All accounts of @slayer").click());
   expect(onMemberAccounts).toHaveBeenCalledWith("100000000000000001");
 });
+
+it.each(["/strikes", "/replacements"])(
+  "keeps real workspace slot filters/results mounted through dashboard Back/Forward from%s without changing unrelated account routes",
+  async (path) => {
+    const state =
+      "activity_view=replacements&slot_weight=179000&slot_weight=179000&slot_clan=%23PQQ";
+    history.replaceState({}, "", `${path}?${state}`);
+    const navigation = new DashboardHistory(history);
+    const memory = new Map<string, unknown>();
+    const accounts = slotCandidates241().map((row) => ({
+      ...row,
+      status: "risk",
+      quiet_days: null,
+    }));
+    transport.mockImplementation(async (path: string) => {
+      if (path.startsWith("/strikes/replacements"))
+        return slotFixtureReply241(
+          new URL(path, "http://fixture").searchParams,
+        );
+      if (path.startsWith("/strikes/accounts"))
+        return { accounts, clans: slotClans241 };
+      if (path.includes("ids=")) return { options: [] };
+      return { entries: [], total: 0, clans: [] };
+    });
+    let directRoute!: (tag: string) => void;
+    function RoutedWorkspace() {
+      const [route, setRoute] = useState(() =>
+        dashboardTarget(location.search, location.pathname),
+      );
+      useEffect(() => {
+        const pop = (event: PopStateEvent) => {
+          if (navigation.pop(event.state, () => true))
+            setRoute(dashboardTarget(location.search, location.pathname));
+        };
+        window.addEventListener("popstate", pop);
+        return () => window.removeEventListener("popstate", pop);
+      }, []);
+      directRoute = (tag) => {
+        navigation.write(
+          {
+            view: "strikes",
+            season: "",
+            strikeTag: tag,
+            strikeState: route.strikeState,
+          },
+          true,
+        );
+        setRoute(dashboardTarget(location.search, location.pathname));
+      };
+      return (
+        <StrikesWorkspace
+          permissions={["strikes_remove"]}
+          isOwner={false}
+          userId="1"
+          memory={memory}
+          markedDefault={route.view === "replacements"}
+          targetTag={route.strikeTag || route.replacementTag || ""}
+          activityState={route.strikeState}
+          onActivityState={(strikeState, push) => {
+            navigation.write(
+              { view: "strikes", season: "", strikeState },
+              push,
+            );
+            setRoute(dashboardTarget(location.search, location.pathname));
+          }}
+          onAccountRoute={(tag) => {
+            navigation.write(
+              {
+                view: "strikes",
+                season: "",
+                strikeTag: tag,
+                strikeState: route.strikeState,
+              },
+              true,
+            );
+            setRoute(dashboardTarget(location.search, location.pathname));
+          }}
+        />
+      );
+    }
+    await render(<RoutedWorkspace />);
+    await settle();
+    const section = host.querySelector(".strike-find-slots");
+    expect(section).not.toBeNull();
+    const originalInput = host.querySelector<HTMLInputElement>(
+      'input[name="recruit-weights"]',
+    );
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(".strike-slot-group li button")!
+        .click(),
+    );
+    await settle();
+    expect(host.querySelector(".strikes-detail-context")).not.toBeNull();
+    expect(host.querySelector(".strike-find-slots")).toBe(section);
+    await act(async () => history.back());
+    await settle();
+    expect(host.querySelector(".strikes-detail-context")).toBeNull();
+    expect(host.querySelector(".strike-find-slots")).toBe(section);
+    await act(async () => history.forward());
+    await settle();
+    expect(host.querySelector(".strikes-detail-context")).not.toBeNull();
+    expect(host.querySelector(".strike-find-slots")).toBe(section);
+    expect(host.querySelector('input[name="recruit-weights"]')).toBe(
+      originalInput,
+    );
+    expect(originalInput?.value).toBe("179, 179");
+    expect(new URLSearchParams(location.search).getAll("slot_weight")).toEqual([
+      "179000",
+      "179000",
+    ]);
+    expect(new URLSearchParams(location.search).get("slot_clan")).toBe("#PQQ");
+    expect(
+      host.querySelectorAll(".strike-slot-group li").length,
+    ).toBeGreaterThan(0);
+    await act(async () => directRoute(accounts[0].player_tag));
+    await settle();
+    expect(host.querySelector(".strikes-detail-context")).not.toBeNull();
+    expect(host.querySelector(".strike-find-slots")).toBeNull();
+  },
+);

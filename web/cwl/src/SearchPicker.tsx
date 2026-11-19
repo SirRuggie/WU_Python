@@ -43,6 +43,8 @@ type Props = {
   search?: (query: string) => PickerOption[];
   /** Runs each time the list opens, for example to load data. */
   onOpen?: () => void;
+  /** Search text while open; null cancels a remote search when the picker closes. */
+  onSearchChange?: (query: string | null) => void;
   /** Extra status in the list, for example a load error. */
   status?: string;
   triggerRef?: Ref<HTMLButtonElement>;
@@ -115,6 +117,7 @@ export default function SearchPicker({
   fallback,
   search,
   onOpen,
+  onSearchChange,
   status,
   triggerRef,
   limit = 50,
@@ -160,6 +163,7 @@ export default function SearchPicker({
     setActive(0);
     setOpen(true);
     onOpen?.();
+    onSearchChange?.("");
     if (phone) {
       // Open and focus in the same tap so the phone shows its keyboard.
       if (!sheet.current?.open) sheet.current?.showModal?.();
@@ -172,6 +176,7 @@ export default function SearchPicker({
     closing.current = false;
     setOpen(false);
     setQuery("");
+    onSearchChange?.(null);
     if (sheet.current?.open) sheet.current.close?.();
     if (returnFocus) trigger.current?.focus({ preventScroll: true });
   }
@@ -297,6 +302,7 @@ export default function SearchPicker({
           value={query}
           onChange={(event) => {
             setQuery(event.target.value);
+            onSearchChange?.(event.target.value);
             setActive(0);
           }}
           onKeyDown={keyDown}

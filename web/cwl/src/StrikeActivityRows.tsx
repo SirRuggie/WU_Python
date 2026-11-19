@@ -1,3 +1,4 @@
+import { relativeTime } from "./commandTime";
 import type { ActivityAccount } from "./strikeActivityView";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
 import AccountCard from "./AccountCard";
@@ -179,7 +180,7 @@ export default function StrikeActivityRows({
                 }
                 meta={[
                   `TH${row.town_hall || "—"}`,
-                  `${row.current_clan_name || row.last_clan_name || "No clan"}${row.left_clan ? " · Left" : ""}`,
+                  `${(row.left_clan ? row.last_clan_name : row.current_clan_name) || "No clan"}${row.left_clan ? ` · Left clan${row.departed_at ? ` · ${relativeTime(row.departed_at)}` : ""}` : ""}`,
                   row.weight ? compactWeight(row.weight) : "—",
                   memberName(row) ? `@${memberName(row)}` : null,
                 ]}
@@ -280,11 +281,17 @@ export default function StrikeActivityRows({
                   <td
                     className="strike-activity-clan"
                     title={
-                      row.current_clan_name || row.last_clan_name || "No clan"
+                      (row.left_clan
+                        ? row.last_clan_name
+                        : row.current_clan_name) || "No clan"
                     }
                   >
-                    {row.current_clan_name || row.last_clan_name || "No clan"}
-                    {row.left_clan ? " · Left" : ""}
+                    {(row.left_clan
+                      ? row.last_clan_name
+                      : row.current_clan_name) || "No clan"}
+                    {row.left_clan
+                      ? ` · Left clan${row.departed_at ? ` · ${relativeTime(row.departed_at)}` : ""}`
+                      : ""}
                   </td>
                   <td
                     className="strike-activity-member"

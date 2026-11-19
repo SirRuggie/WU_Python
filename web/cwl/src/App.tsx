@@ -2100,6 +2100,12 @@ function App() {
                             view: view as "strikes" | "replacements",
                             season: "",
                             strikeState: state,
+                            ...(view === "strikes" && strikeTag
+                              ? { strikeTag }
+                              : {}),
+                            ...(view === "replacements" && replacementTag
+                              ? { replacementTag }
+                              : {}),
                           },
                           push,
                         );

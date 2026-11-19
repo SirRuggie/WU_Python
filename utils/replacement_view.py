@@ -83,44 +83,34 @@ def member_slot_tags(links) -> tuple[set[str] | None, set[str], bool]:
     return tags, disputed, bool(links.forward_unavailable)
 
 
-def slot_pool(rows: list[dict], *, fwa_tags, clan_tags=None, member_tags=None) -> list[dict]:
-    """Candidate slots: FWA clans only; marked or 3+ strikes, or every linked account of one member.
-
-    member_tags is the member's linked player tags: None means no member filter,
-    an empty set means a member with no linked accounts (no slots).
-    """
+def slot_pool(rows: list[dict], *, fwa_tags, clan_tags=None) -> list[dict]:
+    """Marked or 3+ strikes in FWA clans; recruits never filter the slots."""
     fwa = set(fwa_tags)
     clans = set(clan_tags) if clan_tags else None
-    member = set(member_tags) if member_tags is not None else None
-    pool = []
-    for row in rows:
-        if row.get('last_seen_clan_tag') not in fwa:
-            continue
-        if clans is not None and row['last_seen_clan_tag'] not in clans:
-            continue
-        if member is not None:
-            if row.get('player_tag') not in member:
-                continue
-        elif not (row.get('is_manual') or row['active_strikes'] >= 3):
-            continue
-        pool.append(row)
-    return pool
+    return [row for row in rows
+            if row.get('last_seen_clan_tag') in fwa
+            and (clans is None or row['last_seen_clan_tag'] in clans)
+            and (row.get('is_manual') or row['active_strikes'] >= 3)]
 
 
 def find_slots(rows: list[dict], weights: list[int], *, fwa_tags, clan_tags=None,
-               member_tags=None) -> list[dict]:
-    """Best three slots per weight, in input order; unknown weights are never matched."""
+               per_weight=SLOTS_PER_WEIGHT) -> list[dict]:
+    """Current snapshots first, then gap/priority; totals precede truncation."""
     if not weights or len(weights) > MAX_SLOT_WEIGHTS:
         raise ValueError(f'Enter 1 to {MAX_SLOT_WEIGHTS} weights.')
+    if type(per_weight) is not int or not 1 <= per_weight <= 100:
+        raise ValueError('Select 1 to 100 slots per weight.')
     for weight in weights:
         if type(weight) is not int or not 0 < weight <= 500000:
             raise ValueError('Enter a positive recruit weight.')
-    known = [row for row in slot_pool(rows, fwa_tags=fwa_tags, clan_tags=clan_tags, member_tags=member_tags)
-             if type(row.get('weight')) is int and row['weight'] > 0]
+    pool = slot_pool(rows, fwa_tags=fwa_tags, clan_tags=clan_tags)
+    known = [row for row in pool if type(row.get('weight')) is int and row['weight'] > 0]
     groups = []
     for weight in weights:
-        ranked = sorted(known, key=lambda row: (abs(row['weight'] - weight), *priority_key(row)))
-        groups.append({'weight': weight, 'slots': [
+        ranked = sorted(known, key=lambda row: (bool(row.get('stale')),
+                                                abs(row['weight'] - weight), *priority_key(row)))
+        groups.append({'weight': weight, 'total': len(ranked),
+                       'unknown_weight': len(pool) - len(known), 'slots': [
             {**row, 'weight_difference': abs(row['weight'] - weight)}
-            for row in ranked[:SLOTS_PER_WEIGHT]]})
+            for row in ranked[:per_weight]]})
     return groups
