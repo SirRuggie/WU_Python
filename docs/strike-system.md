@@ -100,32 +100,94 @@ Include 1–2 strikes behavior. Marking or clearing a replacement never changes
 strikes. Priorities and notes retain revision checks, conflict drafts and current
 clan ownership. Unknown weights stay in the account list but are never matched.
 
-**Find slots** (Replacements tab, replacing the old recruit-weight disclosure)
-takes up to five weights (`143, 173, 150`; 143k and 143000 also work), optional
-FWA clans and an optional Discord member, and runs only when Find is selected.
-It returns the best three slots per weight. Replacements are **FWA clans only**;
-the Strikes page itself still lists every family clan. The slot pool is an account
-that is manually marked (any priority, even with zero strikes) or has three or
-more active strikes, in an FWA clan (current, or within the 48-hour departure
-grace). With a member selected, the pool is all of that member's FWA accounts
-whatever their strikes. Every linked account counts, verified or not. A tag also linked to another Discord user is kept and its candidate carries `link_disputed: true` (shown as "Linked to two Discord users"). `member_partial: true` ("Some linked accounts were left out.") means a link provider's forward lookup failed or returned malformed rows; a failed reverse owner check alone does not set it. The search fails with 503 ("Account links are unavailable. Try again.") only when both providers are unavailable and no link came back. Order per weight: smallest weight gap, then priority
-(Chopping Block, High, Normal), then more active strikes, then tag.
-`GET /api/cwl/strikes/replacements` accepts repeated `weight` (at most 5, else
-400), repeated `clan` (FWA only, else 400 "Select FWA clans only.") and `member`
-(Discord ID), and returns `slots: [{weight, weight_label, candidates}]` plus the
-first group as `candidates`; candidates carry `discord_id`, `discord_name` and
-`weight_difference`. The shared helpers `slot_pool` and `find_slots` in
-`utils/replacement_view.py` serve both the endpoint and Discord. The dashboard
-deep link from Discord is
-`/strikes?view=replacements&slot_weight=143000&slot_clan=%23ABC123&slot_member=<id>`
-(each parameter optional and repeatable except member).
-Find slots is a gold button on the Replacements view. It opens a panel with weights, clans, member and results. Select a result to open the account.
+**Find slots — D1–D5, accepted 2026-11-17.** Member means the recruit,
+including a server member with no family account. Every linked account counts;
+disputed links are retained and labeled. Saved account weights supply at most
+five groups, newest saves first, with account labels such as **SHOGUN · 179k**.
+More than five gives **Showing 5 of N accounts**. Accounts without a saved value
+are listed once as **No saved weight: NAME #TAG**; no links gives **No linked
+accounts**. Typed weights (`143, 173, 150`, also `143k` or `143000`) take precedence
+and matching saved accounts label those groups. Link-provider partial results
+remain labeled; both providers unavailable with no result gives **Account links
+are unavailable. Try again.** Member never filters the candidate pool to their
+own accounts. No live player lookup is performed for recruit weights.
+
+The pool is manually marked accounts (including zero strikes) or accounts with
+three or more active strikes, in FWA clans, restricted by selected clans and
+optional Town Hall. Confirmed departures remain through 48 hours with **Left
+clan · 6 h ago**. Beyond 48 hours they appear only in **Left** history, newest
+first, with last clan/time and active strikes; they do not contribute to normal
+clan counts, searches or slots. A newly observed rejoin to any family roster
+returns the account to its current clan. A roster older than 24 hours shows
+**Last seen 2 d ago**; every current snapshot ranks before every stale snapshot,
+then smallest gap, priority, more active strikes and tag. Failed family-clan
+reads fail the request rather than treating all stored profiles as family.
+History and marks are not changed by these read paths; no migration is required.
+
+Both transports use one weight resolution order: saved clan-player weight,
+manual player weight, available FWA feed, then cached profile weight. Existing
+explicit saved blanks remain unknown; missing rows allow fallback. Feed failure
+keeps available weights and sets `weights_stale: true` (**Some weights may be
+old**), not 503. SQLite reads run off the event loop. One projected profile read
+and one clan snapshot feed the weight and ledger calculations.
+
+`GET /api/cwl/strikes/replacements` accepts repeated `weight` (at most five),
+optional recruit `member`, repeated FWA `clan`, optional `town_hall`, and
+`per_weight` (1–100, default three). Each `slots` group has `weight`,
+`weight_label`, `label`, `source` (`typed`/`saved`), stable `account_tag` for saved
+groups, `total`, and `candidates`. Top-level `unknown_weight` counts omitted
+unknown-weight pool accounts; `member_accounts` lists tag, name, saved weight
+or null and disputed status. `member_partial` retains its existing meaning.
+The first group remains available as `candidates` for old single-weight callers.
+`scope` is removed: browse remains across family clans; slots remain FWA only.
+The dashboard can request more rows with `per_weight`; **Show more** adds ten
+at a time while preserving totals. The activity list uses
+`/api/cwl/strikes/accounts?activity=true&left=true` for Left history; its default
+omits accounts beyond grace. Existing `slot_weight`, `slot_clan`, and
+`slot_member` dashboard links remain supported. Find slots is inline at the top of Replacements, with Member, Weights, Clans
+and Town Hall filters. Select changes refresh results immediately; typing is
+debounced by about 300 ms. The selected member supplies saved weights until the
+Weights field is edited. Selecting a slot opens its account details while the
+search and results stay mounted. Old responses cannot replace a newer search.
+
+Dashboard expansion URLs retain repeated `slot_weight` and legacy
+`slot_expanded=w<weight>:<count>` links. Typed groups additionally accept
+`slot_expanded=w<weight>o<occurrence>:<count>` for the first through fifth
+occurrence of that weight in input order. An occurrence override wins over the
+legacy weight fallback, so Show more expands only its selected group. Saved
+account keys remain `a<normalized-tag>`; counts clamp to 3–100 and malformed keys
+are ignored. Slot-origin account details keep the search mounted across browser
+Back/Forward within the signed-in app session; a full reload uses normal account
+navigation because this origin memory is not persisted.
 
 Leave starts when approved and resumes tracking at **00:00 UTC on the selected date**. All currently linked accounts are selected initially; staff can uncheck individual accounts.
 
 Role `769130325460254740` is excluded by default. Staff can change the list in Exempt roles. Current role membership is used for imports; historical role membership cannot be reconstructed. Missed attacks for exempt accounts are recorded without adding a strike. Unknown roles or conflicting/unavailable links defer processing.
 
-Discord commands use Components V2 responses: `/strikes view`, `/strikes add`, `/strikes remove`, and `/strikes replacements [member]`. The replacements reply is **ephemeral** and its controls belong to the staff member who opened it (other members get a private "run the command" notice); access is reread on every click. It uses the same slot pool as the dashboard (marked or 3+ strikes, FWA clans only; the optional `member` shows all of that member's FWA accounts, matched by their linked player tags, not the cached Discord ID; every linked account counts, verified or not; a tag linked to two Discord users is kept and labeled "Linked to two Discord users"; a short note shows when a forward link lookup failed, and a retry message only when both providers are unavailable and no link came back). Controls: a multi-select **Clan** menu (FWA clans with candidates only, "All FWA clans" by default; the 25 busiest if there are more, with a "Some clans hidden; use the dashboard" note), a **Member** user select, and buttons **Set weights** (one text field, up to five values such as `143, 173, 150`), **Previous**, **Next**, **Clear** and **Open on dashboard** (a link to Find slots with the same weights, clans and member). With weights, the panel shows one section per weight with the best three slots (name, Town Hall emoji, clan, member mention without a ping, weight, gap, priority, active strikes); without weights it lists the pool five per page, sorted by priority, with member, a short note and "Left clan" for departed accounts in grace. Mentions never ping. The panel opens from saved rosters maintained by the background monitor; opening or filtering never waits for external roster or weight requests. Weight feeds refresh in the background, with saved values used meanwhile. Only when the panel would be too long for Discord, it shrinks in this order: notes are shortened, then dropped; the summary's clan names become a count ("15 FWA clans"); notice lines are cut to 120 characters; the lowest-ranked rows of each weight are dropped (the best row per weight stays) with the line "More slots on the dashboard."; last, names are shortened. Mentions and weights are never cut. Unknown TH or weight stays labeled unknown, and old clan snapshots show Last known. Leave, exempt roles, filler preferences, and import review are managed in the dashboard.
+Discord commands use Components V2 responses: `/strikes view`, `/strikes add`,
+`/strikes remove`, and `/strikes replacements [member]`. The replacements reply
+is **ephemeral**, controls belong to the opener, access is reread on every click,
+and mentions never ping. The member option selects a recruit and uses the same
+saved-account labels and slot rules as the dashboard. Links (tags, disputed and
+partial status) are resolved once per selected member in the panel state;
+paging and clan changes reuse them. Changing or clearing the member invalidates
+that selection. Clan menus remain FWA-only (up to 25 busiest clans with a
+truncation notice), and the member menu accepts any server member. Set weights,
+Previous, Next, Clear and Open on dashboard remain available. Discord shows
+three slots per weight; **More slots on the dashboard** leads to the same search.
+Without a recruit or typed weights, it lists eligible slots five per page.
+Saved rosters and background feed snapshots avoid waiting for live roster/feed
+requests. Missing saved-weight notices remain visible with typed weights. Known
+profile names reuse the projected snapshot; unknown names show the tag once.
+Complete missing-account lines under one **No saved weight:** heading stay intact
+when they fit. Otherwise the notice
+is **No saved weight: N accounts. View all on the dashboard.**, with the last
+phrase linked to the existing dashboard search (Shaka1157, 2026-11-18). The API
+retains every member account. The text budget first shortens/drops notes, uses a
+clan summary count and shortens other notices, then reduces lower ranked rows
+(best per group retained), then shortens slot names. Each fitting stage tries
+the whole missing-account list before its exact-count link. Weights and mentions
+remain intact. Local fixture panels do not prove live Discord delivery.
 
 ## Import and monitoring
 

@@ -1,3 +1,10 @@
+import {
+  recruitId241,
+  recruitAccounts241,
+  slotCandidates241,
+  slotClans241,
+  slotFixtureReply241,
+} from "../tests/fixtures/slotFixture241";
 import "./tokens.css";
 // Local visual fixture. This page is separate from the signed-in dashboard.
 import React from "react";
@@ -184,90 +191,7 @@ const wars = [
     review_message: "War ended before final check: review in Find war",
   },
 ];
-const candidates = [
-  {
-    player_tag: "#P22ABC",
-    player_name: "CastleFox",
-    clan_tag: "#FWA",
-    clan_name: "Warriors United FWA",
-    weight: 115000,
-    active_strikes: 1,
-    is_filler: true,
-    is_manual: true,
-    priority: "replace_first",
-    note: "Temporary filler",
-    weight_difference: 0,
-    discord_name: "Fox",
-  },
-  {
-    player_tag: "#P44DEF",
-    player_name: "MiniWolf",
-    clan_tag: "#FWA",
-    clan_name: "Warriors United FWA",
-    weight: 114000,
-    active_strikes: 3,
-    is_filler: false,
-    is_manual: false,
-    priority: "normal",
-    weight_difference: 1000,
-  },
-  {
-    player_tag: "#P55GHI",
-    player_name: "GreenOak",
-    clan_tag: "#FWA2",
-    clan_name: "WU FWA Two",
-    weight: 115000,
-    active_strikes: 2,
-    is_filler: false,
-    is_manual: true,
-    priority: "high",
-    note: "Free a space soon",
-    weight_difference: 0,
-  },
-  {
-    player_tag: "#P66JKL",
-    player_name: "Departed Aspen",
-    clan_tag: "#FWA2",
-    clan_name: "WU FWA Two",
-    current_clan_tag: null,
-    clan_is_current: false,
-    departed: true,
-    last_seen_clan_tag: "#FWA2",
-    last_seen_clan_name: "WU FWA Two",
-    last_seen_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    active_strikes: 2,
-    is_manual: true,
-    priority: "high",
-    note: "Confirmed departure six hours ago; retained during grace",
-  },
-  {
-    player_tag: "#P77MOVED",
-    player_name: "Transferred Birch",
-    clan_tag: "#FWA2",
-    clan_name: "WU FWA Two",
-    current_clan_tag: "#FWA",
-    current_clan_name: "Warriors United FWA",
-    clan_is_current: false,
-    departed: true,
-    last_seen_clan_tag: "#FWA2",
-    last_seen_clan_name: "WU FWA Two",
-    last_seen_at: new Date(Date.now() - 6 * 60 * 60 * 1000).toISOString(),
-    active_strikes: 2,
-    is_manual: true,
-    priority: "high",
-    note: "Moved to another family clan; original mark retained during grace",
-  },
-  {
-    player_tag: "#P77STALE",
-    player_name: "Stale Cedar",
-    clan_tag: "#NORTH",
-    clan_name: "WU North",
-    clan_is_current: false,
-    active_strikes: 1,
-    is_manual: false,
-    priority: "normal",
-  },
-];
+
 const settings = {
   revision: 1,
   strike_limit: 7,
@@ -300,6 +224,15 @@ const members = [
       },
       { tag: "#8LQQRT", name: "LittleThunder", current_clan_name: "WU North" },
     ],
+  },
+  {
+    id: recruitId241,
+    name: "SHOGUN",
+    accounts: recruitAccounts241.map((row) => ({
+      tag: row.tag,
+      name: row.name,
+      current_clan_name: "Outside family",
+    })),
   },
 ];
 const preview = {
@@ -509,7 +442,7 @@ window.fetch = async (input, init) => {
       { tag: "#PJJ", name: "Lazy CWL 5" },
     ];
     data = {
-      clans,
+      clans: [...clans, slotClans241[1]],
       accounts: Array.from({ length: count }, (_, index) => {
         const clan = clans[index % 3];
         const healthy = index === 1;
@@ -549,7 +482,14 @@ window.fetch = async (input, init) => {
                 : unknown
                   ? "New tracker Aspen"
                   : `Fixture player ${index + 1}`,
-          current_clan_tag: clan.tag,
+          current_clan_tag: index === 4 ? null : clan.tag,
+          left_clan: index === 4,
+          last_clan_tag: index === 4 ? clan.tag : null,
+          last_clan_name: index === 4 ? clan.name : null,
+          departed_at:
+            index === 4
+              ? new Date(Date.now() - 47 * 3600000).toISOString()
+              : null,
           current_clan_name: clan.name,
           town_hall: 16 - (index % 4),
           weight: 149000 - index * 100,
@@ -590,6 +530,32 @@ window.fetch = async (input, init) => {
         };
       }),
     };
+    const activityData = data as {
+      accounts: Record<string, unknown>[];
+      clans: unknown[];
+    };
+    if (url.searchParams.get("left") === "true") {
+      activityData.clans = [];
+      activityData.accounts = [49, 72].map((hours, index) => ({
+        ...activityData.accounts[0],
+        player_tag: `#PQQ${index ? "R" : "P"}`,
+        player_name: `Left history ${index + 1}`,
+        current_clan_tag: null,
+        current_clan_name: null,
+        left_clan: true,
+        last_clan_tag: "#PQQ",
+        last_clan_name: "Warriors United FWA",
+        departed_at: new Date(Date.now() - hours * 3600000).toISOString(),
+      }));
+    } else if (url.searchParams.get("query")) {
+      const tag = url.searchParams.get("query");
+      const candidate = slotCandidates241().find(
+        (row) => row.player_tag === tag,
+      );
+      activityData.accounts = candidate
+        ? [{ ...activityData.accounts[0], ...candidate }]
+        : activityData.accounts.filter((row) => row.player_tag === tag);
+    }
   } else if (path.endsWith("/strikes/accounts")) {
     const accounts = Array.from({ length: 300 }, (_, index) => ({
       player_tag:
@@ -702,9 +668,21 @@ window.fetch = async (input, init) => {
       })),
     };
   else if (path.endsWith("/members"))
-    data = { members: members.map((item) => ({ ...item, accounts: [] })) };
+    data = {
+      members: members
+        .filter((item) =>
+          `${item.name} ${item.id}`
+            .toLowerCase()
+            .includes((url.searchParams.get("query") || "").toLowerCase()),
+        )
+        .map((item) => ({ ...item, accounts: [] })),
+    };
   else if (path.includes("/members/") && path.endsWith("/accounts"))
-    data = { member: members[0] };
+    data = {
+      member:
+        members.find((member) => path.includes(`/members/${member.id}/`)) ||
+        members[0],
+    };
   else if (path.endsWith("/settings/roles") && method === "PUT") {
     const body = JSON.parse(String(init?.body || "{}"));
     if (
@@ -761,34 +739,7 @@ window.fetch = async (input, init) => {
             ],
     };
   else if (path.endsWith("/replacements"))
-    data = {
-      candidates: candidates.filter(
-        (item) =>
-          !url.searchParams.get("clan") ||
-          item.clan_tag === url.searchParams.get("clan"),
-      ),
-      clans: [
-        { tag: "#FWA", name: "Warriors United FWA", is_fwa: true },
-        { tag: "#FWA2", name: "WU FWA Two", is_fwa: true },
-        { tag: "#NORTH", name: "WU North", is_fwa: false },
-      ],
-      slots: url.searchParams.getAll("weight").map((value) => ({
-        weight: Number(value),
-        weight_label: `${Number(value) / 1000}k`,
-        candidates: [...candidates]
-          .sort(
-            (a, b) =>
-              Math.abs((a.weight ?? 0) - Number(value)) -
-              Math.abs((b.weight ?? 0) - Number(value)),
-          )
-          .slice(0, 3)
-          .map((item) => ({
-            ...item,
-            town_hall: 16,
-            weight_difference: Math.abs((item.weight ?? 0) - Number(value)),
-          })),
-      })),
-    };
+    data = slotFixtureReply241(url.searchParams);
   else if (path.endsWith("/import/preview") || path.endsWith("/import/apply")) {
     const job_id = crypto.randomUUID();
     fixtureJobs.set(job_id, {

@@ -490,6 +490,9 @@ def test_departed_mark_visible_under_original_clan_during_grace(move):
         await store.sync_roster(GUILD, other if move else CLAN, [{'tag': PLAYER}] if move else [])
         for options in ({}, {'clan_tag': CLAN}):
             rows = await store.replacement(GUILD, **options)
+            if move:
+                assert rows == []  # current family membership wins; old mark remains stored only
+                continue
             assert len(rows) == 1
             assert rows[0]['departed'] and rows[0]['replacement_listed']
             assert rows[0]['last_seen_clan_tag'] == CLAN
@@ -538,7 +541,7 @@ def test_owner_conflict_defers_only_disputed_account(attacks):
     asyncio.run(run())
 
 
-def test_replacement_api_groups_family_move_under_original_clan():
+def test_replacement_api_groups_confirmed_departure_under_last_clan(tmp_path):
     import json
     from contextlib import asynccontextmanager
     from unittest.mock import AsyncMock, patch
@@ -549,13 +552,16 @@ def test_replacement_api_groups_family_move_under_original_clan():
     async def run():
         db, store = setup()
         store.replacement = AsyncMock(return_value=[{
-            'player_tag': PLAYER, 'current_clan_tag': '#8GG8', 'departed': True,
+            'player_tag': PLAYER, 'current_clan_tag': None, 'departed': True,
             'last_seen_clan_tag': CLAN, 'last_seen_at': NOW,
             'replacement_priority': 'high', 'active_strikes': 0, 'weight_difference': None, 'is_manual': True}])
         @asynccontextmanager
         async def mongo(request):
             yield db
-        request = SimpleNamespace(method='GET', query={}, app={})
+        from cwl_web.store import Store
+        request = SimpleNamespace(method='GET', query={}, app={
+            'store': Store(str(tmp_path / 'fixture.sqlite')),
+            'providers': SimpleNamespace(weights=AsyncMock(return_value={}))})
         clans = [{'tag': CLAN, 'name': 'Original', 'is_fwa': True},
                  {'tag': '#8GG8', 'name': 'Destination', 'is_fwa': True}]
         with patch.object(api.shared, 'require_manage', AsyncMock()), \
@@ -566,7 +572,7 @@ def test_replacement_api_groups_family_move_under_original_clan():
                 patch.object(clan_weights, 'overlay_accounts', return_value={'accounts': []}):
             row = json.loads((await api.replacements(request)).text)['candidates'][0]
         assert (row['clan_tag'], row['clan_name']) == (CLAN, 'Original')
-        assert (row['current_clan_tag'], row['current_clan_name']) == ('#8GG8', 'Destination')
+        assert row['current_clan_tag'] is None and row['current_clan_name'] is None
         assert row['departed']
     asyncio.run(run())
 
@@ -601,7 +607,7 @@ def test_transferred_mark_read_grace_without_roster_sync(elapsed, visible):
         before = deepcopy(profile)
         # No sync or cleanup succeeds after the transfer. API reads stay read-only.
         with patch.object(module, 'datetime', Clock):
-            for options, expected in [({}, visible), ({'clan_tag': CLAN}, visible),
+            for options, expected in [({}, False), ({'clan_tag': CLAN}, False),
                                       ({'clan_tag': other}, False)]:
                 Clock.calls = 0
                 rows = await store.replacement(GUILD, **options)

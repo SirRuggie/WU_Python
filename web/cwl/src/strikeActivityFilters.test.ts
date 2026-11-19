@@ -81,7 +81,7 @@ it("round-trips every visible filter, direction and pagination, ignoring removed
     townHalls: [16, 18],
     minWeight: 150000,
     maxWeight: 170000,
-    left: "left" as const,
+    left: "all" as const,
     noActivity: true,
     sort: "last_attack" as const,
     direction: "asc" as const,

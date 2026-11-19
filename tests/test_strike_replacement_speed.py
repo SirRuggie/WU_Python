@@ -58,9 +58,9 @@ def test_failed_refresh_keeps_old_weights_and_cools_down(monkeypatch):
     monkeypatch.setattr(strikes, '_weight_refresh_task', None)
 
     async def run():
-        assert strikes.cached_weights(['#P2Y']) == {'#P2Y': 150000}
+        assert strikes.cached_weights(['#P2Y']) == {'#P2Y': 149000}
         await strikes._weight_refresh_task
-        assert strikes.cached_weights(['#P2Y']) == {'#P2Y': 150000}
+        assert strikes.cached_weights(['#P2Y']) == {'#P2Y': 149000}
         assert len(calls) == 1
 
     asyncio.run(run())

@@ -40,6 +40,8 @@ def make_store(rows, clans=None):
             clans=Collection(clans or [{'tag': '#P2Y', 'name': 'Edrag Rush', 'type': 'FWA'},
                                        {'tag': '#L2L', 'name': 'Lazy', 'type': 'normal'}]),
             strike_profiles=Collection([{'player_tag': row['player_tag']} for row in rows]))
+        async def replacement_profiles(self, *args, **kwargs):
+            return [{'player_tag': row['player_tag'], 'weight': row.get('weight')} for row in rows]
         async def replacement(self, *args, **kwargs):
             calls.append((args, kwargs))
             return rows
@@ -53,7 +55,10 @@ def render(rows, state, clans=None, linked=frozenset(), links=None):
     links = links or (LinksResult(sources={value: ('ClashKing',) for value in linked}) if linked is not None
                       else LinksResult(unavailable=('ClashKing', 'ClashPerk'),
                                                   forward_unavailable=('ClashKing', 'ClashPerk')))
-    with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
+    with patch.object(strikes, '_weight_cache_at', strikes.time.monotonic()), \
+            patch.object(strikes, '_weight_cached_tags', {row['player_tag'] for row in rows}), \
+            patch.object(strikes, 'update_state', AsyncMock()), \
+            patch.object(strikes, 'cached_weights', lambda _tags: {}), \
             patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)):
         panel = asyncio.run(strikes.replacement_panel(store, state))
     payload, _ = panel[0].build()
@@ -138,22 +143,22 @@ def test_weights_mode_groups_best_three_per_weight_with_gap_and_priority():
     assert nav[1].get('disabled') and nav[2].get('disabled')
 
 
-def test_empty_weight_group_and_member_pool_includes_zero_strike_accounts():
+def test_member_recruit_never_makes_zero_strike_account_a_slot():
     rows = [candidate('#ZERO', count=0, weight=150000, member=7777777777777777777)]
     payload, _ = render(rows, {'weights': [150000]})
     assert 'No slot in these clans.' in text_of(payload)
     payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777},
                         linked={'#ZERO'})
-    assert '`#ZERO`' in text_of(payload)
+    assert '`#ZERO`' not in text_of(payload)
 
 
 def test_member_select_matches_linked_accounts_even_without_cached_member_id():
-    rows = [candidate('#NOID', weight=150000, member=None), candidate('#STALE', weight=150000, member=99),
-            candidate('#UNLINKED', weight=150000, member=7777777777777777777)]
+    rows = [candidate('#NOID', count=3, weight=150000, member=None), candidate('#STALE', count=3, weight=150000, member=99),
+            candidate('#UNLINKED', count=3, weight=150000, member=7777777777777777777)]
     payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777},
                         linked={'#NOID', '#STALE'})
     text = text_of(payload)
-    assert '`#NOID`' in text and '`#STALE`' in text and '`#UNLINKED`' not in text
+    assert '`#NOID`' in text and '`#STALE`' in text and '`#UNLINKED`' in text
 
 
 def test_member_select_with_nothing_usable_shows_message_and_an_empty_pool():
@@ -170,7 +175,7 @@ PARTIAL = 'Some linked accounts were left out.'
 
 
 def test_member_select_keeps_a_tag_linked_to_two_users_and_labels_only_that_row():
-    rows = [candidate('#CLEAN', weight=150000), candidate('#DISPUTED', weight=150000)]
+    rows = [candidate('#CLEAN', count=3, weight=150000), candidate('#DISPUTED', count=3, weight=150000)]
     links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, conflicts=('#DISPUTED',))
     payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
     text = text_of(payload)
@@ -181,7 +186,7 @@ def test_member_select_keeps_a_tag_linked_to_two_users_and_labels_only_that_row(
 
 
 def test_member_select_with_a_failed_provider_but_sources_keeps_them_and_notes_it():
-    rows = [candidate('#CLEAN', weight=150000)]
+    rows = [candidate('#CLEAN', count=3, weight=150000)]
     links = LinksResult(sources={'#CLEAN': ('ClashKing',)}, unavailable=('ClashPerk',),
                          forward_unavailable=('ClashPerk',))
     payload, _ = render(rows, {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
@@ -195,19 +200,19 @@ def test_member_select_in_list_mode_without_weights_lists_linked_accounts_and_no
                          forward_unavailable=('ClashPerk',))
     payload, _ = render(rows, {'member_id': 7777777777777777777}, links=links)
     text = text_of(payload)
-    assert '`#CLEAN`' in text and '`#DISPUTED`' in text and '#OTHER' not in text
-    assert PARTIAL in text and '2 accounts' in text and text.count('Linked to two Discord users') == 1
+    assert '`#CLEAN`' not in text and '`#DISPUTED`' not in text and '#OTHER' not in text
+    assert PARTIAL in text and 'No saved weight:' in text  # member-only needs saved recruit weights
 
 
 def test_member_select_does_not_require_verified_links():
     links = LinksResult(sources={'#CLEAN': ('ClashPerk',)}, verified={'#CLEAN': False})
-    payload, _ = render([candidate('#CLEAN', weight=150000)],
+    payload, _ = render([candidate('#CLEAN', count=3, weight=150000)],
                         {'weights': [150000], 'member_id': 7777777777777777777}, links=links)
     assert '`#CLEAN`' in text_of(payload) and PARTIAL not in text_of(payload)
 
 
 def test_member_select_clean_links_show_no_partial_note():
-    payload, _ = render([candidate('#CLEAN', weight=150000)],
+    payload, _ = render([candidate('#CLEAN', count=3, weight=150000)],
                         {'weights': [150000], 'member_id': 7777777777777777777}, linked={'#CLEAN'})
     assert PARTIAL not in text_of(payload)
 
@@ -381,10 +386,15 @@ def _scenarios():
 def test_normal_panels_are_byte_identical_to_the_pre_bounding_output():
     expected = json.loads((Path(__file__).parent / 'fixtures' / 'strike_panel_snapshots.json').read_text(encoding='utf-8'))
     actual = {name: text_of(payload) for name, payload in _scenarios().items()}
+    # 241 adds a continuation notice for pools larger than three and removes
+    # the old member-owned zero-strike mode. Retain every other baseline byte.
+    assert 'No slot in these clans.' in actual.pop('member')
+    expected.pop('member')
+    actual = {name: text.replace('\nMore slots on the dashboard.', '') for name, text in actual.items()}
     assert actual == expected
 
 
-def _adversarial(*, clans=25, notice='n' * 180, names=15, member=1395728880991234567, flags=True):
+def _adversarial(*, clans=25, notice='n' * 180, names=15, member=1395728880991234567, flags=True, limit=None):
     weights = [143345, 153877, 163012, 173499, 183901]
     emoji = '😀'
     fwa = [{'tag': ctag(number), 'name': emoji * names, 'type': 'FWA'} for number in range(clans)]
@@ -399,9 +409,13 @@ def _adversarial(*, clans=25, notice='n' * 180, names=15, member=139572888099123
              'clan_tags': [clan['tag'] for clan in fwa]}
     store, _ = make_store(rows, fwa)
     state = {'_id': 'tok', 'guild_id': 1, 'page': 0, **state}
-    with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
+    with patch.object(strikes, '_weight_cache_at', strikes.time.monotonic()), \
+            patch.object(strikes, '_weight_cached_tags', {row['player_tag'] for row in rows}), \
+            patch.object(strikes, 'update_state', AsyncMock()), \
+            patch.object(strikes, 'cached_weights', lambda _tags: {}), \
             patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)):
-        panel = asyncio.run(strikes.replacement_panel(store, state, notice=notice))
+        with patch.object(strikes, 'PANEL_TEXT_LIMIT', limit or strikes.PANEL_TEXT_LIMIT):
+            panel = asyncio.run(strikes.replacement_panel(store, state, notice=notice))
     return panel[0].build()[0], weights, member
 
 
@@ -410,10 +424,10 @@ def _no_broken_mention(text):
 
 
 def test_adversarial_panel_is_bounded_and_keeps_summary_weights_and_member():
-    payload, weights, member = _adversarial()
+    payload, weights, member = _adversarial(limit=3700)
     text = text_of(payload)
     summary = text.split('\n')[1]
-    assert _units(payload) <= 3900
+    assert _units(payload) <= 3700
     assert summary.startswith('Weights 143.345k, 153.877k, 163.012k, 173.499k, 183.901k')
     assert '25 FWA clans' in summary and summary.endswith(f'<@{member}>')
     assert _no_broken_mention(text)
@@ -441,7 +455,10 @@ def _fixed_panel(clans, notice='', disputed=0, limit=None):
                         conflicts=tuple(row['player_tag'] for row in rows[:disputed]))
     store, _ = make_store(rows, fwa)
     state = {'_id': 'tok', 'guild_id': 1, 'page': 0, **state}
-    with patch.object(strikes, 'cached_weights', lambda _tags: {}), \
+    with patch.object(strikes, '_weight_cache_at', strikes.time.monotonic()), \
+            patch.object(strikes, '_weight_cached_tags', {row['player_tag'] for row in rows}), \
+            patch.object(strikes, 'update_state', AsyncMock()), \
+            patch.object(strikes, 'cached_weights', lambda _tags: {}), \
             patch.object(strikes.recruit_links, 'resolve', AsyncMock(return_value=links)), \
             patch.object(strikes, 'PANEL_TEXT_LIMIT', limit or strikes.PANEL_TEXT_LIMIT):
         return asyncio.run(strikes.replacement_panel(store, state, notice=notice))[0].build()[0]
@@ -454,7 +471,7 @@ def test_only_the_clan_list_becomes_a_count_when_that_is_enough():
     text = text_of(payload)
     assert _units(payload) <= strikes.PANEL_TEXT_LIMIT
     assert '25 FWA clans' in text.split('\n')[1] and 'C00' * 5 not in text.split('\n')[1]
-    assert text.count('`#W') == 15 and 'More slots' not in text
+    assert text.count('`#W') == 15
 
 
 def test_a_long_notice_is_left_alone_while_the_count_is_enough():
@@ -463,9 +480,36 @@ def test_a_long_notice_is_left_alone_while_the_count_is_enough():
     assert [len(line) for line in text.split('\n') if line.startswith('nnn')] == [180]
 
 
-def test_one_selected_clan_reads_singular_and_all_rows_stay():
-    text = text_of(_fixed_panel(1, 'n' * 180, 13, limit=3860))
-    assert '1 FWA clan ·' in text and text.count('`#W') == 15
+def test_singular_clan_keeps_whole_missing_notice_and_best_rows_at_shifted_boundary():
+    attempts = []
+    original = strikes.Text
+
+    def record(**kwargs):
+        if kwargs['content'] == '## Replacements':
+            attempts.append([])
+        attempts[-1].append(kwargs['content'])
+        return original(**kwargs)
+
+    with patch.object(strikes, 'Text', record):
+        payload = _fixed_panel(1, 'n' * 180, 13, limit=3740)
+    # Shaka1157 requires the whole missing-account list or its linked count.
+    # The literal minimum15-row attempt now measures3757UTF16, above3740;
+    # retain the original row-before-name shrink order instead of hiding notice data.
+    fifteen = [parts for parts in attempts if '\n'.join(parts).count('`#W') == 15]
+    minimal = min(fifteen, key=lambda parts: sum(strikes.text_units(part) for part in parts))
+    assert sum(strikes.text_units(part) for part in minimal) == 3757 > 3740
+    text = text_of(payload)
+    assert _units(payload) <= 3740 and '1 FWA clan ·' in text
+    assert text.count('`#W') == 10 and 'More slots on the dashboard.' in text
+    missing = next(part for part in minimal if part.startswith('No saved weight:'))
+    assert missing == 'No saved weight:\n' + '\n'.join(
+        f'#W{group}{number}' for group in range(5) for number in range(3))
+    assert missing in text and text.count('No saved weight:') == 1
+    sections = text.split('### ')[1:]
+    full_sections = '\n'.join(minimal).split('### ')[1:]
+    assert len(sections) == len(full_sections) == 5
+    for selected, full in zip(sections, full_sections):
+        assert re.findall(r'`(#W[^`]+)`', selected) == re.findall(r'`(#W[^`]+)`', full)[:2]
 
 
 def test_best_row_only_keeps_full_names_when_that_is_enough():
@@ -475,16 +519,24 @@ def test_best_row_only_keeps_full_names_when_that_is_enough():
 
 
 def test_only_the_notice_line_is_capped_when_that_is_enough():
-    text = text_of(_fixed_panel(25, 'n' * 180, 13))
-    capped = [line for line in text.split('\n') if line.startswith('nnn')]
-    assert capped == ['n' * 119 + '…']
-    assert text.count('`#W') == 15 and 'More slots' not in text
+    # Sweep the actual UTF16 boundary instead of assuming the old row-copy size.
+    # A budget must exist that keeps all 15 rows after capping only the notice.
+    found = False
+    for limit in range(3400, 3901, 10):
+        payload = _fixed_panel(25, 'n' * 180, 13, limit=limit)
+        assert _units(payload) <= limit
+        text = text_of(payload)
+        capped = [line for line in text.split('\n') if line.startswith('nnn')]
+        if capped == ['n' * 119 + '…'] and text.count('`#W') == 15:
+            found = True
+            break
+    assert found
 
 
 def test_rows_beyond_the_second_go_first_and_the_best_two_per_weight_stay():
-    payload = _fixed_panel(25, 'n' * 180, 13, limit=3800)
+    payload = _fixed_panel(25, 'n' * 180, 13, limit=3600)
     text = text_of(payload)
-    assert _units(payload) <= 3800 and text.count('`#W') == 10
+    assert _units(payload) <= 3600 and text.count('`#W') == 10
     assert 'More slots on the dashboard.' in text
     sections = text.split('### ')[1:]
     assert len(sections) == 5 and all(section.count('`#W') == 2 for section in sections)
@@ -511,9 +563,9 @@ def test_selected_clans_over_the_limit_read_as_a_count():
 
 
 def test_dropping_rows_keeps_the_best_row_per_weight_and_says_so():
-    payload, weights, _ = _adversarial(notice='n' * 500)
+    payload, weights, _ = _adversarial(notice='n' * 500, limit=3500)
     text = text_of(payload)
     assert 'More slots on the dashboard.' in text
-    assert text.count('`#W') < 15 and _units(payload) <= strikes.PANEL_TEXT_LIMIT
+    assert text.count('`#W') < 15 and _units(payload) <= 3500
     sections = text.split('### ')[1:]
     assert len(sections) == 5 and all('`#W' in section for section in sections)

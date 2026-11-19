@@ -183,19 +183,6 @@ export default function StrikeActivityFiltersPanel({
           </label>
         </div>
         <label>
-          Membership
-          <select
-            value={draft.left}
-            onChange={(event) =>
-              patch({ left: event.target.value as ActivityFilters["left"] })
-            }
-          >
-            <option value="all">Current and left</option>
-            <option value="current">Current members</option>
-            <option value="left">Left clan</option>
-          </select>
-        </label>
-        <label>
           <input
             type="checkbox"
             checked={draft.includeLow}

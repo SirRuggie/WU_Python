@@ -295,10 +295,7 @@
   gap: var(--wu-space-2);
   min-width: 0;
 }
-.strike-activity-roster > .strike-find-slots-open {
-  width: auto;
-  justify-self: start;
-}
+
 .strike-activity-applied {
   display: flex;
   flex-wrap: wrap;
@@ -459,7 +456,8 @@
     grid-column: 1 / -1;
   }
 }
-.strike-activity-roster h2.sr-only {
+.strike-activity-roster h2.sr-only,
+.strike-slot-live.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -569,24 +567,6 @@
 .strike-activity-chips {
   position: relative;
   min-width: 0;
-}
-/* Phones: the View select and Find slots share the first row. Find slots stays mounted in one place at every width. */
-@media (max-width: 760px) {
-  .strike-activity-roster.has-find-slots {
-    grid-template-columns: minmax(0, 1fr) auto;
-  }
-  .strike-activity-roster.has-find-slots > * {
-    grid-column: 1 / -1;
-  }
-  .strike-activity-roster.has-find-slots > .strike-activity-chips {
-    grid-column: 1;
-    grid-row: 1;
-  }
-  .strike-activity-roster.has-find-slots > .strike-find-slots-open {
-    grid-column: 2;
-    grid-row: 1;
-    justify-self: stretch;
-  }
 }
 @media (max-width: 650px) {
   .strike-activity-chips.has-more::after {
@@ -831,85 +811,227 @@
   white-space: nowrap;
 }
 
-/* Find slots: weights, clans, member and results live in one panel. */
+/* Find slots stays inline. Its result scroller keeps routine filters in view. */
 .strike-find-slots {
   display: grid;
   gap: var(--wu-space-2);
   min-width: 0;
+  padding-block: var(--wu-space-2) var(--wu-space-3);
+  border-block: 1px solid var(--wu-border-subtle);
 }
-.strike-find-slots-top {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) auto;
-  align-items: end;
-  gap: var(--wu-space-2);
-}
-.strike-find-slots-top > label {
-  display: grid;
-  gap: var(--wu-space-1);
-  min-height: 0;
-  min-width: 0;
-  align-items: stretch;
-}
-.strike-find-slots input[aria-invalid] {
-  border-color: var(--roster-card-text-danger, var(--wu-danger));
-}
-.strike-find-slots-row {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: var(--wu-space-2);
-}
-.strike-find-slots-row > button {
-  min-width: 0;
-}
-.strike-find-slots-row > button > span {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-.strike-find-slots p[role="alert"] {
+.strike-find-slots > h2 {
   margin: 0;
-  color: var(--roster-card-text-danger, var(--wu-danger));
+  font-size: var(--wu-text-lg);
+}
+.strike-slot-filters {
+  display: grid;
+  grid-template-columns:
+    minmax(160px, 1fr) minmax(150px, 1fr) minmax(190px, 1.2fr)
+    minmax(110px, 0.6fr);
+  align-items: start;
+  gap: var(--wu-space-2);
+  min-width: 0;
+}
+.strike-slot-filters > *,
+.strike-slot-filters label {
+  min-width: 0;
+}
+.strike-slot-filters label {
+  display: grid;
+  align-items: start;
+  gap: var(--wu-space-1);
+}
+.strike-slot-filters :is(input, select) {
+  min-width: 0;
+  width: 100%;
+  min-height: 48px;
+}
+.strike-slot-filters small,
+.strike-slot-note {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.strike-slot-weights input[aria-invalid="true"] {
+  border-color: var(--wu-danger);
+}
+.strike-slot-weights [role="alert"] {
+  color: var(--wu-danger);
+  font-size: var(--wu-text-sm);
+}
+.strike-slot-clans fieldset {
+  min-width: 0;
+  margin: var(--wu-space-1) 0 0;
+  padding: 0;
+  border: 0;
+}
+.strike-slot-clans legend {
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+}
+.strike-slot-clans .roster-filters-options {
+  max-height: 132px;
+  overflow-y: auto;
+  grid-template-columns: minmax(0, 1fr);
+}
+.strike-slot-clans .roster-filters-options label {
+  display: flex;
+  min-width: 0;
+}
+.strike-slot-clans .roster-filters-options input {
+  width: 18px;
+  min-height: 18px;
+  flex: 0 0 18px;
+}
+/* Activity snapshot counts are not authoritative slot-pool totals. */
+.strike-slot-clans .roster-filters-options small {
+  display: none;
+}
+.strike-slot-clan-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-1);
+  margin-block: var(--wu-space-1);
+}
+.strike-slot-clan-chips button {
+  min-height: 44px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.strike-slot-live {
+  min-height: 1.5em;
+  margin: 0;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.strike-slot-live.sr-only {
+  min-height: 0;
+}
+.strike-slot-results {
+  display: grid;
+  gap: var(--wu-space-3);
+  max-height: min(65dvh, 680px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  min-width: 0;
+  padding-inline-end: var(--wu-space-1);
+}
+.strike-slot-results.is-stale {
+  opacity: 0.55;
 }
 .strike-slot-group {
   display: grid;
-  gap: var(--wu-space-1);
   min-width: 0;
+  gap: var(--wu-space-1);
+}
+.strike-slot-group > header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--wu-space-2);
 }
 .strike-slot-group h3 {
   margin: 0;
   font-size: var(--wu-text-md);
+  overflow-wrap: anywhere;
 }
-.strike-slot-group p {
-  margin: 0;
+.strike-slot-group > header > span,
+.strike-slot-group > p {
   color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+  margin: 0;
 }
 .strike-slot-group ol {
   display: grid;
-  gap: var(--wu-space-1);
-  margin: 0;
-  padding: 0;
   list-style: none;
+  padding: 0;
+  margin: 0;
 }
 .strike-slot-group li > button {
   display: grid;
+  justify-items: start;
+  justify-content: stretch;
+  grid-template-columns: minmax(0, 1fr) auto;
   width: 100%;
   min-width: 0;
-  gap: 2px;
-  justify-content: stretch;
-  justify-items: start;
+  min-height: 60px;
   text-align: left;
+  gap: 4px var(--wu-space-2);
+  border: 0;
+  border-bottom: 1px solid var(--wu-border-subtle);
+  border-radius: 0;
+  background: transparent;
+  user-select: none;
 }
 .strike-slot-group li > button:disabled {
   opacity: 1;
-  cursor: default;
 }
-.strike-slot-group li > button > span {
+.strike-slot-name {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
   min-width: 0;
   overflow-wrap: anywhere;
+}
+.strike-slot-priority {
+  font-size: var(--wu-text-sm);
+}
+.strike-slot-gap {
+  display: grid;
+  justify-self: end;
+  grid-row: span 2;
+  align-content: center;
+  justify-items: end;
+  font-variant-numeric: tabular-nums;
+}
+.strike-slot-gap > span {
   font-size: var(--wu-text-sm);
   color: var(--wu-text-muted);
 }
-.strike-member-select {
+.strike-slot-gap > b {
+  font-size: var(--wu-text-lg);
+}
+.strike-slot-context {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px var(--wu-space-2);
+  grid-column: 1;
   min-width: 0;
+  overflow-wrap: anywhere;
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.strike-slot-more {
+  justify-self: start;
+  min-height: 44px;
+}
+.strike-activity-selectors > label {
+  display: grid;
+  align-items: start;
+  gap: var(--wu-space-1);
+}
+@media (hover: hover) and (pointer: fine) {
+  .strike-slot-group li > button:hover {
+    background: var(--wu-surface-hover, var(--wu-surface));
+  }
+}
+@media (max-width: 1100px) {
+  .strike-slot-filters {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+@media (max-width: 760px) {
+  .strike-slot-filters {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .strike-slot-clans .roster-filters-options {
+    max-height: 100px;
+  }
+  .strike-slot-results {
+    max-height: 55dvh;
+  }
+  .strike-activity-selectors {
+    grid-template-columns: minmax(0, 1fr);
+  }
 }

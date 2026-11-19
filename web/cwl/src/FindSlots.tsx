@@ -1,39 +1,24 @@
-import { useEffect, useMemo, useRef, useState } from "react";
-import ActionPanel from "./ActionPanel";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 import RosterFilterOptions from "./RosterFilterOptions";
-import StrikeMemberSelect, { strikeMemberOptions } from "./StrikeMemberSelect";
-import { api } from "./api";
+import StrikeRecruitSelect from "./StrikeRecruitSelect";
+import SlotResults, {
+  checkedSlotResponse,
+  type SlotResponse,
+} from "./SlotResults";
+import LoadError from "./LoadError";
+import { api, isExpectedCancel } from "./api";
 import { compactWeight, parseWeights, weightsText } from "./replacementView";
-import { memberName } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
-import type { Priority } from "./replacementTypes";
-import { countLabel } from "./countLabel";
+import {
+  normalizedSlotSearch,
+  slotSearchKey,
+  slotGroupKeys,
+  slotVisibleCount,
+  type SlotSearch,
+} from "./slotSearchState";
+export type { SlotSearch } from "./slotSearchState";
 
-export type SlotSearch = {
-  slotWeights: number[];
-  slotClans: string[];
-  slotMember: string;
-};
-type Candidate = {
-  player_tag: string;
-  player_name: string;
-  clan_name?: string | null;
-  weight?: number | null;
-  weight_difference?: number | null;
-  town_hall?: number | null;
-  priority?: Priority | null;
-  active_strikes: number;
-  discord_id?: string | null;
-  discord_name?: string | null;
-  link_disputed?: boolean;
-};
-type Slot = { weight: number; weight_label: string; candidates: Candidate[] };
-const key = (search: SlotSearch) =>
-  JSON.stringify([search.slotWeights, search.slotClans, search.slotMember]);
-const priorityLabel = (value?: Priority | null) =>
-  value === "replace_first" ? "Chopping Block" : value === "high" ? "High" : "";
-
-/** Closest slots for each recruit weight, in a panel. A search runs only from Find or a restored link. */
+/** Routine search controls stay on the page; every request is read-only and last-wins. */
 export default function FindSlots({
   clans,
   accounts,
@@ -49,296 +34,357 @@ export default function FindSlots({
   onSearch: (next: SlotSearch) => void;
   onChoose: (row: ActivityAccount) => void;
 }) {
-  const opener = useRef<HTMLButtonElement>(null);
-  const [open, setOpen] = useState(false);
-  const fwa = useMemo(() => clans.filter((clan) => clan.is_fwa), [clans]);
-  const restored: SlotSearch = {
-    slotWeights: search.slotWeights,
-    slotClans: search.slotClans.filter((tag) =>
-      fwa.some((clan) => clan.tag === tag),
-    ),
-    slotMember: search.slotMember,
-  };
-  const restoredKey = key(restored);
-  const [text, setText] = useState(weightsText(restored.slotWeights)),
-    [picked, setPicked] = useState(restored.slotClans),
-    [member, setMember] = useState(restored.slotMember),
-    [error, setError] = useState(""),
-    [busy, setBusy] = useState(false),
-    [slots, setSlots] = useState<Slot[] | null>(null),
-    [partial, setPartial] = useState(false),
-    [panel, setPanel] = useState<{
-      kind: "clans" | "member";
-      trigger: HTMLElement;
-    } | null>(null),
-    [clanSearch, setClanSearch] = useState("");
+  const id = useId(),
+    errorId = `${id}-weights-error`,
+    hintId = `${id}-weights-hint`;
+  const initial = normalizedSlotSearch(search);
+  const [draft, setDraft] = useState(initial),
+    [text, setText] = useState(weightsText(initial.slotWeights));
+  const [inputError, setInputError] = useState(""),
+    [requestError, setRequestError] = useState("");
+  const [busy, setBusy] = useState(false),
+    [stale, setStale] = useState(false);
+  const [data, setData] = useState<SlotResponse | null>(null),
+    [clanQuery, setClanQuery] = useState("");
+  const invalid = useRef(false);
+  const draftRef = useRef(draft),
+    typed = useRef(initial.slotWeights.length > 0);
   const turn = useRef(0),
-    ran = useRef(""),
-    callbacks = useRef({ onSearch });
+    timer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const controller = useRef<AbortController | null>(null),
+    published = useRef<string | null>(null);
+  const callbacks = useRef({ onSearch });
   callbacks.current = { onSearch };
-  const members = useMemo(() => strikeMemberOptions(accounts), [accounts]);
-  useEffect(
-    () => () => {
-      turn.current++;
-    },
-    [],
-  );
-  async function run(next: SlotSearch) {
-    const id = ++turn.current;
-    ran.current = key(next);
-    setBusy(true);
-    setError("");
-    try {
-      const query = new URLSearchParams();
-      next.slotWeights.forEach((weight) =>
-        query.append("weight", String(weight)),
-      );
-      next.slotClans.forEach((tag) => query.append("clan", tag));
-      if (next.slotMember) query.set("member", next.slotMember);
-      const data = await api<{ slots: Slot[]; member_partial?: boolean }>(
-        `/strikes/replacements?${query}`,
-      );
-      if (!Array.isArray(data.slots))
-        throw new Error("Slot results are incomplete. Try again.");
-      if (id === turn.current) {
-        setSlots(data.slots);
-        setPartial(data.member_partial === true);
-      }
-    } catch (cause) {
-      if (id === turn.current) {
-        setSlots(null);
-        setPartial(false);
-        setError(
-          cause instanceof Error ? cause.message : "Slots are unavailable.",
-        );
-      }
-    } finally {
-      if (id === turn.current) setBusy(false);
-    }
+  const fwa = useMemo(() => clans.filter((clan) => clan.is_fwa), [clans]);
+  function cancel() {
+    turn.current++;
+    controller.current?.abort();
+    if (timer.current !== null) clearTimeout(timer.current);
+    timer.current = null;
   }
-  // The link or Back/Forward is an earlier explicit search: restore it and run it once.
-  useEffect(() => {
-    // A link without weights (Back out of the panel) keeps the last search for reopening.
-    if (!restored.slotWeights.length) return;
-    setText(weightsText(restored.slotWeights));
-    setPicked(restored.slotClans);
-    setMember(restored.slotMember);
-    if (ran.current !== restoredKey) {
-      // A link or Back/Forward opens the panel once; closing it keeps the results.
-      setOpen(true);
-      void run(restored);
-    }
-    // restoredKey stands for the whole restored search.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [restoredKey]);
-  function find() {
-    const parsed = parseWeights(text);
-    if (parsed.error) {
-      setError(parsed.error);
+  async function run(next: SlotSearch) {
+    if (disabled || invalid.current) {
+      cancel();
+      setBusy(false);
       return;
     }
-    const next: SlotSearch = {
-      slotWeights: parsed.weights,
-      slotClans: picked,
-      slotMember: member,
-    };
-    void run(next);
-    callbacks.current.onSearch(next);
+    cancel();
+    const current = turn.current,
+      abort = new AbortController();
+    controller.current = abort;
+    setRequestError("");
+    if (!next.slotWeights.length && !next.slotMember) {
+      setBusy(false);
+      setStale(false);
+      setData(null);
+      return;
+    }
+    setBusy(true);
+    setStale(true);
+    const query = new URLSearchParams();
+    next.slotWeights.forEach((weight) =>
+      query.append("weight", String(weight)),
+    );
+    next.slotClans.forEach((tag) => query.append("clan", tag));
+    if (next.slotMember) query.set("member", next.slotMember);
+    if (next.slotTownHall) query.set("town_hall", String(next.slotTownHall));
+    query.set(
+      "per_weight",
+      String(Math.max(3, ...Object.values(next.slotExpanded ?? {}))),
+    );
+    try {
+      const result = checkedSlotResponse(
+        await api<SlotResponse>(
+          `/strikes/replacements?${query}`,
+          "GET",
+          undefined,
+          { signal: abort.signal },
+        ),
+      );
+      if (current !== turn.current) return;
+      setData(result);
+      setStale(false);
+      if (!typed.current && next.slotMember === draftRef.current.slotMember)
+        setText(weightsText(result.slots.map((slot) => slot.weight)));
+    } catch (cause) {
+      if (current === turn.current && !isExpectedCancel(cause, abort.signal))
+        setRequestError(
+          cause instanceof Error
+            ? cause.message
+            : "Slots are unavailable. Try again.",
+        );
+    } finally {
+      if (current === turn.current) setBusy(false);
+    }
   }
-  const clanLabel =
-    picked.length === 0
-      ? "All FWA clans"
-      : picked.length === 1
-        ? fwa.find((clan) => clan.tag === picked[0])?.name || "1 clan"
-        : countLabel(picked.length, "clan");
-  const name = members.find((option) => option.id === member)?.name;
+  function apply(next: SlotSearch, delay = 0) {
+    cancel();
+    const value = normalizedSlotSearch(next);
+    draftRef.current = value;
+    setDraft(value);
+    published.current = slotSearchKey(value);
+    callbacks.current.onSearch(value);
+    if (invalid.current) {
+      setBusy(false);
+      setStale(true);
+      return;
+    }
+    if (delay) {
+      setStale(true);
+      setBusy(true);
+      timer.current = setTimeout(() => void run(value), delay);
+    } else void run(value);
+  }
+  const externalKey = slotSearchKey(search);
+  useEffect(() => {
+    if (published.current === externalKey) return;
+    const next = normalizedSlotSearch(search);
+    published.current = externalKey;
+    draftRef.current = next;
+    setDraft(next);
+    const restoredError =
+      next.slotWeights.length > 5 ||
+      next.slotWeights.some((weight) => weight <= 0 || weight > 500000)
+        ? "Enter up to 5 weights, each up to 500k."
+        : "";
+    invalid.current = !!restoredError;
+    typed.current = next.slotWeights.length > 0;
+    setText(weightsText(next.slotWeights));
+    setInputError(restoredError);
+    void run(next);
+    // The canonical key binds restored fields, including expansion and duplicate weights.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [externalKey]);
+  useEffect(() => () => cancel(), []);
+  useEffect(() => {
+    if (disabled) {
+      cancel();
+      setBusy(false);
+    }
+  }, [disabled]);
+  function weightsChanged(value: string) {
+    setText(value);
+    typed.current = !!value.trim();
+    const parsed = value.trim()
+      ? parseWeights(value)
+      : { weights: [], error: "" };
+    const error =
+      parsed.error ||
+      (parsed.weights.some((weight) => weight > 500000)
+        ? "Enter weights up to 500k."
+        : "");
+    invalid.current = !!error;
+    setInputError(error);
+    if (error) {
+      cancel();
+      setBusy(false);
+      setStale(true);
+      return;
+    }
+    apply(
+      { ...draftRef.current, slotWeights: parsed.weights, slotExpanded: {} },
+      300,
+    );
+  }
+  const groupKeys = slotGroupKeys(data?.slots ?? []);
+  const summary = inputError
+    ? "Enter valid weights to update results."
+    : busy
+      ? "Updating slots…"
+      : data
+        ? data.slots
+            .map(
+              (group, index) =>
+                `${Math.min(group.candidates.length, slotVisibleCount(group, groupKeys[index], draft.slotExpanded ?? {}))} slots for ${compactWeight(group.weight)}`,
+            )
+            .join(" · ") ||
+          data.member_notice ||
+          "No saved weights available"
+        : "Enter weights or select a member to find slots.";
+  const duplicateGuidance =
+    !inputError &&
+    !busy &&
+    !requestError &&
+    (!data || (!data.slots.length && !!data.member_notice));
   return (
-    <>
-      <button
-        ref={opener}
-        type="button"
-        className="primary strike-find-slots-open"
-        aria-haspopup="dialog"
-        disabled={disabled}
-        onClick={() => setOpen(true)}
+    <section className="strike-find-slots" aria-labelledby={`${id}-heading`}>
+      <h2 id={`${id}-heading`}>Find slots</h2>
+      <form
+        className="strike-slot-filters"
+        onSubmit={(event) => {
+          event.preventDefault();
+          if (!inputError && !disabled) void run(draftRef.current);
+        }}
       >
-        Find slots
-      </button>
-      {open && (
-        <ActionPanel
-          title="Find slots"
-          trigger={opener.current}
-          onClose={() => setOpen(false)}
-        >
-          <div className="strike-find-slots">
-            <div className="strike-find-slots-top">
-              <label>
-                Weights
-                <input
-                  inputMode="decimal"
-                  value={text}
-                  maxLength={80}
+        <StrikeRecruitSelect
+          accounts={accounts}
+          value={draft.slotMember}
+          disabled={disabled}
+          onChange={(member) => {
+            if (!typed.current) setText("");
+            apply({
+              ...draftRef.current,
+              slotMember: member,
+              slotWeights: typed.current ? draftRef.current.slotWeights : [],
+              slotExpanded: {},
+            });
+          }}
+        />
+        <label className="strike-slot-weights">
+          Weights
+          <input
+            name="recruit-weights"
+            inputMode="text"
+            enterKeyHint="search"
+            autoComplete="off"
+            spellCheck={false}
+            value={text}
+            maxLength={80}
+            disabled={disabled}
+            placeholder="143, 173, 150…"
+            aria-invalid={!!inputError || undefined}
+            aria-describedby={`${hintId}${inputError ? ` ${errorId}` : ""}`}
+            onChange={(event) => weightsChanged(event.target.value)}
+          />
+          <small id={hintId}>Up to 5 weights, in k or full values.</small>
+          {inputError && (
+            <span id={errorId} role="alert">
+              {inputError}
+            </span>
+          )}
+        </label>
+        <div className="strike-slot-clans">
+          <label>
+            Clans
+            <input
+              type="search"
+              name="slot-clan-search"
+              value={clanQuery}
+              disabled={disabled}
+              placeholder="Find a clan…"
+              onChange={(event) => setClanQuery(event.target.value)}
+            />
+          </label>
+          {!!draft.slotClans.length && (
+            <div className="strike-slot-clan-chips">
+              {draft.slotClans.map((tag) => (
+                <button
+                  key={tag}
+                  type="button"
                   disabled={disabled}
-                  placeholder="143, 173, 150"
-                  aria-invalid={!!error || undefined}
-                  onChange={(event) => {
-                    setText(event.target.value);
-                    setError("");
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Enter") find();
-                  }}
-                />
-              </label>
-              <button
-                type="button"
-                className="primary"
-                aria-busy={busy || undefined}
-                disabled={disabled || busy}
-                onClick={find}
-              >
-                {busy ? "Finding…" : "Find"}
-              </button>
+                  aria-label={`Remove ${fwa.find((clan) => clan.tag === tag)?.name || tag}`}
+                  onClick={() =>
+                    apply({
+                      ...draftRef.current,
+                      slotClans: draftRef.current.slotClans.filter(
+                        (value) => value !== tag,
+                      ),
+                      slotExpanded: {},
+                    })
+                  }
+                >
+                  {fwa.find((clan) => clan.tag === tag)?.name || tag} ×
+                </button>
+              ))}
             </div>
-            <div className="strike-find-slots-row">
-              <button
-                type="button"
-                disabled={disabled}
-                aria-label={`Clans: ${clanLabel}`}
-                onClick={(event) =>
-                  setPanel({ kind: "clans", trigger: event.currentTarget })
-                }
-              >
-                <span>{clanLabel}</span>
-              </button>
-              <button
-                type="button"
-                disabled={disabled}
-                aria-label={`Member: ${name ? `@${name}` : member ? "selected" : "any"}`}
-                onClick={(event) =>
-                  setPanel({ kind: "member", trigger: event.currentTarget })
-                }
-              >
-                <span>
-                  {member
-                    ? name
-                      ? `@${name}`
-                      : "Selected member"
-                    : "Any member"}
-                </span>
-              </button>
+          )}
+          <RosterFilterOptions
+            title={
+              draft.slotClans.length ? "Selected FWA clans" : "All FWA clans"
+            }
+            selected={draft.slotClans}
+            disabled={disabled}
+            onChange={(tags) =>
+              apply({ ...draftRef.current, slotClans: tags, slotExpanded: {} })
+            }
+            options={fwa
+              .filter((clan) =>
+                `${clan.name} ${clan.tag}`
+                  .toLowerCase()
+                  .includes(clanQuery.toLowerCase()),
+              )
+              .map((clan) => ({
+                value: clan.tag,
+                label: clan.name,
+                count: accounts.filter(
+                  (row) =>
+                    row.current_clan_tag === clan.tag &&
+                    row.marked_for_replacement,
+                ).length,
+              }))}
+          />
+        </div>
+        <label>
+          Town Hall
+          <select
+            aria-label="Slot Town Hall"
+            disabled={disabled}
+            value={draft.slotTownHall ?? ""}
+            onChange={(event) =>
+              apply({
+                ...draftRef.current,
+                slotTownHall: event.target.value
+                  ? Number(event.target.value)
+                  : null,
+                slotExpanded: {},
+              })
+            }
+          >
+            <option value="">Any Town Hall</option>
+            {Array.from({ length: 19 }, (_, index) => 19 - index).map(
+              (hall) => (
+                <option key={hall} value={hall}>
+                  TH{hall}
+                </option>
+              ),
+            )}
+          </select>
+        </label>
+      </form>
+      <p
+        className={`strike-slot-live${duplicateGuidance ? " sr-only" : ""}`}
+        role="status"
+        aria-live="polite"
+        aria-atomic="true"
+      >
+        {summary}
+      </p>
+      <LoadError
+        message={requestError}
+        note={data ? "Showing previous results." : undefined}
+        busy={busy}
+        onRetry={() => void run(draftRef.current)}
+      />
+      <div
+        className={`strike-slot-results${stale ? " is-stale" : ""}`}
+        aria-busy={busy || undefined}
+      >
+        {data ? (
+          <SlotResults
+            data={data}
+            accounts={accounts}
+            expanded={draft.slotExpanded ?? {}}
+            disabled={disabled || stale}
+            onMore={(key, count) =>
+              apply({
+                ...draftRef.current,
+                slotExpanded: {
+                  ...draftRef.current.slotExpanded,
+                  [key]: count,
+                },
+              })
+            }
+            onChoose={onChoose}
+          />
+        ) : (
+          !busy &&
+          !requestError && (
+            <div className="empty">
+              <p>Enter weights or select a member to find slots.</p>
             </div>
-            {error && <p role="alert">{error}</p>}
-            {slots?.map((slot) => (
-              <section key={slot.weight} className="strike-slot-group">
-                <h3>{slot.weight_label || compactWeight(slot.weight)}</h3>
-                {slot.candidates.length ? (
-                  <ol>
-                    {slot.candidates.map((item) => {
-                      const row = accounts.find(
-                        (account) => account.player_tag === item.player_tag,
-                      );
-                      const who = (row && memberName(row)) || memberName(item);
-                      const priority = priorityLabel(item.priority);
-                      return (
-                        <li key={item.player_tag}>
-                          <button
-                            type="button"
-                            disabled={!row || disabled}
-                            onClick={() => {
-                              if (!row) return;
-                              setOpen(false);
-                              onChoose(row);
-                            }}
-                          >
-                            <strong>{item.player_name}</strong>
-                            <span>
-                              {[
-                                item.town_hall ? `TH${item.town_hall}` : null,
-                                item.clan_name,
-                                who ? `@${who}` : null,
-                                item.weight ? compactWeight(item.weight) : null,
-                                item.weight_difference != null
-                                  ? `Gap ${compactWeight(item.weight_difference)}`
-                                  : null,
-                                priority || null,
-                                item.link_disputed
-                                  ? "Linked to two Discord users"
-                                  : null,
-                                `${item.active_strikes} ${item.active_strikes === 1 ? "strike" : "strikes"}`,
-                              ]
-                                .filter(Boolean)
-                                .join(" · ")}
-                            </span>
-                          </button>
-                        </li>
-                      );
-                    })}
-                  </ol>
-                ) : (
-                  <p>No slot in these clans.</p>
-                )}
-              </section>
-            ))}
-            {slots && partial && <p>Some linked accounts were left out.</p>}
-            {panel?.kind === "clans" && (
-              <ActionPanel
-                title="Select clans"
-                trigger={panel.trigger}
-                onClose={() => setPanel(null)}
-                expandOnSearchFocus
-              >
-                <label>
-                  Find clan
-                  <input
-                    type="search"
-                    value={clanSearch}
-                    onChange={(event) => setClanSearch(event.target.value)}
-                  />
-                </label>
-                <RosterFilterOptions
-                  title="FWA clans"
-                  selected={picked}
-                  onChange={setPicked}
-                  options={fwa
-                    .filter((clan) =>
-                      `${clan.name} ${clan.tag}`
-                        .toLocaleLowerCase()
-                        .includes(clanSearch.toLocaleLowerCase()),
-                    )
-                    .map((clan) => ({
-                      value: clan.tag,
-                      label: clan.name,
-                      count: accounts.filter(
-                        (row) =>
-                          (row.left_clan
-                            ? row.last_clan_tag
-                            : row.current_clan_tag) === clan.tag,
-                      ).length,
-                    }))}
-                />
-              </ActionPanel>
-            )}
-            {panel?.kind === "member" && (
-              <ActionPanel
-                title="Select member"
-                trigger={panel.trigger}
-                onClose={() => setPanel(null)}
-                expandOnSearchFocus
-              >
-                <StrikeMemberSelect
-                  options={members}
-                  value={member}
-                  onChange={(id) => {
-                    setMember(id);
-                    if (id) setPanel(null);
-                  }}
-                />
-              </ActionPanel>
-            )}
-          </div>
-        </ActionPanel>
-      )}
-    </>
+          )
+        )}
+      </div>
+    </section>
   );
 }

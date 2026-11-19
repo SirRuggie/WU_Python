@@ -298,7 +298,6 @@ it("the Filters panel has no clan or Town Hall controls and keeps the decided or
     "Raid weekends without attacking",
     "Member",
     "Weight",
-    "Membership",
     "Checkbox: Include eligible 1–2 strikes",
     "Checkbox: No activity yet",
   ]);

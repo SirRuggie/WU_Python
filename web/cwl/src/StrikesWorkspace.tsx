@@ -1,7 +1,10 @@
 import CwlPageHeader from "./CwlPageHeader";
 import useDiscordIdentities from "./useDiscordIdentities";
 import StrikeReviewResolution from "./StrikeReviewResolution";
-import { parseActivityFilters } from "./strikeActivityFilters";
+import {
+  activityFilterQuery,
+  parseActivityFilters,
+} from "./strikeActivityFilters";
 import StrikeActivityRoster from "./StrikeActivityRoster";
 import {
   useViewState,
@@ -73,6 +76,25 @@ export default function StrikesWorkspace({
   memory?: ViewMemory;
 }) {
   const access = strikePermissions(permissions, isOwner);
+  // Session-scoped entry identity preserves slot-origin Back/Forward without
+  // changing unrelated account routes or inferring an origin after a reload.
+  const slotOrigins = useRef<Set<string>>(
+    (memory?.get("slotOriginRoutes") as Set<string> | undefined) ?? new Set(),
+  );
+  const activityVisit = window.history.state?.wuDashboardIndex ?? null;
+  const slotRouteIdentity = (
+    tag: string,
+    state = activityState ?? window.location.search,
+  ) =>
+    JSON.stringify([
+      window.history.state?.wuDashboardIndex ?? null,
+      window.location.pathname,
+      tag,
+      activityFilterQuery(parseActivityFilters(state, markedDefault)),
+    ]);
+  const [slotDetail, setSlotDetail] = useState(
+    () => !!targetTag && slotOrigins.current.has(slotRouteIdentity(targetTag)),
+  );
   const visibleTabs = tabs.filter((item) =>
     item.id === "leave"
       ? access.manage
@@ -403,10 +425,12 @@ export default function StrikesWorkspace({
       setRemoveId("");
       setRemoveReason("");
       setSelectedAccount(null);
+      setSlotDetail(false);
       clearWar();
       onAccountRoute?.("");
     });
-  const chooseAccount = (account: StrikeAccount) => {
+  const chooseAccount = (account: StrikeAccount, inline = false) => {
+    setSlotDetail(inline);
     setSelectedAccount(account);
     setSelectedWar(null);
     setStatus("all");
@@ -416,6 +440,7 @@ export default function StrikesWorkspace({
     const previous = lastTarget.current;
     lastTarget.current = targetTag;
     if (!targetTag) {
+      setSlotDetail(false);
       if (previous) {
         returnPlayer.current = previous;
         setSelectedAccount(null);
@@ -423,6 +448,8 @@ export default function StrikesWorkspace({
       }
       return;
     }
+    const inline = slotOrigins.current.has(slotRouteIdentity(targetTag));
+    setSlotDetail(inline);
     if (!access.view || accessLost || selectedAccount?.player_tag === targetTag)
       return;
     let active = true;
@@ -431,7 +458,7 @@ export default function StrikesWorkspace({
         if (!active) return;
         if (found) {
           setTab("history");
-          chooseAccount(found);
+          chooseAccount(found, inline);
         } else setError("This account's strike history could not be found.");
       })
       .catch((cause) => {
@@ -440,7 +467,14 @@ export default function StrikesWorkspace({
     return () => {
       active = false;
     };
-  }, [targetTag, access.view, accessLost]);
+  }, [
+    targetTag,
+    activityState,
+    markedDefault,
+    activityVisit,
+    access.view,
+    accessLost,
+  ]);
   const chooseWar = (war: War) => {
     setSelectedAccount(null);
     setSelectedWar(war);
@@ -469,6 +503,34 @@ export default function StrikesWorkspace({
       </p>
     );
 
+  const detailContent =
+    selectedAccount || selectedWar ? (
+      <StrikesDetail
+        access={access}
+        busy={busy}
+        loading={loading}
+        error={error}
+        status={status}
+        overview={overview}
+        selectedAccount={selectedAccount}
+        accountStreak={accountStreak}
+        discordProfiles={discordProfiles}
+        detailHeading={detailHeading}
+        page={page}
+        setPage={setPage}
+        removeId={removeId}
+        setRemoveId={setRemoveId}
+        removeReason={removeReason}
+        setRemoveReason={setRemoveReason}
+        setReplacementDirty={setReplacementDirty}
+        setReplacementBusy={setReplacementBusy}
+        onFindReplacement={onFindReplacement}
+        onMemberAccounts={onMemberAccounts}
+        leaveDraft={leaveDraft}
+        run={run}
+        refreshAfterChange={refreshAfterChange}
+      />
+    ) : null;
   return (
     <section
       className={`strikes-workspace${selectedAccount ? " strikes-player-detail" : !selectedWar ? " strikes-activity-overview" : ""}`}
@@ -637,34 +699,21 @@ export default function StrikesWorkspace({
               onRetry={() => setWarRetry((value) => value + 1)}
             />
           )}
-          {selectedAccount || selectedWar ? (
-            <StrikesDetail
-              access={access}
-              busy={busy}
-              loading={loading}
-              error={error}
-              status={status}
-              overview={overview}
-              selectedAccount={selectedAccount}
-              accountStreak={accountStreak}
-              discordProfiles={discordProfiles}
-              detailHeading={detailHeading}
-              page={page}
-              setPage={setPage}
-              removeId={removeId}
-              setRemoveId={setRemoveId}
-              removeReason={removeReason}
-              setRemoveReason={setRemoveReason}
-              setReplacementDirty={setReplacementDirty}
-              setReplacementBusy={setReplacementBusy}
-              onFindReplacement={onFindReplacement}
-              onMemberAccounts={onMemberAccounts}
-              leaveDraft={leaveDraft}
-              run={run}
-              refreshAfterChange={refreshAfterChange}
-            />
+          {(selectedAccount || selectedWar) && !slotDetail ? (
+            detailContent
           ) : (
             <StrikeActivityRoster
+              detailSlot={slotDetail ? detailContent : undefined}
+              onSlotChoose={(account) =>
+                leaveDraft(() => {
+                  chooseAccount(account, true);
+                  onAccountRoute?.(account.player_tag);
+                  slotOrigins.current.add(
+                    slotRouteIdentity(account.player_tag),
+                  );
+                  memory?.set("slotOriginRoutes", slotOrigins.current);
+                })
+              }
               trackingSlotRef={setTrackingSlot}
               overviewActions={[
                 ...(access.add
@@ -696,7 +745,19 @@ export default function StrikesWorkspace({
               onRestored={() => {
                 returnPlayer.current = null;
               }}
-              onState={onActivityState}
+              onState={
+                onActivityState
+                  ? (state, push) => {
+                      onActivityState(state, push);
+                      if (slotDetail && selectedAccount) {
+                        slotOrigins.current.add(
+                          slotRouteIdentity(selectedAccount.player_tag, state),
+                        );
+                        memory?.set("slotOriginRoutes", slotOrigins.current);
+                      }
+                    }
+                  : undefined
+              }
               onChoose={(account) => {
                 leaveDraft(() => {
                   chooseAccount(account);

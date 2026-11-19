@@ -96,19 +96,11 @@ def test_slot_pool_includes_marked_zero_strike_and_excludes_one_or_two_strikes()
     assert tags(slot_pool(rows, fwa_tags=FWA)) == ['#M', '#C']
 
 
-def test_slot_pool_member_returns_all_their_fwa_accounts_whatever_the_strikes():
+def test_recruit_identity_never_changes_candidate_eligibility():
     from utils.replacement_view import slot_pool
     rows = [slot_row('#A', 0, member='7'), slot_row('#B', 1, member='7'),
             slot_row('#C', 5, member='8'), slot_row('#D', 0, member='7', clan='#NOTFWA')]
-    assert tags(slot_pool(rows, fwa_tags=FWA, member_tags={'#A', '#B', '#D'})) == ['#A', '#B']
-
-
-def test_slot_pool_member_matches_linked_tags_not_cached_member_id():
-    from utils.replacement_view import slot_pool
-    rows = [slot_row('#A', 0, member=None), slot_row('#B', 0, member='99'),
-            slot_row('#C', 0, member='7'), slot_row('#E', 0, member='7')]
-    assert tags(slot_pool(rows, fwa_tags=FWA, member_tags={'#A', '#B', '#E'})) == ['#A', '#B', '#E']
-    assert tags(slot_pool(rows, fwa_tags=FWA, member_tags=set())) == []
+    assert tags(slot_pool(rows, fwa_tags=FWA)) == ['#C']
 
 
 def test_slot_pool_excludes_non_fwa_and_respects_clan_filter():

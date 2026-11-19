@@ -30,7 +30,7 @@ class Profiles:
         self.rows = rows
         self.updates = []
 
-    def find(self, query):
+    def find(self, query, projection=None):
         from test_strike_streaks import matches
         return Cursor([row for row in self.rows if matches({'guild_id': 123, **row}, query)])
 

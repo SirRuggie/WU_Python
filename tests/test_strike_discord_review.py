@@ -20,6 +20,7 @@ class Collection:
 class Store:
     def __init__(self, clans):
         self.mongo = SimpleNamespace(clans=Collection(clans), strike_profiles=Collection([]))
+    async def replacement_profiles(self, *args, **kwargs): return []
     async def replacement(self, *args, **kwargs): return []
 
 
@@ -180,7 +181,7 @@ def test_member_and_clan_selects_are_owner_only_and_save_validated_values():
              patch.object(strikes, 'update_state', updates), \
              patch.object(strikes, 'replacement_panel', AsyncMock(return_value=['ok'])):
             await strikes.replacement_member(owner, 'token', mongo=object())
-        updates.assert_awaited_once_with(unittest_any(), 'token', {'$set': {'member_id': 123456789012345678, 'page': 0}})
+        updates.assert_awaited_once_with(unittest_any(), 'token', {'$set': {'member_id': 123456789012345678, 'links_member_id': None, 'page': 0}})
     asyncio.run(run())
 
 

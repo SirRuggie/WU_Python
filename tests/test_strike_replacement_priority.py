@@ -23,7 +23,7 @@ class Profiles:
     def __init__(self, rows):
         self.rows = rows
 
-    def find(self, query):
+    def find(self, query, projection=None):
         from test_strike_streaks import matches
         return Cursor([row.copy() for row in self.rows.values()
                        if matches({'guild_id': 123, **row}, query)])
@@ -44,7 +44,7 @@ class Clans:
         return {'tag': query['tag'], 'type': kind} if kind else None
 
     def find(self, query, projection=None):
-        return Cursor([{'tag': tag} for tag, kind in self.rows.items()
+        return Cursor([{'tag': tag, 'type': kind} for tag, kind in self.rows.items()
                        if not query or kind == query.get('type')])
 
 
@@ -146,7 +146,7 @@ def test_replacement_mutation_denied_before_player_or_database_lookup():
 def test_mark_stays_visible_when_roster_scan_is_stale():
     async def run():
         mongo = Mongo([{'player_tag': '#PC9YGL0JL', 'current_clan_tag': '#2UVGQU9',
-                        'roster_seen_at': datetime.now(timezone.utc) - timedelta(hours=2),
+                        'roster_seen_at': datetime.now(timezone.utc) - timedelta(hours=25),
                         'replacement_listed': True, 'replacement_clan_tag': '#2UVGQU9',
                         'replacement_priority': 'high'}])
         rows = await StrikeService(mongo).replacement(123)
@@ -192,7 +192,7 @@ def test_sync_roster_saves_town_hall_without_guessing_missing_values():
         class Profiles:
             def __init__(self):
                 self.writes = []
-            def find(self, query):
+            def find(self, query, projection=None):
                 return Cursor([])
             async def find_one(self, query):
                 return None
@@ -219,7 +219,7 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
 
     class Db:
         class Profiles:
-            def find(self, query):
+            def find(self, query, projection=None):
                 current, departed = query['$or']   # slots: FWA clans only, plus 48 h grace departures
                 assert current['current_clan_tag']['$in'] == ['#2UVGQU9']
                 assert departed['departed_clan_tag']['$in'] == ['#2UVGQU9']
@@ -232,10 +232,13 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
             return {'#PC9YGL0JL': {'weight': 149000}}
 
     class Ledger:
+        async def replacement_profiles(self, guild_id, clans):
+            assert len(clans) == 2
+            return [{'player_tag': '#PC9YGL0JL'}]
         async def replacement(self, guild_id, weight, **options):
             assert options['weights']['#PC9YGL0JL'] == (151000 if official == 'absent' else official)
             assert weight is None  # slot mode reads the non-matching rows (keeps the 48 h grace)
-            assert options['family_scope'] == 'all'
+            assert 'family_scope' not in options
             assert options['browse_all'] is True
             assert options['town_hall'] is None
             return []
@@ -262,7 +265,7 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
             db.execute("INSERT INTO clan_player_weights(tag,weight,revision,player_name,town_hall,last_clan_tag,last_clan_name,updated_at,actor_id) VALUES('#PC9YGL0JL',?,1,'Sample',16,'#2UVGQU9','Sample','2026-10-23T00:00:00+00:00','1')", (official,))
 
     async def run():
-        request = SimpleNamespace(method='GET', query={'weight': '149k' , 'scope': 'all',
+        request = SimpleNamespace(method='GET', query={'weight': '149k',
                                   'browse_all': 'true', 'town_hall': '16'},
                                   app={'providers': Provider(), 'store': store})
         with patch.object(strikes.shared, 'require_manage', permit), \
@@ -274,4 +277,4 @@ def test_dashboard_replacement_query_normalizes_weight_and_passes_filters(tmp_pa
     data = json.loads(asyncio.run(run()).text)
     assert data['matching_weight'] == 149000
     assert data['matching_weight_label'] == '149k'
-    assert data['scope'] == 'all' and data['town_hall'] == 16
+    assert 'scope' not in data and data['town_hall'] == 16
