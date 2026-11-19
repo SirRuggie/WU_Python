@@ -315,10 +315,6 @@
   .members-workspace {
     gap: var(--wu-space-2);
   }
-  .members-workspace
-    > .cwl-page-header
-    .cwl-page-header-title
-    > :not(.page-help-trigger),
   .members-search-label {
     position: absolute;
     width: 1px;
