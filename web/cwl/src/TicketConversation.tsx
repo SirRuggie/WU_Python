@@ -1,5 +1,6 @@
 import { formatDateTime, formatTime } from "./format";
 import SectionTabs from "./SectionTabs";
+import CwlPageHeader from "./CwlPageHeader";
 import { ArrowLeft, ArrowUpRight } from "lucide-react";
 import DiscordIdentity from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
@@ -133,35 +134,33 @@ export default function TicketConversation({
       <button onClick={onBack}>
         <ArrowLeft size={16} aria-hidden="true" /> Back to tickets
       </button>
-      <div className="page-head ticket-heading">
-        <div>
-          <p className="eyebrow">
-            {ticket.kind.toUpperCase()} · {statusName(ticket.status)} · Read
-            only
-          </p>
+      <CwlPageHeader
+        className="ticket-heading"
+        title={
           <h1 ref={heading} tabIndex={-1}>
             #{ticket.number} · {ticket.name}
           </h1>
-          <DiscordIdentity
-            userId={ticket.user_id}
-            displayName={ticket.name}
-            resolvedMember={null}
-          />
-          <p>Reply and handle this application in Discord.</p>
-          <small>Opened {when(ticket.created_at)}</small>
-          {ticket.flags.length > 0 && (
-            <div className="ticket-flag-details" aria-label="Applicant flags">
-              <h2>Applicant flags</h2>
-              {ticket.flags.map((item, index) => (
-                <p key={`${item.kind}-${index}`}>
-                  <strong>{item.label}</strong>
-                  {item.reason ? ` · ${item.reason}` : ""}
-                </p>
-              ))}
-            </div>
-          )}
+        }
+        description={`${ticket.kind.toUpperCase()} · ${statusName(ticket.status)} · Read only`}
+      />
+      <DiscordIdentity
+        userId={ticket.user_id}
+        displayName={ticket.name}
+        resolvedMember={null}
+      />
+      <p>Reply and handle this application in Discord.</p>
+      <small>Opened {when(ticket.created_at)}</small>
+      {ticket.flags.length > 0 && (
+        <div className="ticket-flag-details" aria-label="Applicant flags">
+          <h2>Applicant flags</h2>
+          {ticket.flags.map((item, index) => (
+            <p key={`${item.kind}-${index}`}>
+              <strong>{item.label}</strong>
+              {item.reason ? ` · ${item.reason}` : ""}
+            </p>
+          ))}
         </div>
-      </div>
+      )}
       <SectionTabs
         className="ticket-conversation-tabs section-tabs--flow"
         label="Ticket conversation"

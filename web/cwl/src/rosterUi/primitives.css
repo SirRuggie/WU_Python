@@ -87,8 +87,8 @@
 .roster-ui-status.is-warning,
 .roster-ui-chip.is-warning {
   border-color: var(--roster-warning);
-  background: var(--roster-warning);
-  color: var(--wu-bg);
+  background: transparent;
+  color: var(--roster-warning);
   -webkit-text-fill-color: currentColor;
 }
 .roster-ui-status.is-danger,

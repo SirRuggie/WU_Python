@@ -508,7 +508,6 @@ export default function DashboardHome(props: Props) {
     return (
       <div className="dashboard-home">
         <CwlPageHeader
-          eyebrow={false}
           title={
             <h1>Hey, {session.user.display_name || session.user.username}</h1>
           }
@@ -524,7 +523,6 @@ export default function DashboardHome(props: Props) {
   return (
     <div className="dashboard-home">
       <CwlPageHeader
-        eyebrow={false}
         title={
           <h1>Hey, {session.user.display_name || session.user.username}</h1>
         }
@@ -947,7 +945,6 @@ export default function DashboardHome(props: Props) {
                     </small>
                   </div>
                   <button
-                    className="primary"
                     disabled={!canSignup}
                     onClick={() =>
                       onStart("main", selected, data.accounts, data.signups)
@@ -956,7 +953,6 @@ export default function DashboardHome(props: Props) {
                     Main CWL →
                   </button>
                   <button
-                    className="primary"
                     disabled={!canSignup}
                     onClick={() =>
                       onStart("lazy", selected, data.accounts, data.signups)
@@ -974,9 +970,7 @@ export default function DashboardHome(props: Props) {
         <details className="hub-help" id="home-account-help">
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
-          <p>
-            To move or withdraw a signup, go to My signups.
-          </p>
+          <p>To move or withdraw a signup, go to My signups.</p>
           <button onClick={() => onNavigate("saved")}>Open My signups →</button>
         </details>
         {session.can_edit && (

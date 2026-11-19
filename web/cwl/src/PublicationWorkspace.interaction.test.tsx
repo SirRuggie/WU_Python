@@ -63,6 +63,11 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     root.render(
       <DashboardPermissions.Provider value={{ owner: true, permissions: [] }}>
         <PublicationWorkspace
+          steps={
+            <nav aria-label="Fixture roster steps">
+              Build · Finalize · Announce
+            </nav>
+          }
           seasonId="1"
           seasons={
             [{ id: 1, label: "November 2026", status: "draft" }] as never
@@ -79,9 +84,18 @@ it("Announcements skips comparison; readiness gates publishing; Cancel and stale
     false,
   );
   await act(async () => render("review"));
+  const header = host.querySelector(".cwl-page-header")!;
+  const steps = host.querySelector('nav[aria-label="Fixture roster steps"]')!;
+  expect(
+    header.compareDocumentPosition(steps) & Node.DOCUMENT_POSITION_FOLLOWING,
+  ).toBeTruthy();
   const button = [...host.querySelectorAll("button")].find(
     (e) => e.textContent === "Publish updated roster",
   )!;
+  expect(button.classList.contains("is-primary")).toBe(true);
+  expect(
+    host.querySelectorAll("button.primary, button.is-primary"),
+  ).toHaveLength(1);
   expect(button.disabled).toBe(true);
   expect(host.querySelector("#publish-blocked-reason")).toBeNull();
   expect(host.textContent).toContain("Loading changes…");
@@ -430,9 +444,22 @@ it.each([
         acknowledged: false,
       });
       expect(button.disabled).toBe(!!reason);
+      expect(button.classList.contains("is-primary")).toBe(true);
+      expect(
+        host.querySelectorAll("button.primary, button.is-primary"),
+      ).toHaveLength(1);
       expect(
         host.querySelector("#publish-blocked-reason")?.textContent || "",
       ).toBe(reason);
+      const warning = host.querySelector("#publish-blocked-reason");
+      expect(warning?.classList.contains("primary") || false).toBe(false);
+      expect(warning?.classList.contains("is-primary") || false).toBe(false);
+      if (config.unplaced) {
+        expect(
+          host.querySelector<HTMLInputElement>(".publication-ack input")
+            ?.checked,
+        ).toBe(false);
+      }
     } finally {
       await act(async () => root.unmount());
       host.remove();

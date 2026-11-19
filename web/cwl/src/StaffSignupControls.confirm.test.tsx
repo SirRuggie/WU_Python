@@ -69,6 +69,7 @@ beforeEach(async () => {
   await act(async () =>
     root.render(
       <StaffSignupControls
+        primaryAction
         season={{
           id: 1,
           label: "November",
@@ -81,6 +82,10 @@ beforeEach(async () => {
       />,
     ),
   );
+  expect(button("Add signup").classList.contains("is-primary")).toBe(true);
+  expect(
+    host.querySelectorAll("button.primary, button.is-primary"),
+  ).toHaveLength(1);
   await act(async () => button("Add signup").click());
   await act(async () => button("Choose fixture member").click());
 });

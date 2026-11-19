@@ -1,4 +1,4 @@
-import type { Dispatch, RefObject, SetStateAction } from "react";
+import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { ArrowRight, Coffee, Swords } from "lucide-react";
 import AccountLinkHelp from "./AccountLinkHelp";
 import AttentionSummary from "./AttentionSummary";
@@ -29,6 +29,7 @@ const poolName = (pool: Pool | null) =>
   pool === "lazy" ? "Lazy CWL" : pool === "main" ? "Main CWL" : "CWL";
 
 type SignupPageProps = {
+  steps?: ReactNode;
   accountError: string;
   accounts: Account[];
   accountsReady: boolean;
@@ -153,22 +154,24 @@ export default function SignupPage({
   visibleAccounts,
   withdraw,
   joinRequired,
+  steps,
 }: SignupPageProps) {
   return (
     <>
       <CwlPageHeader
         className="member-signup-head"
         title={<h1>{signupPanel === "saved" ? "My signups" : "Sign up"}</h1>}
+        description={
+          signupPanel === "saved"
+            ? "Your saved CWL signups for this season."
+            : activeCompletion
+              ? "Your season signup is saved."
+              : season && !memberSignupsOpen(season)
+                ? "View your saved signups and CWL clans."
+                : "Sign up your accounts for CWL. Staff will select your CWL clans."
+        }
       />
-      <p className="cwl-page-description">
-        {signupPanel === "saved"
-          ? "Your saved CWL signups for this season."
-          : activeCompletion
-            ? "Your season signup is saved."
-            : season && !memberSignupsOpen(season)
-              ? "View your saved signups and CWL clans."
-              : "Sign up your accounts for CWL. Staff will select your CWL clans."}
-      </p>
+      {steps}
       {((seasonError && !seasonsKnown) ||
         (!activeCompletion && (dataError || accountError))) && (
         <AttentionSummary

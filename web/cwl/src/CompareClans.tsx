@@ -247,7 +247,7 @@ export default function CompareClans({
   const filterCount = leagues.length + townHalls.length;
   return (
     <section
-      className="compare-workspace card roster-ui"
+      className="compare-workspace card roster-ui page-wide"
       aria-labelledby="compare-title"
     >
       <header className="compare-header">

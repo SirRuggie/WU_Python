@@ -354,9 +354,9 @@
   -webkit-text-fill-color: currentColor;
 }
 .compare-account .compare-tag.is-warning {
-  background: var(--roster-warning);
+  background: transparent;
   border-color: var(--roster-warning);
-  color: var(--wu-bg);
+  color: var(--roster-warning);
   -webkit-text-fill-color: currentColor;
 }
 :is(.roster-player-card, .compare-account, .declaration-player)

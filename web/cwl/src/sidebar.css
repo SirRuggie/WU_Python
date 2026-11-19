@@ -227,10 +227,13 @@ div.shell {
 }
 
 .shell .workspace main {
-  width: min(100%, 1520px);
-  max-width: none;
-  margin: 0 auto 0 0;
+  width: 100%;
+  max-width: var(--wu-page-width);
+  margin: 0;
   padding: var(--wu-space-5) var(--wu-space-6) 72px;
+}
+.shell .workspace main:has(.page-wide) {
+  max-width: var(--wu-page-width-wide);
 }
 .shell .topbar {
   height: 70px;
@@ -311,6 +314,9 @@ div.shell {
     height: auto;
     min-height: 64px;
     padding: 0 var(--wu-space-3);
+  }
+  .shell .topbar > div > strong[data-page-heading-visible="true"] {
+    display: none;
   }
   .shell .topbar > div > strong {
     display: -webkit-box;

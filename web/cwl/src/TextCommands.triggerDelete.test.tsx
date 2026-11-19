@@ -93,6 +93,34 @@ async function mount(commands: Command[]) {
   return { host, root };
 }
 
+it("keeps one task-forward gold action across command list and editor states", async () => {
+  const { host, root } = await mount([oldCommand]);
+  const primary = () =>
+    host.querySelectorAll("button.primary, button.is-primary");
+  try {
+    expect(primary()).toHaveLength(1);
+    expect(primary()[0].textContent?.trim()).toBe("+ New command");
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>(".text-command-rows button")!
+        .click(),
+    );
+    expect(primary()).toHaveLength(0);
+    const checkbox = [
+      ...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),
+    ].find((input) =>
+      input.parentElement?.textContent?.includes("Delete the trigger message"),
+    )!;
+    await act(async () => checkbox.click());
+    expect(primary()).toHaveLength(1);
+    expect(primary()[0].textContent?.trim()).toBe("Save command");
+    expect(api.mock.calls.filter((call) => call[1])).toHaveLength(0);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 beforeEach(() => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   api.mockReset();
@@ -111,7 +139,9 @@ it("starts a new command with trigger deletion enabled and sends that choice", a
   const { host, root } = await mount([]);
   try {
     await act(async () => {
-      (host.querySelector(".page-head .primary") as HTMLButtonElement).click();
+      (
+        host.querySelector(".cwl-page-header .primary") as HTMLButtonElement
+      ).click();
     });
     const checkbox = [
       ...host.querySelectorAll<HTMLInputElement>('input[type="checkbox"]'),

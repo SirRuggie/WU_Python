@@ -1,7 +1,3 @@
-.clan-activity-workspace {
-  max-width: 1400px;
-  margin: auto;
-}
 .activity-card-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -58,15 +54,15 @@
   -webkit-text-fill-color: currentColor;
 }
 .state-preparation {
-  color: var(--wu-bg);
-  background: var(--wu-warning);
+  color: var(--wu-warning);
+  background: transparent;
   -webkit-text-fill-color: currentColor;
 }
 .state-private,
 .state-error,
 .state-awaitingResult {
-  color: var(--wu-bg);
-  background: var(--wu-warning);
+  color: var(--wu-warning);
+  background: transparent;
   -webkit-text-fill-color: currentColor;
 }
 .calendar-title {

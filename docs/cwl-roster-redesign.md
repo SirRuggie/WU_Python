@@ -1,5 +1,33 @@
 # CWL roster redesign — spec and status
 
+## UI audit 3 B2 — page frame and one primary (248), November 19, 2026
+
+Status: implementation under review; no release claim. Ruggie accepted D1/D2 in
+the 248 prompt. The batch is frontend layout, header order and button styling
+only, based on the released 241/242/247 integration. Shared content widths are
+1200px and the named 1440px wide opt-in, aligned to the sidebar. One shared
+header replaces legacy wrappers, descriptions sit below titles, tabs and steps
+follow the title, and the repeated eyebrow/equal breadcrumb are removed. On
+phones the topbar title appears after the page h1 leaves view, using
+IntersectionObserver.
+
+Each page or task panel has at most one gold-filled next action; messages and
+status have no gold fill. Directory Add/New and dirty-editor Save are separate
+states. Build highlights Add signup, Finalize retains Publish and its unchanged
+acknowledgement/permission/revision/confirmation gates, and Seasons highlights
+Finish when available or Create otherwise. The released 241 replacements flow
+is an automatic inline search with no Find button; 248 preserves it. Gold titles,
+Home accents, selected-item text/edges, key links and danger actions remain.
+
+Validation and limits: focused component checks cover primary counts and
+directory/editor transitions without writes, and existing publication failure
+and confirmation regressions remain in scope. Full integrated checks and the
+isolated 360×800/1440×1000 all-sidebar review are recorded with the 248 report;
+they are not a physical-phone, complete assistive-technology or live Discord
+delivery claim. The external handoff DESIGN.md stays unedited; proposed lines
+are listed in READY. Later: any optional gold-outline secondary style requires a
+separate decision; its screenshots are report-only.
+
 ## Color tokens 1a — decisions, 2026-11-04
 
 Status: **1a in review**. Global `--wu-*` colors live in
@@ -1495,10 +1523,10 @@ Later:
   bonus-status field.
 - (b) "Awarded in Clash" tick. Needs a saved field.
 
-
 ## Exports & history D2–D5 (2026-11-12)
 
 Prompt 230 implements the approved history prerequisites before 231/232:
+
 - D2: one-time import creates missing archived YYYY-MM history seasons with
   closed signups, existing participation month binding, and only that month's
   TSV Lazy hosting clans. Existing clans keep their names; new directory clans
@@ -1521,7 +1549,6 @@ Status: implementation prepared for independent refutation and native browser
 fixture review. No production data import, code release or Discord message was
 performed. Later: Exports & history 231 and 232 remain separate batches.
 
-
 Prompt230 rework (Shaka1014): only seasons newly created by the importer receive
 `seasons.history_only=1` (additive boolean, existing seasons default0). Reused
 months are never marked. Normal new-season copies retain MAX-season ordering
@@ -1532,7 +1559,6 @@ filter already imported month/tag rows inside the transaction and make no
 changes, including to hosting clans/rules removed or edited by staff. New import
 rows preserve an existing Lazy season-clan rule and its other settings. Rules & count names the selected
 clan's actual saved sit-out in CWL months, or “No sit-out after a win” for None.
-
 
 Shaka1015 (reused-month pool conflicts): for NEW imported month/tag rows, an
 existing non-Lazy `lineup_rule` blocks the entire import. Dry run lists every
@@ -1817,8 +1843,7 @@ Ruggie's decisions, taken in thread:
 Phases (each its own branch and draft PR): #352 A, #355 B, #354 C, #357 D,
 #356 E, #353 F1; F2 adds URL state for page tabs and filters, LoadError for the
 remaining channel retries, human-readable App.tsx and DiscordPreview source, and
-the shared rules in `docs/roster-ui-patterns.md`. Frontend only, except decision
-2.
+the shared rules in `docs/roster-ui-patterns.md`. Frontend only, except decision 2.
 
 ## Backend audit239 Part M — background observation (2026-11-17)
 

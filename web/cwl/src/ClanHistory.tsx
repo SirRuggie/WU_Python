@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import HistoryTime from "./clanManagement/HistoryTime";
+import CwlPageHeader from "./CwlPageHeader";
 
 type Event = {
   id: string;
@@ -99,18 +100,17 @@ export default function ClanHistory({
   }
   return (
     <section aria-label="Clan settings history" className="clan-history">
-      <div className="page-head">
-        <div>
-          <h2>History</h2>
-          <p>Review earlier clan settings or restore a removed clan.</p>
-        </div>
+      <CwlPageHeader
+        title={<h2>History</h2>}
+        description="Review earlier clan settings or restore a removed clan."
+      >
         <button
           disabled={busy || loading}
           onClick={() => setRefresh((v) => v + 1)}
         >
           Refresh history
         </button>
-      </div>
+      </CwlPageHeader>
       <div className="clan-history-filters">
         <label>
           Find a clan

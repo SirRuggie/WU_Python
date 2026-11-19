@@ -288,7 +288,7 @@ export default function AccessSettings({
               People &amp; roles
             </h2>
             <button
-              className="primary"
+              className={editing ? undefined : "primary"}
               disabled={busy || loading}
               onClick={() => edit()}
             >
@@ -682,7 +682,7 @@ export default function AccessSettings({
                             Reset
                           </button>
                           <button
-                            className="primary"
+                            className={dirty ? "primary" : undefined}
                             disabled={
                               busy ||
                               loading ||

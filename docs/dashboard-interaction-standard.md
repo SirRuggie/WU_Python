@@ -67,6 +67,31 @@ not claims of testing private installations of other products.
 
 ## Review before shipping
 
+### Shared page hierarchy and primary actions (248)
+
+Use a sidebar-aligned 1200px page frame. The five named wide data surfaces
+(Build roster, Compare clans, participation list, Events, and Strikes and
+replacements table) opt into 1440px with `page-wide` on their root; retain inner
+text and form limits. `CwlPageHeader` places the title and help first, its muted
+description below, and actions to the right or below on phones. Workflow steps
+and tabs follow the title block. Omit the repeated group eyebrow and an equal
+breadcrumb/title. On phones up to 650px, IntersectionObserver reveals the
+topbar title after the page h1 leaves view, without animation or scroll handlers.
+
+Each page or task panel has at most one gold-filled next action. Keep other
+buttons normal and danger actions destructive. Messages, warnings and status
+never use gold fill; gold titles, Home accents, selected-item text/edges and key
+links remain. An editor highlights Save only when dirty. A directory may instead
+highlight Add or New; do not show both as competing primaries. Preserve the
+Finalize acknowledgement, publish permission, revision and confirmation gates.
+The existing automatic replacements search needs no extra submit control.
+
+Review the rendered narrow and wide states, including directory and dirty-editor
+states, rather than counting source strings. Record every removed gold fill,
+title alignment, title/step/focus order, unchanged fixture counts, and any
+unverified device or assistive-technology scope. The optional secondary gold
+outline is confined to explicitly labeled report screenshots.
+
 Run the feature's automated quality gate, then verify the actual rendered UI with
 isolated data. For clan management use `./.venv/bin/python tools/check_war_reminders.py`.
 
@@ -648,7 +673,7 @@ of unsent parts only; uncertain/interrupted delivery never retries automatically
 No medals are awarded by the dashboard. The old slash command now opens this
 workflow instead of running a second weighted, nonpersistent lottery.
 
-Storage: new additive bonus_raffle_* tables in the existing SQLite database,
+Storage: new additive `bonus_raffle_*` tables in the existing SQLite database,
 owned by utils/cwl_bonus_raffle_store.py. Existing bonus confirmations and routes
 remain intact, and approval records winners in existing confirmation history.
 Shared random selection/rendering lives in utils; Discord REST transport moved

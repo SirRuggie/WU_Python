@@ -291,7 +291,7 @@
 }
 
 /* Shared season picker, with a wider progress list for clan weights. */
-.weight-trial .page-head.cwl-page-header.weight-trial-header > .roster-menu {
+.weight-trial .cwl-page-header.weight-trial-header > .roster-menu {
   flex: 0 1 300px;
   min-width: 200px;
 }
@@ -311,12 +311,12 @@
   min-height: 52px;
 }
 @media (max-width: 650px) {
-  .weight-trial .page-head.cwl-page-header.weight-trial-header {
+  .weight-trial .cwl-page-header.weight-trial-header {
     height: auto;
     flex-direction: column;
     align-items: stretch;
   }
-  .weight-trial .page-head.cwl-page-header.weight-trial-header > .roster-menu {
+  .weight-trial .cwl-page-header.weight-trial-header > .roster-menu {
     width: 100%;
     max-width: none;
     flex: none;

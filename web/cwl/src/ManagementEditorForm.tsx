@@ -155,7 +155,7 @@ export default function ManagementEditorForm({
                 </button>
               )}
             <button
-              className="primary"
+              className={dirty ? "primary" : undefined}
               type="submit"
               disabled={
                 busy || !dirty || publishDirty || conflict || !!statusUrl

@@ -1,6 +1,3 @@
-.application-index {
-  max-width: 960px;
-}
 .application-index > label {
   display: grid;
   gap: var(--wu-space-2);

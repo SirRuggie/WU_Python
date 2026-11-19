@@ -27,7 +27,7 @@ export default function EventsWorkspace({
     ? "UTC"
     : Intl.DateTimeFormat().resolvedOptions().timeZone;
   return (
-    <section className="clan-activity-workspace events-workspace">
+    <section className="clan-activity-workspace events-workspace page-wide">
       <CwlPageHeader
         title={<h1>Events</h1>}
         description={
@@ -145,14 +145,15 @@ export default function EventsWorkspace({
         </p>
       </details>
       <section className="clan-event-status" aria-labelledby="clan-raids-title">
-        <div className="page-head">
-          <div>
-            <h2 id="clan-raids-title">Clan raid activity</h2>
-            <p>
+        <CwlPageHeader
+          title={<h2 id="clan-raids-title">Clan raid activity</h2>}
+          description={
+            <>
               Whole-clan progress from the game API. A scheduled weekend does
               not mean a clan has started raiding.
-            </p>
-          </div>
+            </>
+          }
+        >
           {canEdit && (
             <label>
               Clans
@@ -167,7 +168,7 @@ export default function EventsWorkspace({
               </select>
             </label>
           )}
-        </div>
+        </CwlPageHeader>
         <ClanActivityStatus
           error={error}
           busy={busy}

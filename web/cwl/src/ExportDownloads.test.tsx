@@ -74,6 +74,14 @@ it("hides all workbook controls without winner access", async () => {
   expect(host.textContent).toBe("");
   expect(fetchReadWithRetry).not.toHaveBeenCalled();
 });
+it("keeps Download season as the only gold action with range controls open", async () => {
+  await render();
+  await open();
+  const primary = host.querySelectorAll("button.primary, button.is-primary");
+  expect(primary).toHaveLength(1);
+  expect(primary[0].textContent).toBe("Download season (Excel)");
+  expect(fetchReadWithRetry).not.toHaveBeenCalled();
+});
 it("opens quiet range controls without a fetch and validates calendar span and order", async () => {
   await render();
   expect(host.querySelector("select")).toBeNull();

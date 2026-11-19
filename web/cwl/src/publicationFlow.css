@@ -92,17 +92,17 @@
   font-variant-numeric: tabular-nums;
 }
 .finalize-review .publication-capacity-warning:not(:disabled) {
-  background: var(--roster-warning);
+  background: transparent;
   border-color: var(--roster-warning);
-  color: var(--wu-bg);
-  -webkit-text-fill-color: var(--wu-bg);
+  color: var(--roster-warning);
+  -webkit-text-fill-color: currentColor;
 }
 @media (hover: hover) and (pointer: fine) {
   .finalize-review .publication-capacity-warning:hover:not(:disabled) {
-    background: var(--roster-warning);
+    background: var(--roster-surface-raised);
     border-color: var(--roster-warning);
-    color: var(--wu-bg);
-    -webkit-text-fill-color: var(--wu-bg);
+    color: var(--roster-warning);
+    -webkit-text-fill-color: currentColor;
   }
 }
 .finalize-review .publication-finalize {
@@ -114,9 +114,9 @@
 .finalize-review .inline-reason {
   padding: calc(var(--wu-space-3) - 1px);
   border: 1px solid var(--wu-warning);
-  background: var(--wu-warning);
-  color: var(--wu-bg);
-  -webkit-text-fill-color: var(--wu-bg);
+  background: transparent;
+  color: var(--wu-warning);
+  -webkit-text-fill-color: currentColor;
 }
 .finalize-review .publication-finalize > .inline-reason {
   margin: 0;
@@ -267,7 +267,7 @@
   clip-path: inset(50%);
   white-space: nowrap;
 }
-.finalize-review > .page-head {
+.finalize-review > .cwl-page-header {
   margin-bottom: var(--wu-space-5);
 }
 .finalize-review .publication-change-list > p {

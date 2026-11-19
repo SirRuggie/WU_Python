@@ -1,6 +1,4 @@
 .server-management {
-  max-width: 1100px;
-  margin: 0 auto;
   min-width: 0;
 }
 .server-management button:focus-visible,

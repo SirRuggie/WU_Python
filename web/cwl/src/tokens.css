@@ -23,6 +23,8 @@
 
 /* Helmet gold is the highlight; brand red frames the shell, status colors stay separate. */
 :root {
+  --wu-page-width: 1200px;
+  --wu-page-width-wide: 1440px;
   --wu-bg: #0c0c0e;
   --wu-surface: #19191d;
   --wu-surface-raised: #242429;

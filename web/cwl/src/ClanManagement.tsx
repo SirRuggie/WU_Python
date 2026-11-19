@@ -421,6 +421,7 @@ export default function ClanManagement({
         description="Set up each clan and its war reminders."
       >
         <button
+          className={!draft && !adding ? "primary" : undefined}
           disabled={disabled}
           onClick={async () => {
             if (
@@ -588,13 +589,14 @@ export default function ClanManagement({
                     ))}
                   </nav>
                 )}
-                <div className="page-head">
-                  <div>
+                <CwlPageHeader
+                  title={
                     <h2 ref={headingRef} tabIndex={-1}>
                       {draft.name}
                     </h2>
-                    <small>{draft.tag}</small>
-                  </div>
+                  }
+                  description={draft.tag}
+                >
                   <button
                     disabled={disabled}
                     onClick={async () => {
@@ -609,7 +611,7 @@ export default function ClanManagement({
                   >
                     Refresh
                   </button>
-                </div>
+                </CwlPageHeader>
                 <ClanSettingsNavigation
                   sections={sections}
                   value={section}
@@ -701,7 +703,7 @@ export default function ClanManagement({
                     unsaved changes
                   </span>
                   <button
-                    className="primary"
+                    className={dirty ? "primary" : undefined}
                     disabled={disabled || !dirty}
                     onClick={() => void save()}
                   >
