@@ -26,6 +26,9 @@ def test_panel_menu_is_persistent_and_lists_registry_bases(snapshot, monkeypatch
     note = next(text for text in texts if 'TH16 and higher' in text)
     assert note.startswith('<:') and '- **Non-merged**' in note and '- **Merged**' in note
     assert texts[-1] == '-# Only you can see your base.'
+    container = built(bases_panel.panel_components())[0]
+    assert container['components'][0]['type'] == hikari.ComponentType.MEDIA_GALLERY
+    assert 'FWA_Bases_Banner.jpg' in str(container['components'][0])
     action = registered_functions['fwa_bases_panel']
     assert action.no_return and not action.preload_state and not action.requires_state
 
