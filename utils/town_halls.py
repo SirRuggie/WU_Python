@@ -247,7 +247,7 @@ def town_hall_emoji(level):
     return emoji_markup(_snapshot, level)
 
 
-async def refresh_snapshot(mongo, guild_id, *, log_failure=True):
+async def refresh_snapshot(mongo, guild_id, *, log_failure=True, expected_revision=None):
     """Refresh without writing; errors preserve the last good snapshot.
 
     Startup and the five-minute worker schedule call this same owner. Startup
@@ -261,6 +261,8 @@ async def refresh_snapshot(mongo, guild_id, *, log_failure=True):
     except Exception:
         if log_failure:
             _LOG.warning("Town Halls could not refresh; keeping the last saved snapshot.")
+        return False
+    if expected_revision is not None and doc["revision"] != expected_revision:
         return False
     guild = str(guild_id)
     if _snapshot_guild == guild and _snapshot is not None and doc["revision"] < _snapshot["revision"]:

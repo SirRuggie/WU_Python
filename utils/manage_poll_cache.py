@@ -13,6 +13,8 @@ class PollState:
     heartbeat_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     band_at: float = float("-inf")
     band_values: dict | None = None
+    town_halls_at: float = float("-inf")
+    town_halls_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     images_at: float = float("-inf")
     images_lock: asyncio.Lock = field(default_factory=asyncio.Lock)
     activation_at: float = float("-inf")

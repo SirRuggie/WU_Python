@@ -143,6 +143,6 @@ SECTION_SCOPE = {
     **dict.fromkeys(('recruit', 'recruitment_questions', 'recruitment_staff_thread'), 'recruitment'),
     **dict.fromkeys(('ticket_settings', 'ticket_testing'), 'tickets'),
     'roles': 'member_roles', 'band_monitor': 'server_tools', 'world_clocks': 'server_tools',
-    **dict.fromkeys(('fwa_war_messages', 'fwa_blacklist', 'fwa_bases', 'fwa_points', 'fwa_sync', 'fwa_weight'), 'fwa'),
+    **dict.fromkeys(('fwa_war_messages', 'fwa_blacklist', 'fwa_bases', 'fwa_points', 'fwa_sync', 'fwa_weight', 'town_halls'), 'fwa'),
     'cwl': 'cwl_reminders', 'cwl_rosters': 'cwl_reminders',
 }
