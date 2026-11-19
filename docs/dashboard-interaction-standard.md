@@ -87,7 +87,9 @@ navigation and existing unsaved-change guards; leave modified and middle clicks
 to the browser. Use `SectionTabs` for content panels with manual activation,
 roving focus, Left/Right/Home/End, selected state and labeled panels. Return the
 selected tab to the tab order when focus leaves the strip. List-only filters
-(CWL pool lists, Build account pool and war lineup side) stay segmented controls.
+(other CWL pool lists, Build account pool and war lineup side) stay segmented
+controls. Results and Bonus pool changes switch guarded workflow panels and use
+actual linked tabs with empty hidden inactive panel shells.
 Build workspace tab, Results pool and Family view are URL state; selecting a tab
 replaces the current history entry so Back leaves the page. Unknown values use
 the documented fallback. Existing saved links and permission gates still apply.

@@ -120,3 +120,24 @@ it("retains pressed-button semantics for list-only filters", async () => {
     await act(async () => root.unmount());
   }
 });
+
+it("keeps a container ordinary when its tablist is unavailable", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  const host = document.createElement("div"),
+    root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <SectionTabPanel id="unavailable" value="edit" enabled={false}>
+          Editor
+        </SectionTabPanel>,
+      ),
+    );
+    const container = host.firstElementChild!;
+    for (const attr of ["role", "id", "aria-labelledby", "tabindex"])
+      expect(container.hasAttribute(attr)).toBe(false);
+    expect(container.textContent).toBe("Editor");
+  } finally {
+    await act(async () => root.unmount());
+  }
+});

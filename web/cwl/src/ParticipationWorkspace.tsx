@@ -1,3 +1,4 @@
+import { SectionTabPanel } from "./SectionTabs";
 import EmptyState from "./EmptyState";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import LoadError from "./LoadError";
@@ -682,6 +683,8 @@ export default function ParticipationWorkspace({
             </div>
           )}
           <CwlPoolTabs
+            mode="tabs"
+            id="participation-pools"
             value={pool}
             disabled={controlsLocked}
             onChange={(next) => {
@@ -690,171 +693,176 @@ export default function ParticipationWorkspace({
               emit({ pool: next, clan: "all" }, false);
             }}
           />
-          {clanChoices.length > 0 && (
-            <BonusClanSelect
-              clans={clanChoices}
-              selected={clan}
-              pool={pool}
-              status={status}
-              opensSteps={!!onBonus}
-              disabled={controlsLocked}
-              onChange={chooseClan}
-            />
-          )}
-          {/* Bonuses access opens the steps; the send itself needs cwl_send. */}
-          {pool === "lazy" && onBonus && status && (
-            <LazyAnnouncementCard
-              seasonId={seasonId}
-              clans={status.pools.lazy}
-              clanTag={clan === "all" ? "" : clan}
-              archived={!!archived}
-              disabled={controlsLocked}
-              onSent={() => void loadStatus(seasonId)}
-            />
-          )}
-          {pool === "lazy" && onBonus && clan === "all" && statusFailed && (
-            <LoadError
-              message={statusError || "Lazy announcement could not load."}
-              onRetry={() => void loadStatus(seasonId)}
-            />
-          )}
-          <div className="participation-toolbar">
-            <label>
-              Find a player
-              <input
-                type="search"
-                name="search"
-                autoComplete="off"
-                spellCheck={false}
-                value={search}
+          <SectionTabPanel id="participation-pools" value={pool}>
+            {clanChoices.length > 0 && (
+              <BonusClanSelect
+                clans={clanChoices}
+                selected={clan}
+                pool={pool}
+                status={status}
+                opensSteps={!!onBonus}
                 disabled={controlsLocked}
-                onChange={(event) => setSearch(event.target.value)}
-                placeholder="Name or #TAG…"
+                onChange={chooseClan}
               />
-            </label>
-            <label>
-              Sort
-              <select
-                name="sort"
-                autoComplete="off"
-                value={sort}
+            )}
+            {/* Bonuses access opens the steps; the send itself needs cwl_send. */}
+            {pool === "lazy" && onBonus && status && (
+              <LazyAnnouncementCard
+                seasonId={seasonId}
+                clans={status.pools.lazy}
+                clanTag={clan === "all" ? "" : clan}
+                archived={!!archived}
                 disabled={controlsLocked}
-                onChange={(event) => {
-                  const next = event.target.value as ResultsSort;
-                  setSort(next);
-                  emit({ sort: next });
-                }}
-              >
-                <option value="name">Name A–Z</option>
-                <option value="attacks-desc">Attacks high to low</option>
-                <option value="stars-desc">Stars high to low</option>
-              </select>
-            </label>
-          </div>
-          {ruleShown && (
-            <FilterChips
-              label="Outcome"
-              className="participation-outcomes filter-chips--flow"
-              variant="pill"
-              value={activeOutcome}
-              disabled={controlsLocked}
-              options={(["all", ...outcomeOrder] as const)
-                .filter(
-                  (value) =>
-                    !["did_not_join", "filler", "not_assigned"].includes(
-                      value,
-                    ) ||
-                    counts[value] > 0 ||
-                    activeOutcome === value,
-                )
-                .map((value) => ({
-                  value,
-                  label: value === "all" ? "All" : outcomeLabels[value],
-                  count: counts[value],
-                }))}
-              onChange={(next) => {
-                setOutcome(next);
-                emit({ outcome: next });
-              }}
-            />
-          )}
-          <div className="participation-list-heading">
-            <strong>Players</strong>
-            <span>
-              {visible.length === poolAccounts.length
-                ? countText(poolAccounts.length, "player")
-                : `${visible.length} of ${countText(poolAccounts.length, "player")}`}{" "}
-              · {poolLabel}
-            </span>
-          </div>
-          {data.accounts.length ? (
-            <>
-              <ul className="participation-list">
-                {sorted.map((account) => (
-                  <li
-                    key={`${seasonId}:${recordEpoch}:${account.tag}`}
-                    hidden={!visibleTags.has(account.tag)}
-                  >
-                    <ParticipationRecord
-                      account={account}
-                      mainMinimum={mainMinimum}
-                      publicationVersion={data.publication_version}
-                      readonly={!!archived}
-                      locked={
-                        activeEditorTag === account.tag
-                          ? ownRecordLocked
-                          : writesLocked
-                      }
-                      open={activeEditorTag === account.tag}
-                      onOpen={() => setActiveEditorTag(account.tag)}
-                      onClose={() =>
-                        setActiveEditorTag((current) =>
-                          current === account.tag ? null : current,
-                        )
-                      }
-                      onSave={save}
-                      onReset={resetToSource}
-                      onDirty={onDirty}
-                      onAddStrike={onAddStrike}
-                      infractions={onBonus ? infractions : undefined}
-                    />
-                  </li>
-                ))}
-              </ul>
-              {!visible.length && (
-                <EmptyState
-                  title="No matching players"
-                  line="Select another pool or change the filters."
+                onSent={() => void loadStatus(seasonId)}
+              />
+            )}
+            {pool === "lazy" && onBonus && clan === "all" && statusFailed && (
+              <LoadError
+                message={statusError || "Lazy announcement could not load."}
+                onRetry={() => void loadStatus(seasonId)}
+              />
+            )}
+            <div className="participation-toolbar">
+              <label>
+                Find a player
+                <input
+                  type="search"
+                  name="search"
+                  autoComplete="off"
+                  spellCheck={false}
+                  value={search}
+                  disabled={controlsLocked}
+                  onChange={(event) => setSearch(event.target.value)}
+                  placeholder="Name or #TAG…"
                 />
-              )}
-            </>
-          ) : (
-            <EmptyState
-              title="No signup accounts yet"
-              line="Current signups will appear here."
-            />
-          )}
-          {lastPage > 0 && (
-            <nav className="roster-pagination" aria-label="Participation pages">
-              <button
-                type="button"
-                disabled={controlsLocked || currentPage === 0}
-                onClick={() => setPage(currentPage - 1)}
-              >
-                Previous
-              </button>
+              </label>
+              <label>
+                Sort
+                <select
+                  name="sort"
+                  autoComplete="off"
+                  value={sort}
+                  disabled={controlsLocked}
+                  onChange={(event) => {
+                    const next = event.target.value as ResultsSort;
+                    setSort(next);
+                    emit({ sort: next });
+                  }}
+                >
+                  <option value="name">Name A–Z</option>
+                  <option value="attacks-desc">Attacks high to low</option>
+                  <option value="stars-desc">Stars high to low</option>
+                </select>
+              </label>
+            </div>
+            {ruleShown && (
+              <FilterChips
+                label="Outcome"
+                className="participation-outcomes filter-chips--flow"
+                variant="pill"
+                value={activeOutcome}
+                disabled={controlsLocked}
+                options={(["all", ...outcomeOrder] as const)
+                  .filter(
+                    (value) =>
+                      !["did_not_join", "filler", "not_assigned"].includes(
+                        value,
+                      ) ||
+                      counts[value] > 0 ||
+                      activeOutcome === value,
+                  )
+                  .map((value) => ({
+                    value,
+                    label: value === "all" ? "All" : outcomeLabels[value],
+                    count: counts[value],
+                  }))}
+                onChange={(next) => {
+                  setOutcome(next);
+                  emit({ outcome: next });
+                }}
+              />
+            )}
+            <div className="participation-list-heading">
+              <strong>Players</strong>
               <span>
-                Page {currentPage + 1} of {lastPage + 1}
+                {visible.length === poolAccounts.length
+                  ? countText(poolAccounts.length, "player")
+                  : `${visible.length} of ${countText(poolAccounts.length, "player")}`}{" "}
+                · {poolLabel}
               </span>
-              <button
-                type="button"
-                disabled={controlsLocked || currentPage === lastPage}
-                onClick={() => setPage(currentPage + 1)}
+            </div>
+            {data.accounts.length ? (
+              <>
+                <ul className="participation-list">
+                  {sorted.map((account) => (
+                    <li
+                      key={`${seasonId}:${recordEpoch}:${account.tag}`}
+                      hidden={!visibleTags.has(account.tag)}
+                    >
+                      <ParticipationRecord
+                        account={account}
+                        mainMinimum={mainMinimum}
+                        publicationVersion={data.publication_version}
+                        readonly={!!archived}
+                        locked={
+                          activeEditorTag === account.tag
+                            ? ownRecordLocked
+                            : writesLocked
+                        }
+                        open={activeEditorTag === account.tag}
+                        onOpen={() => setActiveEditorTag(account.tag)}
+                        onClose={() =>
+                          setActiveEditorTag((current) =>
+                            current === account.tag ? null : current,
+                          )
+                        }
+                        onSave={save}
+                        onReset={resetToSource}
+                        onDirty={onDirty}
+                        onAddStrike={onAddStrike}
+                        infractions={onBonus ? infractions : undefined}
+                      />
+                    </li>
+                  ))}
+                </ul>
+                {!visible.length && (
+                  <EmptyState
+                    title="No matching players"
+                    line="Select another pool or change the filters."
+                  />
+                )}
+              </>
+            ) : (
+              <EmptyState
+                title="No signup accounts yet"
+                line="Current signups will appear here."
+              />
+            )}
+            {lastPage > 0 && (
+              <nav
+                className="roster-pagination"
+                aria-label="Participation pages"
               >
-                Next
-              </button>
-            </nav>
-          )}
+                <button
+                  type="button"
+                  disabled={controlsLocked || currentPage === 0}
+                  onClick={() => setPage(currentPage - 1)}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {currentPage + 1} of {lastPage + 1}
+                </span>
+                <button
+                  type="button"
+                  disabled={controlsLocked || currentPage === lastPage}
+                  onClick={() => setPage(currentPage + 1)}
+                >
+                  Next
+                </button>
+              </nav>
+            )}
+          </SectionTabPanel>
         </>
       )}
       {settingsOpen && seasonId && (
