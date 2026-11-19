@@ -1,7 +1,3 @@
-.dashboard-issues {
-  max-width: 1120px;
-  margin-inline: auto;
-}
 .issues-count,
 .issues-hint {
   color: var(--wu-text-muted);

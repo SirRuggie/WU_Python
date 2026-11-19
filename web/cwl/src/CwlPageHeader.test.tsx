@@ -2,17 +2,9 @@ import { readFileSync } from "node:fs";
 import { renderToStaticMarkup } from "react-dom/server";
 import { expect, it } from "vitest";
 import CwlPageHeader from "./CwlPageHeader";
-import { PageGroupContext } from "./PageEyebrow";
 
-const render = (header: React.ReactElement, group = "CWL") =>
-  renderToStaticMarkup(
-    <PageGroupContext.Provider value={group}>
-      {header}
-    </PageGroupContext.Provider>,
-  );
-
-it("renders eyebrow, title, help, description and actions in order", () => {
-  const html = render(
+it("renders title, help, description below the title, then existing actions", () => {
+  const html = renderToStaticMarkup(
     <CwlPageHeader
       title={<h1>Seasons</h1>}
       help={<button className="page-help-trigger">?</button>}
@@ -22,7 +14,6 @@ it("renders eyebrow, title, help, description and actions in order", () => {
     </CwlPageHeader>,
   );
   const order = [
-    'class="eyebrow page-eyebrow">CWL',
     "<h1>Seasons</h1>",
     "page-help-trigger",
     'cwl-page-header-description">Pick one.',
@@ -30,15 +21,32 @@ it("renders eyebrow, title, help, description and actions in order", () => {
   ].map((part) => html.indexOf(part));
   expect(order.every((at) => at >= 0)).toBe(true);
   expect([...order].sort((a, b) => a - b)).toEqual(order);
-  expect(html).toContain("page-head cwl-page-header");
+  expect(html).not.toContain("eyebrow");
+  expect(html).not.toContain('class="page-head');
+  expect(html).toContain('class="cwl-page-header roster-ui');
 });
 
-it("leaves out the eyebrow when asked and omits an empty description", () => {
-  const html = render(
-    <CwlPageHeader eyebrow={false} title={<h1>Hey, Sam</h1>} />,
+it("omits an empty description and preserves a nested heading level", () => {
+  const html = renderToStaticMarkup(
+    <CwlPageHeader title={<h2>Clan details</h2>} />,
   );
+  expect(html).toContain("<h2>Clan details</h2>");
+  expect(html).not.toContain("<h1");
   expect(html).not.toContain("page-eyebrow");
   expect(html).not.toContain("cwl-page-header-description");
+});
+
+it("keeps a ReactNode subtitle below the title without flattening its link", () => {
+  const html = renderToStaticMarkup(
+    <CwlPageHeader
+      title={<h1>Family clans</h1>}
+      description={<a href="/clans">Clans</a>}
+    />,
+  );
+  expect(html.indexOf("<h1>")).toBeLessThan(
+    html.indexOf('class="cwl-page-header-description"'),
+  );
+  expect(html).toContain('<a href="/clans">Clans</a>');
 });
 
 it("stacks the title above its actions at 650px and narrower", () => {
@@ -47,9 +55,7 @@ it("stacks the title above its actions at 650px and narrower", () => {
     css.indexOf("@media (max-width: 650px)"),
     css.indexOf("@media (max-width: 480px)"),
   );
-  expect(phone).toMatch(
-    /\.page-head\.cwl-page-header\s*\{[^}]*flex-wrap:\s*wrap/,
-  );
+  expect(phone).toMatch(/\.cwl-page-header\s*\{[^}]*flex-wrap:\s*wrap/);
   expect(phone).toMatch(/\.cwl-page-header-title\s*\{[^}]*flex:\s*1 0 100%/);
 });
 

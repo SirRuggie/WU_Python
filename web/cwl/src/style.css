@@ -193,10 +193,10 @@ h1 {
   text-wrap: balance;
 }
 /* Page titles share the helmet bar; card/dialog H1s retain only the gold ink. */
-:where(.page-head h1, main:not(.center-screen) > h1) {
+:where(.cwl-page-header h1, main:not(.center-screen) > h1) {
   position: relative;
 }
-:where(.page-head h1, main:not(.center-screen) > h1)::after {
+:where(.cwl-page-header h1, main:not(.center-screen) > h1)::after {
   content: "";
   position: absolute;
   left: 0;
@@ -411,21 +411,10 @@ small {
   font-size: var(--wu-text-xs);
 }
 .workspace main {
-  max-width: 1300px;
+  max-width: var(--wu-page-width);
   padding: var(--wu-space-6);
-  margin: 0 auto;
+  margin: 0;
   min-width: 0;
-}
-.page-head {
-  display: flex;
-  justify-content: space-between;
-  align-items: end;
-  gap: var(--wu-space-4);
-  margin-bottom: var(--wu-space-5);
-}
-.page-head p:last-child {
-  margin-bottom: 0;
-  text-wrap: pretty;
 }
 .season-banner {
   display: flex;
@@ -904,10 +893,6 @@ small {
   }
   .topbar .crumb {
     display: none;
-  }
-  .page-head {
-    display: block;
-    margin-bottom: var(--wu-space-5);
   }
   .account-list,
   .registered-grid {
@@ -2058,24 +2043,21 @@ img.site-logo {
   background: var(--roster-surface-raised);
   border-color: var(--roster-border);
 }
-.shell .signup-flow {
-  max-width: none;
-}
 /* Informational walkthrough: neutral surface and explicit readable text. */
 .shell .signup-guide {
   padding: var(--wu-space-4) var(--wu-space-4);
   margin-bottom: var(--wu-space-4);
-  background: var(--wu-accent);
+  background: var(--wu-surface-raised);
   border: 1px solid var(--wu-warning);
   border-left: 5px solid var(--wu-warning-border);
   border-radius: var(--wu-radius-md);
-  color: var(--wu-accent-ink);
+  color: var(--wu-text);
   box-shadow: none;
   cursor: default;
 }
 .shell .signup-guide :is(h2, p, span, b) {
-  color: var(--wu-accent-ink);
-  -webkit-text-fill-color: var(--wu-accent-ink);
+  color: var(--wu-text);
+  -webkit-text-fill-color: currentColor;
   text-wrap: pretty;
 }
 .shell .signup-guide h2 {
@@ -2101,11 +2083,6 @@ img.site-logo {
 .shell .signup-guide h2:focus-visible {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
-}
-/* Keep this information panel consistent under browser automatic darkening. */
-.shell .signup-guide,
-.shell .signup-guide * {
-  color-scheme: only light;
 }
 @media (forced-colors: active) {
   .shell .signup-guide :is(h2, p, span, b) {

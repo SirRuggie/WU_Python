@@ -612,7 +612,7 @@
   border: 0;
 }
 @media (max-width: 1200px) {
-  .command-is-editing > .page-head > button {
+  .command-is-editing > .cwl-page-header > button {
     display: none;
   }
 }

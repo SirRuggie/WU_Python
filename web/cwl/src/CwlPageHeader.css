@@ -1,6 +1,6 @@
 /* One title/season row, including when older page styles load after this file. */
 .cwl-page-header,
-.shell .page-head.cwl-page-header {
+.shell .cwl-page-header {
   display: flex;
   flex-direction: row;
   flex-wrap: nowrap;
@@ -14,23 +14,22 @@
 .cwl-page-header-title {
   flex: 1;
   min-width: 0;
-  /* Eyebrow on its own line; the title and its ? help stay on one line. */
+  /* Title and help share a line; description always occupies the next line. */
   display: flex;
   flex-wrap: wrap;
   align-items: center;
   column-gap: var(--roster-space-1);
 }
-.cwl-page-header-title > .page-eyebrow {
-  flex: 0 0 100%;
-  margin: 0 0 var(--roster-space-1);
-}
-.cwl-page-header-title > h1 {
+.cwl-page-header-title > :is(h1, h2) {
   flex: 0 1 auto;
   min-width: 0;
 }
-.cwl-page-header-title > h1:has(+ .page-help-trigger),
-.cwl-page-header-title > h1:has(+ .page-help-slot) {
+.cwl-page-header-title > :is(h1, h2):has(+ .page-help-trigger),
+.cwl-page-header-title > :is(h1, h2):has(+ .page-help-slot) {
   max-width: calc(100% - 48px);
+}
+.cwl-page-header-title > h2 {
+  margin: 0;
 }
 .cwl-page-header-title > .page-help-slot {
   display: contents;
@@ -103,7 +102,7 @@
 }
 @media (max-width: 650px) {
   /* Title row first; buttons and pickers wrap onto their own row below. */
-  .shell .page-head.cwl-page-header {
+  .shell .cwl-page-header {
     flex-wrap: wrap;
     gap: var(--roster-space-2);
   }
@@ -138,7 +137,6 @@
     padding-block: 8px;
   }
   .cwl-page-header .cwl-page-header-title > h1,
-  .shell .cwl-page-header .cwl-page-header-title > h1,
   .shell .cwl-page-header .cwl-page-header-title > h1 {
     font-size: var(--wu-text-xl);
   }

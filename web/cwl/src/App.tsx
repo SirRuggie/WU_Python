@@ -58,7 +58,10 @@ import { AccountIdentity } from "./AccountIdentity";
 import { useMobileNavigation } from "./useMobileNavigation";
 import { stopPushOnSignout } from "./webPush";
 import RouteLoadBoundary from "./RouteLoadBoundary";
-import { PageGroupContext, pageGroup } from "./PageEyebrow";
+import {
+  pageBreadcrumb,
+  usePageHeadingVisibility,
+} from "./usePageHeadingVisibility";
 import LoadError from "./LoadError";
 import {
   lazy,
@@ -215,6 +218,16 @@ function App() {
     if (view !== "signup") setAccountsLoadedFor(null);
   }, [view]);
   const [signups, setSignups] = useState<Signup[]>([]);
+  const pageMainRef = useRef<HTMLElement>(null);
+  const topbarRef = useRef<HTMLElement>(null);
+  const pageLabel = navigationLabel(view, publicationStep, signupPanel);
+  const breadcrumb = pageBreadcrumb(navigationSection(view), pageLabel);
+  const pageHeadingVisible = usePageHeadingVisibility(
+    pageMainRef,
+    topbarRef,
+    `${view}:${seasonId}:${publicationStep}`,
+    Boolean(session),
+  );
   const dashboardPrefill = useRef(false);
   const signupRequest = useRef(0);
   const currentSeason = useRef("");
@@ -1653,6 +1666,29 @@ function App() {
       </div>
     );
 
+  const memberSteps = (view === "signup" || view === "assignments") && (
+    <MemberStepStrip
+      step={view === "assignments" ? "assignments" : signupPanel}
+      onNavigate={(step) =>
+        step === "assignments"
+          ? changeView("assignments")
+          : changeView("signup", "", undefined, step)
+      }
+    />
+  );
+  const rosterSteps = session.can_edit &&
+    ["roster", "publication"].includes(view) && (
+      <CwlStepStrip
+        step={view === "roster" ? "build" : publicationStep}
+        draft={
+          flowPublication?.season === seasonId ? flowPublication.draft : null
+        }
+        season={seasonId}
+        onBuild={() => changeView("roster")}
+        onFinalize={() => openPublication("review")}
+        onAnnounce={() => openPublication("announce")}
+      />
+    );
   return (
     <DashboardPermissions.Provider
       value={{
@@ -1868,7 +1904,7 @@ function App() {
         )}
         {fwaBlocked && <FwaSignupDialog onClose={() => setFwaBlocked(false)} />}
         <div className="workspace" inert={mobile && menuOpen}>
-          <header className="topbar">
+          <header ref={topbarRef} className="topbar">
             <button
               ref={triggerRef}
               className="menu-open"
@@ -1890,11 +1926,9 @@ function App() {
               height={32}
             />
             <div>
-              <span className="crumb">
-                {navigationSection(view) || "Dashboard"}
-              </span>
-              <strong>
-                {navigationLabel(view, publicationStep, signupPanel)}
+              {breadcrumb && <span className="crumb">{breadcrumb}</span>}
+              <strong data-page-heading-visible={pageHeadingVisible}>
+                {pageLabel}
               </strong>
             </div>
             {mobile ? (
@@ -1914,740 +1948,710 @@ function App() {
             )}
           </header>
           <main
+            ref={pageMainRef}
             id="dashboard-main"
             tabIndex={-1}
             aria-label={navigationLabel(view, publicationStep, signupPanel)}
           >
-            <PageGroupContext.Provider
-              value={pageGroup(
-                navigationSection(view),
-                navigationLabel(view, publicationStep, signupPanel),
+            {(session.is_owner ||
+              session.can_edit ||
+              !!session.dashboard_permissions?.length) && (
+              <DashboardStorageStatus />
+            )}
+            {["roster", "publication", "declaration"].includes(view) && (
+              <StaffDetailsHost
+                key={`${view}:${seasonId}`}
+                archived={season?.status === "archived"}
+                initialAccount={
+                  view === entryTarget.view && seasonId === entryTarget.season
+                    ? entryAccount
+                    : null
+                }
+                onInitialConsumed={() => setEntryAccount(null)}
+              />
+            )}
+            <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
+              {seasonError && seasonsKnown && view !== "home" && (
+                <div className="member-refresh-note" role="status">
+                  <span>Could not refresh. Showing last update.</span>
+                  <button
+                    disabled={seasonsLoading}
+                    onClick={() => void loadSeasons()}
+                  >
+                    Retry
+                  </button>
+                </div>
               )}
-            >
-              {(session.is_owner ||
-                session.can_edit ||
-                !!session.dashboard_permissions?.length) && (
-                <DashboardStorageStatus />
+              {seasonError &&
+                !seasonsKnown &&
+                view !== "signup" &&
+                view !== "home" && (
+                  <LoadError
+                    message="Could not load CWL seasons."
+                    busy={seasonsLoading}
+                    onRetry={() => void loadSeasons()}
+                  />
+                )}
+              {fixtureMode && (
+                <div className="fixture-banner" role="status">
+                  Local fixture data · Development only
+                </div>
               )}
-              {["roster", "publication", "declaration"].includes(view) && (
-                <StaffDetailsHost
-                  key={`${view}:${seasonId}`}
-                  archived={season?.status === "archived"}
-                  initialAccount={
-                    view === entryTarget.view && seasonId === entryTarget.season
-                      ? entryAccount
-                      : null
-                  }
-                  onInitialConsumed={() => setEntryAccount(null)}
+              {notice && !(view === "signup" && review) && (
+                <div
+                  className={`notice ${notice.kind}`}
+                  role={notice.kind === "error" ? "alert" : "status"}
+                >
+                  {notice.text}
+                  <button
+                    aria-label="Dismiss message"
+                    onClick={() => setNotice(null)}
+                  >
+                    ×
+                  </button>
+                </div>
+              )}
+              {view === "staff-overview" && (
+                <StaffOverview
+                  seasons={seasons}
+                  onNavigate={(next, season) => {
+                    if (season) setSeasonId(season);
+                    changeView(next);
+                  }}
                 />
               )}
-              <RouteLoadBoundary resetKey={`${view}:${seasonId}`}>
-                {seasonError && seasonsKnown && view !== "home" && (
-                  <div className="member-refresh-note" role="status">
-                    <span>Could not refresh. Showing last update.</span>
-                    <button
-                      disabled={seasonsLoading}
-                      onClick={() => void loadSeasons()}
-                    >
-                      Retry
-                    </button>
-                  </div>
-                )}
-                {seasonError &&
-                  !seasonsKnown &&
-                  view !== "signup" &&
-                  view !== "home" && (
-                    <LoadError
-                      message="Could not load CWL seasons."
-                      busy={seasonsLoading}
-                      onRetry={() => void loadSeasons()}
-                    />
-                  )}
-                {fixtureMode && (
-                  <div className="fixture-banner" role="status">
-                    Local fixture data · Development only
-                  </div>
-                )}
-                {(view === "signup" || view === "assignments") && (
-                  <MemberStepStrip
-                    step={view === "assignments" ? "assignments" : signupPanel}
-                    onNavigate={(step) =>
-                      step === "assignments"
-                        ? changeView("assignments")
-                        : changeView("signup", "", undefined, step)
+              {view === "image-gallery" && (
+                <ImageGallery onDirty={setManageDirty} />
+              )}
+              {view === "bases" && <BaseBank key={session.user.id} />}
+              {view === "tickets" && <TicketBrowser />}
+              {view === "world-clocks" && (
+                <WorldClocksWorkspace onDirty={setManageDirty} />
+              )}
+              {(view === "member-activity" || view === "moderation") && (
+                <ModerationWorkspace
+                  onDirty={setManageDirty}
+                  memberId={moderationMember}
+                  onMemberRoute={openModerationMember}
+                />
+              )}
+              {view === "clan-management" && (
+                <ClanManagement
+                  key={familyVisit}
+                  initialRoute={familyRoute}
+                  onWorking={setFamilyWorking}
+                  onDirty={setManageDirty}
+                  onNavigate={(route) => {
+                    setFamilyRoute(route);
+                    navigation.current?.write(
+                      {
+                        view: "clan-management",
+                        season: "",
+                        familyClan: route,
+                      },
+                      true,
+                    );
+                    setActivityVisit(
+                      window.history.state?.wuDashboardIndex || 0,
+                    );
+                  }}
+                />
+              )}
+              {view === "weight-trial" && (
+                <div
+                  onFocusCapture={(event) => {
+                    if (event.target instanceof HTMLInputElement)
+                      weightEditFocus.current = event.target;
+                  }}
+                >
+                  <WeightTrial
+                    key={session.user.id}
+                    viewerId={session.user.id}
+                    onDirty={setManageDirty}
+                    onState={setWeightState}
+                    targetPlayer={weightTarget.player}
+                    targetClan={weightTarget.clan}
+                    seasonId={session.can_edit ? staffSeasonId : undefined}
+                    onRoster={() => changeView("roster")}
+                  />
+                </div>
+              )}
+              {["strikes", "replacements"].includes(view) &&
+                strikePermissions(
+                  session.dashboard_permissions,
+                  session.is_owner,
+                ).view && (
+                  <StrikesWorkspace
+                    onWorking={setStrikeWorking}
+                    memory={flowMemory.strikes}
+                    targetTag={
+                      view === "replacements" ? replacementTag : strikeTag
                     }
-                  />
-                )}
-                {session.can_edit &&
-                  ["roster", "publication"].includes(view) && (
-                    <CwlStepStrip
-                      step={view === "roster" ? "build" : publicationStep}
-                      draft={
-                        flowPublication?.season === seasonId
-                          ? flowPublication.draft
-                          : null
-                      }
-                      season={seasonId}
-                      onBuild={() => changeView("roster")}
-                      onFinalize={() => openPublication("review")}
-                      onAnnounce={() => openPublication("announce")}
-                    />
-                  )}
-                {notice && !(view === "signup" && review) && (
-                  <div
-                    className={`notice ${notice.kind}`}
-                    role={notice.kind === "error" ? "alert" : "status"}
-                  >
-                    {notice.text}
-                    <button
-                      aria-label="Dismiss message"
-                      onClick={() => setNotice(null)}
-                    >
-                      ×
-                    </button>
-                  </div>
-                )}
-                {view === "staff-overview" && (
-                  <StaffOverview
-                    seasons={seasons}
-                    onNavigate={(next, season) => {
-                      if (season) setSeasonId(season);
-                      changeView(next);
-                    }}
-                  />
-                )}
-                {view === "image-gallery" && (
-                  <ImageGallery onDirty={setManageDirty} />
-                )}
-                {view === "bases" && <BaseBank key={session.user.id} />}
-                {view === "tickets" && <TicketBrowser />}
-                {view === "world-clocks" && (
-                  <WorldClocksWorkspace onDirty={setManageDirty} />
-                )}
-                {(view === "member-activity" || view === "moderation") && (
-                  <ModerationWorkspace
-                    onDirty={setManageDirty}
-                    memberId={moderationMember}
-                    onMemberRoute={openModerationMember}
-                  />
-                )}
-                {view === "clan-management" && (
-                  <ClanManagement
-                    key={familyVisit}
-                    initialRoute={familyRoute}
-                    onWorking={setFamilyWorking}
-                    onDirty={setManageDirty}
-                    onNavigate={(route) => {
-                      setFamilyRoute(route);
+                    activityState={
+                      strikeFilterState ||
+                      (view === "replacements" && replacementClan
+                        ? new URLSearchParams({
+                            clans: replacementClan,
+                            marked: "1",
+                          }).toString()
+                        : "")
+                    }
+                    markedDefault={view === "replacements"}
+                    onActivityState={(state, push) => {
+                      if (navigation.current?.pending) return;
                       navigation.current?.write(
                         {
-                          view: "clan-management",
+                          view: view as "strikes" | "replacements",
                           season: "",
-                          familyClan: route,
+                          strikeState: state,
+                          ...(view === "strikes" && strikeTag
+                            ? { strikeTag }
+                            : {}),
+                          ...(view === "replacements" && replacementTag
+                            ? { replacementTag }
+                            : {}),
+                        },
+                        push,
+                      );
+                      setActivityVisit(
+                        window.history.state?.wuDashboardIndex || 0,
+                      );
+                      setStrikeFilterState(state);
+                    }}
+                    onAccountRoute={(tag) => {
+                      if (navigation.current?.pending) return;
+                      const state =
+                        strikeFilterState ||
+                        (view === "replacements"
+                          ? new URLSearchParams({
+                              marked: "1",
+                              ...(replacementClan
+                                ? { clans: replacementClan }
+                                : {}),
+                            }).toString()
+                          : "");
+                      navigation.current?.write(
+                        {
+                          view: "strikes",
+                          season: "",
+                          strikeTag: tag,
+                          strikeState: state,
                         },
                         true,
                       );
                       setActivityVisit(
                         window.history.state?.wuDashboardIndex || 0,
                       );
+                      setStrikeFilterState(state);
+                      setStrikeTag(tag);
+                      setReplacementTag("");
+                      acceptRoute("strikes");
                     }}
+                    onMemberAccounts={(member) => {
+                      const state = memberAccountsState(member);
+                      navigation.current?.write(
+                        { view: "strikes", season: "", strikeState: state },
+                        true,
+                      );
+                      setActivityVisit(
+                        window.history.state?.wuDashboardIndex || 0,
+                      );
+                      setStrikeFilterState(state);
+                      setStrikeTag("");
+                      acceptRoute("strikes");
+                    }}
+                    onFindReplacement={(clan, _tag, weight) => {
+                      const state = findReplacementState(clan, weight);
+                      navigation.current?.write(
+                        { view: "strikes", season: "", strikeState: state },
+                        true,
+                      );
+                      setActivityVisit(
+                        window.history.state?.wuDashboardIndex || 0,
+                      );
+                      setStrikeFilterState(state);
+                      setStrikeTag("");
+                      acceptRoute("strikes");
+                    }}
+                    onDirty={setManageDirty}
+                    permissions={session.dashboard_permissions || []}
+                    isOwner={session.is_owner}
+                    userId={session.user.id}
                   />
                 )}
-                {view === "weight-trial" && (
-                  <div
-                    onFocusCapture={(event) => {
-                      if (event.target instanceof HTMLInputElement)
-                        weightEditFocus.current = event.target;
-                    }}
-                  >
-                    <WeightTrial
-                      key={session.user.id}
-                      viewerId={session.user.id}
-                      onDirty={setManageDirty}
-                      onState={setWeightState}
-                      targetPlayer={weightTarget.player}
-                      targetClan={weightTarget.clan}
-                      seasonId={session.can_edit ? staffSeasonId : undefined}
-                      onRoster={() => changeView("roster")}
+              {view === "text-commands" && (
+                <TextCommands onDirty={setManageDirty} />
+              )}
+              {isManagementArea(view) && view !== "members-settings" && (
+                <ServerManagement
+                  key={view}
+                  area={view}
+                  onDirty={setManageDirty}
+                  onNavigate={(destination) => changeView(destination as View)}
+                />
+              )}
+              {(view === "members-settings" || view === "member-timezones") && (
+                <MembersPage
+                  onDirty={setManageDirty}
+                  initialMember={entryAccount}
+                  onInitialConsumed={() => setEntryAccount(null)}
+                />
+              )}
+              {view === "manage" && (
+                <ServerManagement
+                  onDirty={setManageDirty}
+                  onNavigate={(destination) => changeView(destination as View)}
+                />
+              )}
+              {view === "reminders" && session.can_edit && (
+                <>
+                  <CwlPageHeader title={<h1>Signup reminders</h1>}>
+                    <RosterMenu
+                      label="Season"
+                      value={seasonId}
+                      onValueChange={async (next) => {
+                        if (
+                          !reminderDirty ||
+                          (await confirmCwl(
+                            "Discard unsaved reminder edits and change season?",
+                            "Discard and change season",
+                          ))
+                        )
+                          setSeasonId(next);
+                      }}
+                      options={[
+                        { value: "", label: "Select a season" },
+                        ...monthSeasons(seasons).map((item) => ({
+                          value: String(item.id),
+                          label: seasonMonthLabel(item),
+                        })),
+                      ]}
                     />
-                  </div>
-                )}
-                {["strikes", "replacements"].includes(view) &&
-                  strikePermissions(
-                    session.dashboard_permissions,
-                    session.is_owner,
-                  ).view && (
-                    <StrikesWorkspace
-                      onWorking={setStrikeWorking}
-                      memory={flowMemory.strikes}
-                      targetTag={
-                        view === "replacements" ? replacementTag : strikeTag
+                  </CwlPageHeader>
+                  {seasonId ? (
+                    <ReminderWorkspace
+                      key={seasonId}
+                      seasonId={seasonId}
+                      archived={season?.status === "archived"}
+                      onDirty={setReminderDirty}
+                    />
+                  ) : (
+                    <p>Select a season to manage its reminders.</p>
+                  )}
+                  {seasonId && (
+                    <CwlNextLink
+                      label="Build roster"
+                      route={{ view: "roster", season: seasonId }}
+                      onNext={
+                        allowedView("roster") === "roster"
+                          ? () => navigateSidebar("roster")
+                          : undefined
                       }
-                      activityState={
-                        strikeFilterState ||
-                        (view === "replacements" && replacementClan
-                          ? new URLSearchParams({
-                              clans: replacementClan,
-                              marked: "1",
-                            }).toString()
-                          : "")
-                      }
-                      markedDefault={view === "replacements"}
-                      onActivityState={(state, push) => {
-                        if (navigation.current?.pending) return;
-                        navigation.current?.write(
-                          {
-                            view: view as "strikes" | "replacements",
-                            season: "",
-                            strikeState: state,
-                            ...(view === "strikes" && strikeTag
-                              ? { strikeTag }
-                              : {}),
-                            ...(view === "replacements" && replacementTag
-                              ? { replacementTag }
-                              : {}),
-                          },
-                          push,
-                        );
-                        setActivityVisit(
-                          window.history.state?.wuDashboardIndex || 0,
-                        );
-                        setStrikeFilterState(state);
-                      }}
-                      onAccountRoute={(tag) => {
-                        if (navigation.current?.pending) return;
-                        const state =
-                          strikeFilterState ||
-                          (view === "replacements"
-                            ? new URLSearchParams({
-                                marked: "1",
-                                ...(replacementClan
-                                  ? { clans: replacementClan }
-                                  : {}),
-                              }).toString()
-                            : "");
-                        navigation.current?.write(
-                          {
-                            view: "strikes",
-                            season: "",
-                            strikeTag: tag,
-                            strikeState: state,
-                          },
-                          true,
-                        );
-                        setActivityVisit(
-                          window.history.state?.wuDashboardIndex || 0,
-                        );
-                        setStrikeFilterState(state);
-                        setStrikeTag(tag);
-                        setReplacementTag("");
-                        acceptRoute("strikes");
-                      }}
-                      onMemberAccounts={(member) => {
-                        const state = memberAccountsState(member);
-                        navigation.current?.write(
-                          { view: "strikes", season: "", strikeState: state },
-                          true,
-                        );
-                        setActivityVisit(
-                          window.history.state?.wuDashboardIndex || 0,
-                        );
-                        setStrikeFilterState(state);
-                        setStrikeTag("");
-                        acceptRoute("strikes");
-                      }}
-                      onFindReplacement={(clan, _tag, weight) => {
-                        const state = findReplacementState(clan, weight);
-                        navigation.current?.write(
-                          { view: "strikes", season: "", strikeState: state },
-                          true,
-                        );
-                        setActivityVisit(
-                          window.history.state?.wuDashboardIndex || 0,
-                        );
-                        setStrikeFilterState(state);
-                        setStrikeTag("");
-                        acceptRoute("strikes");
-                      }}
-                      onDirty={setManageDirty}
-                      permissions={session.dashboard_permissions || []}
-                      isOwner={session.is_owner}
-                      userId={session.user.id}
+                      disabled={rosterBusy}
                     />
                   )}
-                {view === "text-commands" && (
-                  <TextCommands onDirty={setManageDirty} />
-                )}
-                {isManagementArea(view) && view !== "members-settings" && (
-                  <ServerManagement
-                    key={view}
-                    area={view}
-                    onDirty={setManageDirty}
-                    onNavigate={(destination) =>
-                      changeView(destination as View)
-                    }
-                  />
-                )}
-                {(view === "members-settings" ||
-                  view === "member-timezones") && (
-                  <MembersPage
-                    onDirty={setManageDirty}
-                    initialMember={entryAccount}
-                    onInitialConsumed={() => setEntryAccount(null)}
-                  />
-                )}
-                {view === "manage" && (
-                  <ServerManagement
-                    onDirty={setManageDirty}
-                    onNavigate={(destination) =>
-                      changeView(destination as View)
-                    }
-                  />
-                )}
-                {view === "reminders" && session.can_edit && (
-                  <>
-                    <CwlPageHeader title={<h1>Signup reminders</h1>}>
-                      <RosterMenu
-                        label="Season"
-                        value={seasonId}
-                        onValueChange={async (next) => {
-                          if (
-                            !reminderDirty ||
-                            (await confirmCwl(
-                              "Discard unsaved reminder edits and change season?",
-                              "Discard and change season",
-                            ))
-                          )
-                            setSeasonId(next);
-                        }}
-                        options={[
-                          { value: "", label: "Select a season" },
-                          ...monthSeasons(seasons).map((item) => ({
-                            value: String(item.id),
-                            label: seasonMonthLabel(item),
-                          })),
-                        ]}
-                      />
-                    </CwlPageHeader>
-                    {seasonId ? (
-                      <ReminderWorkspace
-                        key={seasonId}
-                        seasonId={seasonId}
-                        archived={season?.status === "archived"}
-                        onDirty={setReminderDirty}
-                      />
-                    ) : (
-                      <p>Select a season to manage its reminders.</p>
-                    )}
-                    {seasonId && (
-                      <CwlNextLink
-                        label="Build roster"
-                        route={{ view: "roster", season: seasonId }}
-                        onNext={
-                          allowedView("roster") === "roster"
-                            ? () => navigateSidebar("roster")
-                            : undefined
-                        }
-                        disabled={rosterBusy}
-                      />
-                    )}
-                  </>
-                )}
-                {view === "search" && (
-                  <DashboardSearch
-                    key={session.user.id}
-                    session={session}
-                    includeFamily={session.can_edit}
-                    query={searchQuery}
-                    onQuery={(value) => {
-                      setSearchQuery(value);
-                      setSearchPage(0);
-                    }}
-                    kind={searchKind}
-                    onKind={(value) => {
-                      setSearchKind(value);
-                      setSearchPage(0);
-                    }}
-                    page={searchPage}
-                    onPage={setSearchPage}
-                    onTasks={(tag) => changeView("todo", tag)}
-                  />
-                )}
-                {view === "todo" && (
-                  <TodoWorkspace
-                    key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`}
-                    userId={session.user.id}
-                    initialSearch={activitySearch}
-                    initialTab={activityKind}
-                    onWars={(kind) => changeView("wars", "", kind)}
-                  />
-                )}
-                {view === "wars" && (
-                  <WarsWorkspace
-                    key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`}
-                    userId={session.user.id}
-                    visit={activityVisit}
-                    initialType={activityKind === "cwl" ? "cwl" : "regular"}
-                    canEdit={session.can_edit}
-                    onTasks={(tag, kind) => changeView("todo", tag, kind)}
-                  />
-                )}
-                {view === "events" && (
-                  <EventsWorkspace
-                    key={session.user.id}
-                    canEdit={session.can_edit}
-                    onWars={() => changeView("wars", "", "cwl")}
-                  />
-                )}
-                {view === "home" && (
-                  <DashboardHome
-                    key={`${session.user.id}:${seasonId}`}
-                    staffSeasonId={staffSeasonId}
-                    publicationStep={publicationStep}
-                    session={session}
-                    seasonId={seasonId}
-                    seasons={seasons}
-                    seasonsKnown={seasonsKnown}
-                    seasonError={seasonError}
-                    onRetrySeasons={() => void loadSeasons()}
-                    onNavigate={(next) => {
-                      if (next === "signup" || next === "saved") {
-                        setSignupPanel(next === "saved" ? "saved" : "register");
-                        setSignupStep(1);
-                        setPool(null);
-                        setCompletion(null);
-                        setReview(false);
-                      }
-                      changeView(
-                        next === "saved" ? "signup" : next,
-                        "",
-                        undefined,
-                        next === "saved" ? "saved" : "register",
-                      );
-                    }}
-                    onStart={(nextPool, tags, freshAccounts, freshSignups) => {
-                      dashboardPrefill.current = true;
-                      signupRequest.current += 1;
-                      setAccounts(freshAccounts);
-                      setAccountsLoadedFor(`${session.user.id}:${seasonId}`);
-                      setSignups(freshSignups);
-                      setSavedSignupsLoaded(true);
-                      setLoadingData(false);
-                      setAccountError("");
-                      setDataError("");
-                      setDrafts({
-                        main: {},
-                        lazy: {},
-                        [nextPool]: Object.fromEntries(
-                          tags
-                            .filter(
-                              (tag) =>
-                                freshAccounts.some(
-                                  (account) => account.tag === tag,
-                                ) &&
-                                !freshSignups.some(
-                                  (signup) => signup.tag === tag,
-                                ),
-                            )
-                            .map((tag) => [tag, false]),
-                        ),
-                      });
-                      setPool(nextPool);
-                      setSignupPanel("register");
-                      setSignupStep(2);
-                      setReview(false);
+                </>
+              )}
+              {view === "search" && (
+                <DashboardSearch
+                  key={session.user.id}
+                  session={session}
+                  includeFamily={session.can_edit}
+                  query={searchQuery}
+                  onQuery={(value) => {
+                    setSearchQuery(value);
+                    setSearchPage(0);
+                  }}
+                  kind={searchKind}
+                  onKind={(value) => {
+                    setSearchKind(value);
+                    setSearchPage(0);
+                  }}
+                  page={searchPage}
+                  onPage={setSearchPage}
+                  onTasks={(tag) => changeView("todo", tag)}
+                />
+              )}
+              {view === "todo" && (
+                <TodoWorkspace
+                  key={`${session.user.id}:${activitySearch}:${activityKind || "default"}`}
+                  userId={session.user.id}
+                  initialSearch={activitySearch}
+                  initialTab={activityKind}
+                  onWars={(kind) => changeView("wars", "", kind)}
+                />
+              )}
+              {view === "wars" && (
+                <WarsWorkspace
+                  key={`${session.user.id}:${activityVisit}:${activityKind || "default"}`}
+                  userId={session.user.id}
+                  visit={activityVisit}
+                  initialType={activityKind === "cwl" ? "cwl" : "regular"}
+                  canEdit={session.can_edit}
+                  onTasks={(tag, kind) => changeView("todo", tag, kind)}
+                />
+              )}
+              {view === "events" && (
+                <EventsWorkspace
+                  key={session.user.id}
+                  canEdit={session.can_edit}
+                  onWars={() => changeView("wars", "", "cwl")}
+                />
+              )}
+              {view === "home" && (
+                <DashboardHome
+                  key={`${session.user.id}:${seasonId}`}
+                  staffSeasonId={staffSeasonId}
+                  publicationStep={publicationStep}
+                  session={session}
+                  seasonId={seasonId}
+                  seasons={seasons}
+                  seasonsKnown={seasonsKnown}
+                  seasonError={seasonError}
+                  onRetrySeasons={() => void loadSeasons()}
+                  onNavigate={(next) => {
+                    if (next === "signup" || next === "saved") {
+                      setSignupPanel(next === "saved" ? "saved" : "register");
+                      setSignupStep(1);
+                      setPool(null);
                       setCompletion(null);
-                      changeView("signup");
-                    }}
-                  />
-                )}
-                {view === "signup" && (
-                  <SignupPage
-                    accountError={accountError}
-                    accounts={accounts}
-                    accountsReady={accountsReady}
-                    activeCompletion={activeCompletion}
-                    available={available}
-                    changeReviewStep={changeReviewStep}
-                    changeSignupPanel={changeSignupPanel}
-                    changeView={changeView}
-                    choosePool={choosePool}
-                    completionHeadingRef={completionHeadingRef}
-                    currentSignupPage={currentSignupPage}
-                    dataError={dataError}
-                    draft={draft}
-                    existing={existing}
-                    lastSignupPage={lastSignupPage}
-                    loadSeasons={loadSeasons}
-                    loadSignup={loadSignup}
-                    loadingData={loadingData}
-                    matchingAccounts={matchingAccounts}
-                    notice={notice}
-                    pageAccounts={pageAccounts}
-                    pending={pending}
-                    pool={pool}
-                    poolRemoved={poolRemoved}
-                    registeredHeadingRef={registeredHeadingRef}
-                    retrySignupRead={retrySignupRead}
-                    review={review}
-                    saveSavedSignups={saveSavedSignups}
-                    savedSignupsLoaded={savedSignupsLoaded}
-                    season={season}
-                    seasonError={seasonError}
-                    seasonId={seasonId}
-                    seasonsKnown={seasonsKnown}
-                    seasonsLoading={seasonsLoading}
-                    selected={selected}
-                    selectionHeadingRef={selectionHeadingRef}
-                    setCompletion={setCompletion}
-                    setDraft={setDraft}
-                    setFwaBlocked={setFwaBlocked}
-                    setPool={setPool}
-                    setPoolRemoved={setPoolRemoved}
-                    setReturnToReview={setReturnToReview}
-                    setReview={setReview}
-                    setSavedSignupDirty={setSavedSignupDirty}
-                    setSignupPage={setSignupPage}
-                    setSignupPanel={setSignupPanel}
-                    setSignupSearch={setSignupSearch}
-                    setSignupStep={setSignupStep}
-                    showSavedSignups={showSavedSignups}
-                    signupPanel={signupPanel}
-                    signupSearch={signupSearch}
-                    signupStep={signupStep}
-                    stepHeadingRef={stepHeadingRef}
-                    submit={submit}
-                    visibleAccounts={visibleAccounts}
-                    withdraw={withdraw}
-                    joinRequired={joinRequired}
-                  />
-                )}
-                {view === "assignments" && !seasonsKnown && (
+                      setReview(false);
+                    }
+                    changeView(
+                      next === "saved" ? "signup" : next,
+                      "",
+                      undefined,
+                      next === "saved" ? "saved" : "register",
+                    );
+                  }}
+                  onStart={(nextPool, tags, freshAccounts, freshSignups) => {
+                    dashboardPrefill.current = true;
+                    signupRequest.current += 1;
+                    setAccounts(freshAccounts);
+                    setAccountsLoadedFor(`${session.user.id}:${seasonId}`);
+                    setSignups(freshSignups);
+                    setSavedSignupsLoaded(true);
+                    setLoadingData(false);
+                    setAccountError("");
+                    setDataError("");
+                    setDrafts({
+                      main: {},
+                      lazy: {},
+                      [nextPool]: Object.fromEntries(
+                        tags
+                          .filter(
+                            (tag) =>
+                              freshAccounts.some(
+                                (account) => account.tag === tag,
+                              ) &&
+                              !freshSignups.some(
+                                (signup) => signup.tag === tag,
+                              ),
+                          )
+                          .map((tag) => [tag, false]),
+                      ),
+                    });
+                    setPool(nextPool);
+                    setSignupPanel("register");
+                    setSignupStep(2);
+                    setReview(false);
+                    setCompletion(null);
+                    changeView("signup");
+                  }}
+                />
+              )}
+              {view === "signup" && (
+                <SignupPage
+                  steps={memberSteps}
+                  accountError={accountError}
+                  accounts={accounts}
+                  accountsReady={accountsReady}
+                  activeCompletion={activeCompletion}
+                  available={available}
+                  changeReviewStep={changeReviewStep}
+                  changeSignupPanel={changeSignupPanel}
+                  changeView={changeView}
+                  choosePool={choosePool}
+                  completionHeadingRef={completionHeadingRef}
+                  currentSignupPage={currentSignupPage}
+                  dataError={dataError}
+                  draft={draft}
+                  existing={existing}
+                  lastSignupPage={lastSignupPage}
+                  loadSeasons={loadSeasons}
+                  loadSignup={loadSignup}
+                  loadingData={loadingData}
+                  matchingAccounts={matchingAccounts}
+                  notice={notice}
+                  pageAccounts={pageAccounts}
+                  pending={pending}
+                  pool={pool}
+                  poolRemoved={poolRemoved}
+                  registeredHeadingRef={registeredHeadingRef}
+                  retrySignupRead={retrySignupRead}
+                  review={review}
+                  saveSavedSignups={saveSavedSignups}
+                  savedSignupsLoaded={savedSignupsLoaded}
+                  season={season}
+                  seasonError={seasonError}
+                  seasonId={seasonId}
+                  seasonsKnown={seasonsKnown}
+                  seasonsLoading={seasonsLoading}
+                  selected={selected}
+                  selectionHeadingRef={selectionHeadingRef}
+                  setCompletion={setCompletion}
+                  setDraft={setDraft}
+                  setFwaBlocked={setFwaBlocked}
+                  setPool={setPool}
+                  setPoolRemoved={setPoolRemoved}
+                  setReturnToReview={setReturnToReview}
+                  setReview={setReview}
+                  setSavedSignupDirty={setSavedSignupDirty}
+                  setSignupPage={setSignupPage}
+                  setSignupPanel={setSignupPanel}
+                  setSignupSearch={setSignupSearch}
+                  setSignupStep={setSignupStep}
+                  showSavedSignups={showSavedSignups}
+                  signupPanel={signupPanel}
+                  signupSearch={signupSearch}
+                  signupStep={signupStep}
+                  stepHeadingRef={stepHeadingRef}
+                  submit={submit}
+                  visibleAccounts={visibleAccounts}
+                  withdraw={withdraw}
+                  joinRequired={joinRequired}
+                />
+              )}
+              {view === "assignments" && !seasonsKnown && (
+                <>
+                  <CwlPageHeader title={<h1>My clan assignments</h1>} />
+                  {memberSteps}
                   <p role="status">
                     {seasonError
                       ? "CWL seasons could not be checked."
                       : "Loading seasons…"}
                   </p>
-                )}
-                {view === "assignments" && seasonsKnown && (
-                  <MemberAssignments
-                    onChange={() =>
-                      changeView("signup", "", undefined, "saved")
+                </>
+              )}
+              {view === "assignments" && seasonsKnown && (
+                <MemberAssignments
+                  steps={memberSteps}
+                  onChange={() => changeView("signup", "", undefined, "saved")}
+                  onSignup={() => {
+                    setSignupStep(1);
+                    setPool(null);
+                    setCompletion(null);
+                    changeView("signup", "", undefined, "register");
+                  }}
+                  seasonId={seasonId}
+                  seasons={seasons}
+                />
+              )}
+              {view === "exports" && session.can_edit && (
+                <ExportWorkspace
+                  seasonId={seasonId}
+                  seasons={seasons}
+                  onSeasonChange={setSeasonId}
+                />
+              )}
+              {view === "declaration" && session.can_edit && (
+                <>
+                  <CwlPageHeader
+                    className="declaration-page-head"
+                    title={<h1>Declaration check</h1>}
+                    help={<DeclarationHelp />}
+                  >
+                    <RosterMenu
+                      label="Season"
+                      value={seasonId}
+                      options={monthSeasons(seasons).map((item) => ({
+                        value: String(item.id),
+                        label: seasonMonthLabel(item),
+                      }))}
+                      onValueChange={(id) => {
+                        const proceed = () => {
+                          if (id !== seasonId)
+                            navigation.current?.write(
+                              { view: "declaration", season: id },
+                              false,
+                            );
+                          setSeasonId(id);
+                        };
+                        if (canLeave(proceed)) proceed();
+                      }}
+                    />
+                  </CwlPageHeader>
+                  {seasonId && (
+                    <ArrivalCheck
+                      key={seasonId}
+                      seasonId={seasonId}
+                      onFinalize={
+                        canOpenPublication("review")
+                          ? () => openPublication("review")
+                          : undefined
+                      }
+                      onResults={
+                        allowedView("participation") === "participation"
+                          ? () => changeView("participation")
+                          : undefined
+                      }
+                      onDirty={setCwlDirty}
+                      onWorking={setRosterBusy}
+                    />
+                  )}
+                </>
+              )}
+              {view === "publication" && session.can_edit && (
+                <PublicationWorkspace
+                  steps={rosterSteps}
+                  onDeclaration={() => changeView("declaration")}
+                  onPublication={(draft) =>
+                    setFlowPublication({ season: seasonId, draft })
+                  }
+                  onBusy={setPublicationBusy}
+                  onDirty={setPublicationDirty}
+                  step={publicationStep}
+                  onStepChange={setPublicationStep}
+                  onNavigateStep={openPublication}
+                  onFix={(filter) => {
+                    setRosterReadiness(filter);
+                    changeView("roster");
+                  }}
+                  seasonId={seasonId}
+                  seasons={seasons}
+                  onSeasonChange={async (id) => {
+                    if (
+                      !publicationBusy &&
+                      (!publicationDirty ||
+                        (await confirmCwl(
+                          "Discard unsaved publication or announcement changes?",
+                          "Discard and change season",
+                        )))
+                    ) {
+                      if (id !== seasonId)
+                        navigation.current?.write(
+                          {
+                            view: "publication",
+                            season: id,
+                            step: publicationStep,
+                          },
+                          false,
+                        );
+                      setSeasonId(id);
                     }
-                    onSignup={() => {
-                      setSignupStep(1);
-                      setPool(null);
-                      setCompletion(null);
-                      changeView("signup", "", undefined, "register");
-                    }}
-                    seasonId={seasonId}
-                    seasons={seasons}
-                  />
-                )}
-                {view === "exports" && session.can_edit && (
-                  <ExportWorkspace
+                  }}
+                />
+              )}
+              {view === "participation" && session.can_edit && (
+                <>
+                  <ResultsBonusesWorkspace
+                    grants={resultsPageAccess(
+                      session.is_owner,
+                      session.dashboard_permissions || [],
+                    )}
+                    onAddStrike={
+                      strikePermissions(
+                        session.dashboard_permissions,
+                        session.is_owner,
+                      ).add
+                        ? openStrikePlayer
+                        : undefined
+                    }
+                    urlState={resultsState}
+                    onUrlState={changeResultsState}
+                    onDirty={setCwlDirty}
                     seasonId={seasonId}
                     seasons={seasons}
                     onSeasonChange={setSeasonId}
                   />
-                )}
-                {view === "declaration" && session.can_edit && (
-                  <>
-                    <CwlPageHeader
-                      className="declaration-page-head"
-                      title={<h1>Declaration check</h1>}
-                      help={<DeclarationHelp />}
-                    >
-                      <RosterMenu
-                        label="Season"
-                        value={seasonId}
-                        options={monthSeasons(seasons).map((item) => ({
-                          value: String(item.id),
-                          label: seasonMonthLabel(item),
-                        }))}
-                        onValueChange={(id) => {
-                          const proceed = () => {
-                            if (id !== seasonId)
-                              navigation.current?.write(
-                                { view: "declaration", season: id },
-                                false,
-                              );
-                            setSeasonId(id);
-                          };
-                          if (canLeave(proceed)) proceed();
-                        }}
-                      />
-                    </CwlPageHeader>
-                    {seasonId && (
-                      <ArrivalCheck
-                        key={seasonId}
-                        seasonId={seasonId}
-                        onFinalize={
-                          canOpenPublication("review")
-                            ? () => openPublication("review")
-                            : undefined
-                        }
-                        onResults={
-                          allowedView("participation") === "participation"
-                            ? () => changeView("participation")
-                            : undefined
-                        }
-                        onDirty={setCwlDirty}
-                        onWorking={setRosterBusy}
-                      />
-                    )}
-                  </>
-                )}
-                {view === "publication" && session.can_edit && (
-                  <PublicationWorkspace
-                    onDeclaration={() => changeView("declaration")}
-                    onPublication={(draft) =>
-                      setFlowPublication({ season: seasonId, draft })
-                    }
-                    onBusy={setPublicationBusy}
-                    onDirty={setPublicationDirty}
-                    step={publicationStep}
-                    onStepChange={setPublicationStep}
-                    onNavigateStep={openPublication}
-                    onFix={(filter) => {
-                      setRosterReadiness(filter);
-                      changeView("roster");
-                    }}
-                    seasonId={seasonId}
-                    seasons={seasons}
-                    onSeasonChange={async (id) => {
-                      if (
-                        !publicationBusy &&
-                        (!publicationDirty ||
-                          (await confirmCwl(
-                            "Discard unsaved publication or announcement changes?",
-                            "Discard and change season",
-                          )))
-                      ) {
-                        if (id !== seasonId)
-                          navigation.current?.write(
-                            {
-                              view: "publication",
-                              season: id,
-                              step: publicationStep,
-                            },
-                            false,
-                          );
-                        setSeasonId(id);
-                      }
-                    }}
-                  />
-                )}
-                {view === "participation" && session.can_edit && (
-                  <>
-                    <ResultsBonusesWorkspace
-                      grants={resultsPageAccess(
-                        session.is_owner,
-                        session.dashboard_permissions || [],
-                      )}
-                      onAddStrike={
-                        strikePermissions(
-                          session.dashboard_permissions,
-                          session.is_owner,
-                        ).add
-                          ? openStrikePlayer
-                          : undefined
-                      }
-                      urlState={resultsState}
-                      onUrlState={changeResultsState}
-                      onDirty={setCwlDirty}
-                      seasonId={seasonId}
-                      seasons={seasons}
-                      onSeasonChange={setSeasonId}
-                    />
-                    <CwlNextLink
-                      label="Exports & history"
-                      route={{ view: "exports", season: seasonId }}
-                      onNext={
-                        allowedView("exports") === "exports"
-                          ? () => navigateSidebar("exports")
-                          : undefined
-                      }
-                    />
-                  </>
-                )}
-                {view === "roster" && session.can_edit && (
-                  <RosterWorkspace
-                    onPublication={(draft) =>
-                      setFlowPublication({ season: seasonId, draft })
-                    }
-                    onClanWeights={(player, clan) =>
-                      changeView("weight-trial", "", undefined, "register", {
-                        player,
-                        clan,
-                      })
-                    }
-                    onFamilyClans={() => changeView("clan-management")}
-                    onBusy={setRosterBusy}
-                    onDirtySummary={setRosterDirtySummary}
-                    onEditFocus={(element) => {
-                      rosterEditFocus.current = element;
-                    }}
-                    onSeasonRefresh={loadSeasons}
-                    onDirty={setCwlDirty}
-                    key={`${seasonId}:${rosterVisit}`}
-                    initialReadiness={rosterReadiness}
-                    onReviewPublication={
-                      allowedView("publication") === "publication"
-                        ? () => {
-                            setPublicationStep("review");
-                            changeView("publication");
-                          }
-                        : undefined
-                    }
-                    seasonId={seasonId}
-                    seasons={seasons}
-                    onSeasonChange={(id) => {
-                      if (id !== seasonId)
-                        navigation.current?.write(
-                          { view: "roster", season: id },
-                          false,
-                        );
-                      setSeasonId(id);
-                      setPool(null);
-                      setSignupPanel("register");
-                      setDrafts({ main: {}, lazy: {} });
-                      setReview(false);
-                      setCompletion(null);
-                    }}
-                  />
-                )}
-                {view === "staff" && session.can_edit && (
-                  <SeasonsPage
-                    key={session.user.id}
-                    seasonId={seasonId}
-                    seasons={seasons}
-                    memberSeason={memberSeason}
-                    onRefresh={loadSeasons}
-                    onBusy={setRosterBusy}
-                    onDirty={setCwlDirty}
-                    onSeasonChange={(id) => {
-                      const proceed = () => setSeasonId(id);
-                      if (canLeave(proceed)) proceed();
-                    }}
-                    onClans={
-                      allowedView("roster") === "roster"
-                        ? () => navigateSidebar("roster")
+                  <CwlNextLink
+                    label="Exports & history"
+                    route={{ view: "exports", season: seasonId }}
+                    onNext={
+                      allowedView("exports") === "exports"
+                        ? () => navigateSidebar("exports")
                         : undefined
                     }
                   />
-                )}
-                {session.access_warning && (
-                  <div className="notice error" role="alert">
-                    {session.access_warning}
-                  </div>
-                )}
-                {view === "issues" && session.is_owner && <DashboardIssues />}
-                {view === "access" && session.is_owner && (
-                  <AccessSettings onDirty={setCwlDirty} />
-                )}
-              </RouteLoadBoundary>
-            </PageGroupContext.Provider>
+                </>
+              )}
+              {view === "roster" && session.can_edit && (
+                <RosterWorkspace
+                  steps={rosterSteps}
+                  onPublication={(draft) =>
+                    setFlowPublication({ season: seasonId, draft })
+                  }
+                  onClanWeights={(player, clan) =>
+                    changeView("weight-trial", "", undefined, "register", {
+                      player,
+                      clan,
+                    })
+                  }
+                  onFamilyClans={() => changeView("clan-management")}
+                  onBusy={setRosterBusy}
+                  onDirtySummary={setRosterDirtySummary}
+                  onEditFocus={(element) => {
+                    rosterEditFocus.current = element;
+                  }}
+                  onSeasonRefresh={loadSeasons}
+                  onDirty={setCwlDirty}
+                  key={`${seasonId}:${rosterVisit}`}
+                  initialReadiness={rosterReadiness}
+                  onReviewPublication={
+                    allowedView("publication") === "publication"
+                      ? () => {
+                          setPublicationStep("review");
+                          changeView("publication");
+                        }
+                      : undefined
+                  }
+                  seasonId={seasonId}
+                  seasons={seasons}
+                  onSeasonChange={(id) => {
+                    if (id !== seasonId)
+                      navigation.current?.write(
+                        { view: "roster", season: id },
+                        false,
+                      );
+                    setSeasonId(id);
+                    setPool(null);
+                    setSignupPanel("register");
+                    setDrafts({ main: {}, lazy: {} });
+                    setReview(false);
+                    setCompletion(null);
+                  }}
+                />
+              )}
+              {view === "staff" && session.can_edit && (
+                <SeasonsPage
+                  key={session.user.id}
+                  seasonId={seasonId}
+                  seasons={seasons}
+                  memberSeason={memberSeason}
+                  onRefresh={loadSeasons}
+                  onBusy={setRosterBusy}
+                  onDirty={setCwlDirty}
+                  onSeasonChange={(id) => {
+                    const proceed = () => setSeasonId(id);
+                    if (canLeave(proceed)) proceed();
+                  }}
+                  onClans={
+                    allowedView("roster") === "roster"
+                      ? () => navigateSidebar("roster")
+                      : undefined
+                  }
+                />
+              )}
+              {session.access_warning && (
+                <div className="notice error" role="alert">
+                  {session.access_warning}
+                </div>
+              )}
+              {view === "issues" && session.is_owner && <DashboardIssues />}
+              {view === "access" && session.is_owner && (
+                <AccessSettings onDirty={setCwlDirty} />
+              )}
+            </RouteLoadBoundary>
           </main>
         </div>
 
