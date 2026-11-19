@@ -673,7 +673,7 @@ of unsent parts only; uncertain/interrupted delivery never retries automatically
 No medals are awarded by the dashboard. The old slash command now opens this
 workflow instead of running a second weighted, nonpersistent lottery.
 
-Storage: new additive bonus*raffle*\* tables in the existing SQLite database,
+Storage: new additive `bonus_raffle_*` tables in the existing SQLite database,
 owned by utils/cwl_bonus_raffle_store.py. Existing bonus confirmations and routes
 remain intact, and approval records winners in existing confirmation history.
 Shared random selection/rendering lives in utils; Discord REST transport moved
