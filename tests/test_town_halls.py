@@ -116,28 +116,36 @@ def test_load_missing_is_read_only(monkeypatch):
 
 
 def test_save_uses_exact_guild_revision_cas_without_upsert(monkeypatch):
-    collection = SimpleNamespace(replace_one=AsyncMock(return_value=SimpleNamespace(matched_count=1)), find_one=AsyncMock())
-    monkeypatch.setattr(store, "_collection", lambda mongo: collection)
+    from pymongo import ReturnDocument
     doc = registry()
+    committed = deepcopy(doc)
+    committed.update(revision=8, nonbase_revision=8, updated_by=456)
+    collection = SimpleNamespace(find_one_and_update=AsyncMock(return_value=committed), find_one=AsyncMock())
+    monkeypatch.setattr(store, "_collection", lambda mongo: collection)
     saved = run(store.save(object(), 123, doc, 456, 7))
-    args, kwargs = collection.replace_one.call_args
+    args, kwargs = collection.find_one_and_update.call_args
     assert args[0] == {"_id": "123", "revision": 7}
-    assert kwargs == {"upsert": False}
-    assert args[1] == saved
-    assert saved["revision"] == 8 and saved["updated_by"] == 456
-    assert saved["updated_at"].utcoffset().total_seconds() == 0
+    assert kwargs == {"upsert": False, "return_document": ReturnDocument.AFTER}
+    assert args[1]["$inc"] == {"revision": 1}
+    assert args[1]["$set"]["nonbase_revision"] == 8
+    assert args[1]["$set"]["updated_by"] == 456
+    assert args[1]["$set"]["updated_at"].utcoffset().total_seconds() == 0
+    assert not any(path.endswith(".bases") or ".bases." in path for path in args[1]["$set"])
+    assert saved == committed and saved is not committed
     assert doc == registry()
     collection.find_one.assert_not_awaited()
 
 
-@pytest.mark.parametrize("existing,error", [(None, store.TownHallsMissing), ({"_id": "123"}, store.TownHallsConflict)])
-def test_save_missing_and_conflict_never_upsert_or_retry(monkeypatch, existing, error):
-    collection = SimpleNamespace(replace_one=AsyncMock(return_value=SimpleNamespace(matched_count=0)), find_one=AsyncMock(return_value=existing))
+@pytest.mark.parametrize("missing,error", [(True, store.TownHallsMissing), (False, store.TownHallsConflict)])
+def test_save_missing_and_conflict_never_upsert_or_retry(monkeypatch, missing, error):
+    existing = registry()
+    existing.update(revision=8, nonbase_revision=8)
+    collection = SimpleNamespace(find_one_and_update=AsyncMock(return_value=None), find_one=AsyncMock(return_value=None if missing else existing))
     monkeypatch.setattr(store, "_collection", lambda mongo: collection)
     with pytest.raises(error):
         run(store.save(object(), 123, registry(), 456, 7))
-    assert collection.replace_one.await_count == 1
-    assert collection.replace_one.call_args.kwargs == {"upsert": False}
+    assert collection.find_one_and_update.await_count == 1
+    assert collection.find_one_and_update.call_args.kwargs["upsert"] is False
 
 
 @pytest.mark.parametrize("guild,revision", [(456, 7), (123, 6), (123, True)])
@@ -150,34 +158,20 @@ def test_rejects_cross_guild_or_inconsistent_revision_before_write(monkeypatch, 
 
 
 def test_two_concurrent_edits_cannot_silently_overwrite(monkeypatch):
-    class Collection:
-        def __init__(self):
-            self.row = registry()
-            self.writes = 0
-
-        async def replace_one(self, query, row, *, upsert):
-            assert upsert is False
-            if self.row["_id"] == query["_id"] and self.row["revision"] == query["revision"]:
-                self.row = deepcopy(row)
-                self.writes += 1
-                return SimpleNamespace(matched_count=1)
-            return SimpleNamespace(matched_count=0)
-
-        async def find_one(self, query, projection=None):
-            return deepcopy(self.row)
-
-    collection = Collection()
-    monkeypatch.setattr(store, "_collection", lambda mongo: collection)
     a = store.add_level(registry(), 21)
     b = store.add_level(registry(), 21)
-
+    committed = deepcopy(a)
+    committed.update(revision=8, nonbase_revision=8)
+    collection = SimpleNamespace(find_one_and_update=AsyncMock(side_effect=[committed, None]),
+                                 find_one=AsyncMock(return_value=committed))
+    monkeypatch.setattr(store, "_collection", lambda mongo: collection)
     async def compete():
         return await asyncio.gather(store.save(object(), 123, a, 456, 7), store.save(object(), 123, b, 789, 7), return_exceptions=True)
-
     results = run(compete())
     assert sum(isinstance(item, store.TownHallsConflict) for item in results) == 1
-    assert collection.writes == 1 and collection.row["revision"] == 8
-    assert list(collection.row["levels"]).count("21") == 1
+    assert collection.find_one_and_update.await_count == 2
+    assert all(call.args[0] == {"_id": "123", "revision": 7} for call in collection.find_one_and_update.call_args_list)
+    assert list(committed["levels"]).count("21") == 1
 
 
 def test_snapshot_empty_then_refresh_and_failure_keeps_last_good(monkeypatch, caplog):
