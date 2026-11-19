@@ -14,6 +14,7 @@ import coc
 from utils import coc_maintenance, todo_data
 from utils.clash_links import resolve_tags
 from utils.emoji import emojis
+from utils.town_halls import town_hall_emoji
 
 
 PAGE_SIZE = 20
@@ -236,8 +237,8 @@ def _player_link(entry: AccountEntry) -> str:
 
 
 def _th_display(level: int) -> str:
-    emoji = getattr(emojis, f"TH{level}", None)
-    return f"{emoji} TH{level}" if emoji is not None else f"🏰 TH{level or '?'}"
+    emoji = town_hall_emoji(level)
+    return f"{emoji} TH{level}" if emoji else f"TH{level or '?'}"
 
 
 def _entry_line(entry: AccountEntry, ordinal: int) -> str:

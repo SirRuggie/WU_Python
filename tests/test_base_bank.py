@@ -1,5 +1,5 @@
 from types import SimpleNamespace
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, patch
 import unittest
 from utils.base_bank import FWA_TH_LEVELS, public_bases, https_url
 import test_cwl_web_roster as fixture
@@ -70,6 +70,10 @@ class BaseBankHTTP(unittest.IsolatedAsyncioTestCase):
     asyncTearDown = fixture.RosterTests.asyncTearDown
 
     def source(self):
+        from town_halls_fixture import weight_registry
+        registry_patch = patch('utils.town_halls.load', AsyncMock(return_value=weight_registry()))
+        self.registry_read = registry_patch.start()
+        self.addCleanup(registry_patch.stop)
         self.collection = SimpleNamespace(
             find_one=AsyncMock(
                 return_value={

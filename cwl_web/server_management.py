@@ -120,6 +120,8 @@ async def identity(request, *, cached_read=False):
 
 
 async def allowed(actor, section, db, *, write=False):
+    if section == 'town_halls':
+        section = 'fwa_weight'
     if actor.get('dashboard'):
         from .access_control import dashboard_allowed
         return await dashboard_allowed(actor, section, db, write=write)
@@ -174,7 +176,7 @@ async def catalog(request):
             ('band_monitor', 'BAND monitor', 'Check the bot’s calendar connection and debug mode.', 'War', '/manage/operations/band_monitor'),
             ('fwa_points', 'FWA points', 'Manage watched clans and points checks.', 'War', '/manage/operations/fwa_points'),
             ('fwa_sync', 'FWA sync reminders', 'Manage calendar reminders and their channel.', 'War', '/manage/operations/fwa_sync'),
-            ('fwa_weight', 'TH weight ranges', 'Set the weight range for each Town Hall level.', 'War', '/manage/operations/fwa_weight'),
+            ('town_halls', 'Town Halls', 'Emoji, weight range and bases for each Town Hall level.', 'Clan resources', '/manage/town-halls'),
             ('fwa_blacklist', 'Clan blacklist', 'View or change the shared clan blacklist.', 'War', '/manage/operations/fwa_blacklist'),
             ('fwa_bases', 'FWA bases', 'Manage base links, images, and guidance.', 'War', '/manage/operations/fwa_bases'),
             ('cwl_rosters', 'CWL return reminders', 'Manage saved clans and return reminders.', 'War', '/manage/return-reminders'),

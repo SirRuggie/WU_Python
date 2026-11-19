@@ -10,6 +10,12 @@ from utils.constants import WU_GOLD, WARRIORS_UNITED_GUILD_ID
 
 
 @pytest.fixture(autouse=True)
+def town_hall_snapshot(monkeypatch):
+    from town_halls_fixture import install_snapshot
+    return install_snapshot(monkeypatch)
+
+
+@pytest.fixture(autouse=True)
 def mock_town_hall_lookup(monkeypatch):
     from extensions.commands import goldrush
     monkeypatch.setattr(goldrush, 'route_existing', AsyncMock(return_value=False))
@@ -155,7 +161,7 @@ def test_row_shows_th_emoji_tag_discord_clan_and_loot():
                  owners={'#RU00V8UP': '123456789012345678'}, warning=None,
                  town_halls={'#RU00V8UP': 18})
     payload = str(command.render_board(board)[0].build())
-    assert str(command.emojis.TH18) in payload
+    assert command.town_hall_emoji(18) in payload
     assert '`#RU00V8UP`' in payload
     assert 'https://discord.com/users/123456789012345678' in payload
     assert '<@123456789012345678>' not in payload

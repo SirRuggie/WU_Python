@@ -26,10 +26,10 @@ from hikari.impl import (
 )
 
 from extensions.commands.fwa.weight import (
-    assess_weight, build_weight_panel, get_th_emoji, load_th_emojis,
+    assess_weight, build_weight_panel, get_th_emoji, load_weight_config,
 )
 from extensions.components import register_action
-from utils import clashperk_link_writes, war_weight
+from utils import clashperk_link_writes, town_halls
 from utils.clan_weight_client import WeightClientError, request as bridge
 from utils.clan_weight_store import validate_weight
 from utils.component_state import get_state, insert_state, update_state
@@ -129,7 +129,7 @@ def parse_emoji(value: str):
 
 
 def assess(loot: int, config):
-    ranges = war_weight.ranges(config)
+    ranges = town_halls.weight_ranges(config)
     total, th, status, _ = assess_weight(loot, ranges)
     return total, th, status, ranges
 
@@ -205,8 +205,8 @@ async def not_claimed(mongo, sid: str) -> list:
 
 
 async def post_panel(bot, mongo, state: dict, loot: int, saved_for: str | None = None) -> bool:
-    config = await war_weight.load(mongo, state["guild_id"])
-    available = await load_th_emojis(bot)
+    config = await load_weight_config(mongo, state["guild_id"])
+    available = ()
     try:
         await bot.rest.create_message(
             channel=state["channel_id"],
@@ -310,8 +310,8 @@ async def accounts_view(ctx, bot, mongo, state: dict) -> list:
             "This user has no linked accounts. Enter a player tag to link it in ClashPerk and save.",
             buttons(sid, "tag", out),
         )
-    config = await war_weight.load(mongo, state["guild_id"])
-    available = await load_th_emojis(bot)
+    config = await load_weight_config(mongo, state["guild_id"])
+    available = ()
     done_now = set(state.get("saved_tags") or ())
     row = Row()
     menu = row.add_text_menu(f"fws_pick:{sid}", placeholder="Select an account")
@@ -323,7 +323,7 @@ async def accounts_view(ctx, bot, mongo, state: dict) -> list:
         saved = f"Saved {weight:,}" if isinstance(weight, int) else "No saved weight"
         if account["tag"] in done_now:
             saved += " · Done now"
-        emoji = parse_emoji(war_weight.emoji_for(th, config, available)) if th else None
+        emoji = parse_emoji(town_halls.emoji_markup(config, th)) if th else None
         menu.add_option(
             label[:100], account["tag"], description=f"{account['tag']} · {saved}"[:100],
             emoji=emoji if emoji is not None else hikari.UNDEFINED,
@@ -356,7 +356,7 @@ async def choose(ctx, bot, mongo, state: dict, player_tag: str, loot: int, *, li
     except (KeyError, TypeError):
         return card("Weight saving is unavailable now. Try again later.", buttons(sid, "back", out), accent=WU_RED)
     account = dict(account, link=bool(link))
-    config = await war_weight.load(mongo, state["guild_id"])
+    config = await load_weight_config(mongo, state["guild_id"])
     total, th, status, ranges = assess(loot, config)
     if account.get("weight") == total and not link:
         return await finish(ctx, bot, mongo, state, account, loot, already=True)
@@ -420,7 +420,7 @@ async def link_account(ctx, state: dict, account: dict) -> tuple[str | None, lis
 
 async def save(ctx, bot, mongo, state: dict, account: dict, loot: int) -> list:
     sid, out = state["_id"], leave(state)
-    config = await war_weight.load(mongo, state["guild_id"])
+    config = await load_weight_config(mongo, state["guild_id"])
     total, *_ = assess(loot, config)
     lock = await lock_save(mongo, sid)
     if lock is None:
@@ -491,7 +491,7 @@ async def next_round(mongo, state: dict, label: str, tag: str) -> str | None:
 
 async def finish(ctx, bot, mongo, state: dict, account: dict, loot: int, *, already: bool,
                  lock: str | None = None, note: str | None = None) -> list:
-    config = await war_weight.load(mongo, state["guild_id"])
+    config = await load_weight_config(mongo, state["guild_id"])
     total, *_ = assess(loot, config)
     label = account_label(account)
     clan = safe_text(account.get("clan_name"), 40) if account.get("clan_name") else "No clan"

@@ -14,6 +14,7 @@ from utils.member_profiles import ProfileOutcomeUncertain
 WORKER_ID = "manage-web-worker:644963518025826315"
 GUILD_ID = 644963518025826315
 ACTIONS = {
+    ("town_halls", "refresh"),
     ("roles", "bulk_one"),
     *{("member_profiles", x) for x in ("save", "import", "standardize_one")},
     ("clans", "emoji"),
@@ -125,6 +126,10 @@ async def dispatch(bot, mongo, row, ctx):
     section, action, values = row["section"], row["action"], row["values"]
     if (section, action) not in ACTIONS or not isinstance(values, dict):
         raise ValueError("Unknown management action.")
+    if section == "town_halls":
+        from utils.manage_operations_runtime import apply_town_halls_refresh
+
+        return await apply_town_halls_refresh(mongo, row, getattr(ctx, "dashboard_actor", None))
     if section == "roles":
         from extensions.member_role_dashboard import apply
 
@@ -576,11 +581,13 @@ async def fast_poll(bot, mongo):
 async def _poll(bot, mongo):
     from utils.manage_operations_runtime import (
         refresh_base_image_cache,
+        refresh_town_halls_cache,
         runtime_snapshot,
     )
     from extensions.tasks import band_monitor
 
     state = state_for(mongo)
+    await refresh_town_halls_cache(mongo)
     try:
         await refresh_base_image_cache(mongo)
         snapshot = runtime_snapshot(band_monitor)

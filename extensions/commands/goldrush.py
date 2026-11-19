@@ -21,6 +21,7 @@ from utils import goldrush as store, recruit_links, bot_data
 from utils.constants import WU_GOLD, WU_GREEN, WU_RED, WARRIORS_UNITED_GUILD_ID
 from utils.gold_loot import refresh_board, load_town_halls
 from utils.emoji import emojis
+from utils.town_halls import town_hall_emoji
 
 loader = lightbulb.Loader()
 group = lightbulb.Group('goldrush', 'Manage the Gold Rush giveaway',
@@ -147,7 +148,7 @@ def render(data):
         rank = ('🥇','🥈','🥉')[index-1] if index<=3 else f'**{index}.**'
         account = row['accounts'][0]
         level = data.get('levels',{}).get(account['tag'])
-        th = str(getattr(emojis,f'TH{level}',f'TH{level}')) if level else '🏰'
+        th = town_hall_emoji(level) or f'TH{level}' if level else '🏰'
         extra = f" +{len(row['accounts'])-1} accounts" if len(row['accounts'])>1 else ''
         lines.append(f"{rank} {th} **{safe_name(account['name'])}** — **{row['gold']:,} gold**\n"
                      f"-# `{account['tag']}` • {owner} • {safe_name(account['clan_name'] or 'WU Family')}{extra}")

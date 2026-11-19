@@ -14,7 +14,8 @@ from extensions.components import register_action
 from utils.mongo import MongoClient
 from utils.constants import WU_GOLD, WU_RED
 from utils.media_urls import GALLERY, optimized
-from utils.emoji import emojis
+from utils.emoji import emojis, town_hall_select_emoji
+from utils.town_halls import town_hall_emoji
 
 from hikari.impl import (
     ContainerComponentBuilder as Container,
@@ -37,23 +38,23 @@ loader = lightbulb.Loader()
 
 # Town Hall configuration (same as in set_townhall.py)
 TH_LEVELS = [
-    {"level": 18, "emoji": emojis.TH18, "role_id": 1439244282392215552},
-    {"level": 17, "emoji": emojis.TH17, "role_id": 1315835882435121152},
-    {"level": 16, "emoji": emojis.TH16, "role_id": 1186343231303200848},
-    {"level": 15, "emoji": emojis.TH15, "role_id": 1029879502484025474},
-    {"level": 14, "emoji": emojis.TH14, "role_id": 1003796205630914630},
-    {"level": 13, "emoji": emojis.TH13, "role_id": 1003796042317316166},
-    {"level": 12, "emoji": emojis.TH12, "role_id": 1003796143630712943},
-    {"level": 11, "emoji": emojis.TH11, "role_id": 1003796173993287690},
-    {"level": 10, "emoji": emojis.TH10, "role_id": 1003796340578471977},
-    {"level": 9, "emoji": emojis.TH9, "role_id": 1003795980052873276},
-    {"level": 8, "emoji": emojis.TH8, "role_id": 1003796008121143436},
-    {"level": 7, "emoji": emojis.TH7, "role_id": 1006456898616311808},
-    {"level": 6, "emoji": emojis.TH6, "role_id": 1006457868037410887},
-    {"level": 5, "emoji": emojis.TH5, "role_id": 1006458029597798420},
-    {"level": 4, "emoji": emojis.TH4, "role_id": 1006458193418924062},
-    {"level": 3, "emoji": emojis.TH3, "role_id": 1006458298842746890},
-    {"level": 2, "emoji": emojis.TH2, "role_id": 1148951648484474951},
+    {"level": 18, "role_id": 1439244282392215552},
+    {"level": 17, "role_id": 1315835882435121152},
+    {"level": 16, "role_id": 1186343231303200848},
+    {"level": 15, "role_id": 1029879502484025474},
+    {"level": 14, "role_id": 1003796205630914630},
+    {"level": 13, "role_id": 1003796042317316166},
+    {"level": 12, "role_id": 1003796143630712943},
+    {"level": 11, "role_id": 1003796173993287690},
+    {"level": 10, "role_id": 1003796340578471977},
+    {"level": 9, "role_id": 1003795980052873276},
+    {"level": 8, "role_id": 1003796008121143436},
+    {"level": 7, "role_id": 1006456898616311808},
+    {"level": 6, "role_id": 1006457868037410887},
+    {"level": 5, "role_id": 1006458029597798420},
+    {"level": 4, "role_id": 1006458193418924062},
+    {"level": 3, "role_id": 1006458298842746890},
+    {"level": 2, "role_id": 1148951648484474951},
 ]
 
 # Server roles configuration
@@ -153,7 +154,7 @@ async def build_family_links_panel(
     for th_config in TH_LEVELS:
         th_options.append(
             SelectOption(
-                emoji=th_config["emoji"].partial_emoji,
+                emoji=town_hall_select_emoji(th_config["level"]),
                 label=f"TH{th_config['level']}",
                 value=f"th{th_config['level']}:{th_config['role_id']}",
                 description=f"Town Hall {th_config['level']}"
@@ -334,9 +335,9 @@ async def family_links_th_handler(
         
         for th_config in TH_LEVELS:
             if th_config["role_id"] in roles_to_add:
-                added_names.append(f"{th_config['emoji']} TH{th_config['level']}")
+                added_names.append(f"{town_hall_emoji(th_config['level'])} TH{th_config['level']}")
             elif th_config["role_id"] in roles_to_remove:
-                removed_names.append(f"{th_config['emoji']} TH{th_config['level']}")
+                removed_names.append(f"{town_hall_emoji(th_config['level'])} TH{th_config['level']}")
         
         message_parts = ["✅ **Town Hall roles updated!**"]
         if added_names:

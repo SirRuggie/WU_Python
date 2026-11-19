@@ -31,6 +31,7 @@ export function sectionArea(section: ManagementSection): ManagementArea | null {
   if (section.id === "band_monitor") return "connections-settings";
   if (section.id === "cwl_rosters" || section.id.startsWith("cwl-"))
     return "cwl-returns";
+  if (section.id === "town_halls") return "fwa-settings";
   if (section.id.startsWith("fwa_") || section.id.startsWith("war--"))
     return "fwa-settings";
   if (

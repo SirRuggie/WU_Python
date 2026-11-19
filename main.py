@@ -219,6 +219,9 @@ async def on_bot_start(event: hikari.StartedEvent):
             })
             print(f"[INFO] Loaded {len(fwa_data['active_base_images'])} FWA active base URLs")
 
+    from utils.manage_operations_runtime import refresh_town_halls_cache
+    await refresh_town_halls_cache(mongo_client, force=True, startup=True)
+
     # Check for reboot notification
     try:
         reboot_status = await mongo_client.bot_config.find_one({"_id": "reboot_status"})

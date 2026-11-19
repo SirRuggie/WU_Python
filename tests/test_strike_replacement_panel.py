@@ -12,6 +12,13 @@ import pytest
 
 from extensions.commands import strikes
 from utils.dashboard_urls import STRIKES_URL
+from utils.town_halls import town_hall_emoji
+from town_halls_fixture import install_snapshot
+
+
+@pytest.fixture(autouse=True)
+def registry_snapshot(monkeypatch):
+    install_snapshot(monkeypatch)
 from utils.recruit_links import LinksResult
 
 
@@ -138,7 +145,7 @@ def test_weights_mode_groups_best_three_per_weight_with_gap_and_priority():
     assert text.count('`#S') == 6 and '#ONE' not in text
     assert 'Gap 0k' in text and 'Normal' in text and '3 active strikes' in text
     assert '<@111222333444555666>' in text and 'Edrag Rush' in text
-    assert strikes.emoji_for(15, {'ranges': {}}) in text
+    assert town_hall_emoji(15) in text
     nav = rows_of(payload)[2]['components']
     assert nav[1].get('disabled') and nav[2].get('disabled')
 
@@ -569,3 +576,11 @@ def test_dropping_rows_keeps_the_best_row_per_weight_and_says_so():
     assert text.count('`#W') < 15 and _units(payload) <= 3500
     sections = text.split('### ')[1:]
     assert len(sections) == 5 and all('`#W' in section for section in sections)
+
+
+def test_missing_registry_snapshot_renders_plain_town_hall(monkeypatch):
+    from utils import town_halls
+    monkeypatch.setattr(town_halls, '_snapshot', None)
+    payload, _ = render([candidate('#A', count=3, th=19)], {})
+    assert 'TH19 **1. A**' in text_of(payload)
+    assert '<:TH_' not in text_of(payload)

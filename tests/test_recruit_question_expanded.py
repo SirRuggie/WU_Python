@@ -177,10 +177,10 @@ def test_fwa_native_overview_uses_exact_approved_benefit_lines():
     rendered = native_components('what_is_fwa', recruit_mention='<@22>', recruiter_mention='<@11>', action_id='panel')
     texts = [part.content for container in rendered for part in container.components if hasattr(part, 'content')]
     overview = next(text for text in texts if 'Maximized Loot and XP' in text)
-    from utils.emoji import emojis
+    from utils.town_halls import town_hall_emoji
     assert overview == (
         "## 📌 FWA Clans in Clash of Clans: A Quick Overview\n"
-        f"> Minimum TH for FWA: TH13 {emojis.TH13}\n\n"
+        f"> Minimum TH for FWA: TH12 {town_hall_emoji(12)}\n\n"
         "FWA, or Farm War Alliance, is a unique concept in Clash of Clans. The goal is to get the most loot and clan XP, not only to win wars.\n\n"
         "### **__<a:FWA:1398229188363948055> What are the benefits?__**\n"
         "**<a:Gold_Coins:1398229429892808745> Maximized Loot and XP**\n"

@@ -71,24 +71,6 @@ class Emojis:
         self.RaidMedals = EmojiType("<:RaidMedals:1533862190518505515>")
 
         # TH Emojis
-        self.TH2 = EmojiType("<:TH_2:1395728426849275997>")
-        self.TH3 = EmojiType("<:TH_3:1395728517299306537>")
-        self.TH4 = EmojiType("<:TH_4:1395728565575618623>")
-        self.TH5 = EmojiType("<:TH_5:1395728620185718796>")
-        self.TH6 = EmojiType("<:TH_6:1395728668583792716>")
-        self.TH7 = EmojiType("<:TH_7:1395728738334806152>")
-        self.TH8 = EmojiType("<:TH_8:1395728783591608360>")
-        self.TH9 = EmojiType("<:TH_9:1395728820471857266>")
-        self.TH10 = EmojiType("<:TH_10:1395728880991735899>")
-        self.TH11 = EmojiType("<:TH_11:1395728917339570186>")
-        self.TH12 = EmojiType("<:TH_12:1395728951854501959>")
-        self.TH13 = EmojiType("<:TH_13:1395728985857458261>")
-        self.TH14 = EmojiType("<:TH_14:1395729011404963843>")
-        self.TH15 = EmojiType("<:TH_15:1395729045962096651>")
-        self.TH16 = EmojiType("<:TH_16:1395729067990319164>")
-        self.TH17 = EmojiType("<:TH_17:1395729126014324837>")
-        self.TH18 = EmojiType("<:TH_18:1447966636496650310>")
-        self.TH19 = EmojiType("<:TH_19A:1571025137896005783>")
 
         # League Emojis - not updated
         self.Champ1 = EmojiType("<:CHL_1:1387845952512983222>")
@@ -141,3 +123,44 @@ emojis = Emojis()
 
 
 
+
+
+def town_hall_select_emoji(level):
+    """Discord component adaptation of the registry's sole emoji source."""
+    from utils.town_halls import town_hall_emoji
+    markup = town_hall_emoji(level)
+    return hikari.Emoji.parse(markup) if markup else hikari.UNDEFINED
+
+
+def fwa_town_hall_options(options):
+    """Limit existing base choices to the configured FWA minimum, when loaded.
+
+    Base records themselves move in 245. Missing startup data retains the old
+    read-only choices with plain level labels rather than inventing a registry.
+    """
+    allowed = set(fwa_town_hall_keys([option.value for option in options]))
+    return [option for option in options if option.value in allowed]
+
+
+def fwa_town_hall_keys(keys):
+    """Read-only visibility filter for the existing legacy base dataset."""
+    from utils.town_halls import snapshot
+    doc = snapshot()
+    if doc is None:
+        return list(keys)
+    return [key for key in keys if int(key[2:].split('_')[0]) >= doc['lowest_fwa_town_hall']]
+
+
+def fwa_town_hall_menu(menu):
+    """A configured minimum beyond legacy base data renders a disabled menu."""
+    if not menu.options:
+        menu.add_option('No FWA base levels configured', 'unavailable')
+        menu.set_is_disabled(True)
+    return menu
+
+
+def fwa_minimum_level():
+    """Current rendering minimum, or the accepted TH12 migration baseline."""
+    from utils.town_halls import snapshot
+    doc = snapshot()
+    return doc['lowest_fwa_town_hall'] if doc else 12

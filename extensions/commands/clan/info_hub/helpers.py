@@ -4,6 +4,7 @@ from typing import List, Optional
 from utils.mongo import MongoClient
 from utils.classes import Clan
 from utils.emoji import emojis
+from utils.town_halls import town_hall_emoji
 
 
 async def get_clans_by_type(mongo: MongoClient, clan_type: str) -> List[Clan]:
@@ -22,12 +23,10 @@ def format_th_requirement(th_level: Optional[int], th_attribute: Optional[str]) 
     if not th_level:
         return "📋 TH Requirement: Not Set"
 
-    # Get the appropriate TH emoji
-    th_emoji_name = f"TH{th_level}"
-    th_emoji = getattr(emojis, th_emoji_name, "🏛️")
+    th_emoji = town_hall_emoji(th_level)
 
     # Format the requirement text
-    base_text = f"{th_emoji} TH{th_level}"
+    base_text = f"{th_emoji} TH{th_level}".strip()
 
     if th_attribute:
         if th_attribute == "Max":

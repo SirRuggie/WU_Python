@@ -5,6 +5,13 @@ import { afterEach, expect, it, vi } from "vitest";
 import useLocationNow from "./useLocationNow";
 import RosterAccountCard from "./RosterAccountCard";
 
+vi.mock("./townHallRegistry", async () => {
+  const { townHallRegistryTestFixture } = await import(
+    "./townHallRegistryTestFixture"
+  );
+  return townHallRegistryTestFixture();
+});
+
 afterEach(() => {
   vi.useRealTimers();
   vi.restoreAllMocks();

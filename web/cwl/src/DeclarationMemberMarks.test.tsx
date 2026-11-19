@@ -1,4 +1,10 @@
 // @vitest-environment happy-dom
+vi.mock("./townHallRegistry", async () => {
+  const { townHallRegistryTestFixture } = await import(
+    "./townHallRegistryTestFixture"
+  );
+  return townHallRegistryTestFixture();
+});
 import { act } from "react";
 import { createRoot } from "react-dom/client";
 import { it, expect, vi, afterEach } from "vitest";

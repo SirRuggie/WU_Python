@@ -41,14 +41,14 @@ class ManageOperationsTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(leaf['fields'][0]['value'],'https://link.clashofclans.com/a')
         with self.assertRaises(web.HTTPBadRequest):await load_document(db,'fwa_bases','TH18.$bad')
 
-    async def test_weight_does_not_mutate_defaults_during_read(self):
-        collection=SimpleNamespace(find_one=AsyncMock(return_value=None))
-        db=SimpleNamespace(bot_config=ConfigCollection(),fwa_data=SimpleNamespace(database=SimpleNamespace(get_collection=lambda _:collection)))
-        doc=await load_document(db,'fwa_weight','new')
-        self.assertFalse(doc['fields'][0]['readonly'])
-        self.assertEqual(doc['fields'][0]['key'],'th')
-        parent=await load_document(db,'fwa_weight')
-        self.assertEqual(parent['documents'][-1]['id'],'new')
+    async def test_old_weight_read_redirects_to_registry_without_storage_access(self):
+        from unittest.mock import patch
+        from cwl_web import manage_operations as operations
+        req=SimpleNamespace(match_info={'section':'fwa_weight','item':'new'})
+        with patch.object(operations.shared,'require_manage',AsyncMock()), patch.object(operations.shared,'mongo',side_effect=AssertionError('old read must redirect')):
+            with self.assertRaises(web.HTTPTemporaryRedirect) as error:
+                await operations.read(req)
+        self.assertEqual(error.exception.location, '/api/cwl/manage/town-halls/add')
 
     async def test_channel_overwrite_denial_blocks_save(self):
         from unittest.mock import patch
@@ -134,23 +134,15 @@ class ManageOperationsTests(unittest.IsolatedAsyncioTestCase):
             with self.assertRaises(web.HTTPConflict):await operations.action(req)
         db.fwa_blacklist.find_one.assert_not_awaited()
 
-    async def test_weight_save_does_not_reload_newer_native_revision(self):
-        from contextlib import asynccontextmanager
+    async def test_old_weight_write_is_gone_before_any_storage_access(self):
         from unittest.mock import patch
         from cwl_web import manage_operations as operations
-        config={'revision':4,'minimum_th':9,'ranges':{}}
-        @asynccontextmanager
-        async def mongo(_):yield SimpleNamespace(bot_config=ConfigCollection())
-        load=AsyncMock(return_value=config)
-        async def persist(db,guild,row,user):
-            self.assertEqual(row['revision'],4)
-            self.assertEqual(row['minimum_th'],10)
-            raise ValueError('Concurrent update')
         req=SimpleNamespace(match_info={'section':'fwa_weight','item':'settings'})
-        with patch.object(operations.war_weight,'load',load), patch.object(operations.war_weight,'save',persist), patch.object(operations.shared,'mongo',mongo), patch.object(operations.shared,'require_manage',AsyncMock(return_value={'user_id':'1'})), patch('cwl_web.app._json',AsyncMock(return_value={'revision':revision(config),'values':{'minimum_th':10}})):
-            with self.assertRaises(web.HTTPBadRequest):await operations.save(req)
-        self.assertEqual(load.await_count,1)
-        self.assertEqual(config['minimum_th'],9)
+        with patch.object(operations.shared,'require_manage',AsyncMock()), patch.object(operations.shared,'mongo',side_effect=AssertionError('old write must be gone')):
+            with self.assertRaises(web.HTTPGone) as error:
+                await operations.save(req)
+        self.assertEqual(error.exception.text, 'TH weight ranges moved to Town Halls. Refresh this page.')
+
 
     async def test_stale_band_status_does_not_claim_current_health(self):
         import time
@@ -178,18 +170,6 @@ class ManageOperationsTests(unittest.IsolatedAsyncioTestCase):
         with patch.object(operations.shared, 'mongo', mongo), patch.object(operations.shared, 'require_manage', AsyncMock(return_value={'user_id': '1'})), patch('cwl_web.app._json', AsyncMock(return_value={'revision': revision({}), 'values': {'debug': True}})):
             with self.assertRaises(web.HTTPBadRequest): await operations.save(req)
 
-    async def test_weights_reject_fractional_boolean_and_out_of_range_numbers(self):
-        from contextlib import asynccontextmanager
-        from unittest.mock import patch
-        from cwl_web import manage_operations as operations
-        config = operations.war_weight.defaults()
-        @asynccontextmanager
-        async def mongo(_): yield SimpleNamespace()
-        req = SimpleNamespace(match_info={'section': 'fwa_weight', 'item': 'settings'})
-        for value in (9.5, True, 0, 100, '9'):
-            with self.subTest(value=value), patch.object(operations.war_weight, 'load', AsyncMock(return_value=config)), patch.object(operations.war_weight, 'save', AsyncMock()) as persist, patch.object(operations.shared, 'mongo', mongo), patch.object(operations.shared, 'require_manage', AsyncMock(return_value={'user_id': '1'})), patch('cwl_web.app._json', AsyncMock(return_value={'revision': revision(config), 'values': {'minimum_th': value}})):
-                with self.assertRaises(web.HTTPBadRequest): await operations.save(req)
-                persist.assert_not_awaited()
 
     async def test_sync_channel_input_is_validated_before_discord_lookup(self):
         from contextlib import asynccontextmanager

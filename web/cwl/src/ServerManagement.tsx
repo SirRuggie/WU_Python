@@ -1,3 +1,4 @@
+import TownHallRecords from "./TownHallRecords";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
 import SectionTabs from "./SectionTabs";
@@ -45,11 +46,19 @@ import "./ServerManagement.css";
 import "./navList.css";
 type Props = {
   area?: ManagementArea;
+  townHallPath?: string;
+  onTownHallNavigate?: (path: string) => void;
   onNavigate?: (destination: string) => void;
   onDirty?: (dirty: boolean) => void;
 };
 
-export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
+export default function ServerManagement({
+  onNavigate,
+  onDirty,
+  area,
+  townHallPath,
+  onTownHallNavigate,
+}: Props) {
   const [sections, setSections] = useState<ManagementSection[]>([]),
     [query, setQuery] = useState(""),
     [documents, setDocuments] = useState<ManagementSection[]>([]),
@@ -75,6 +84,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
   const [catalogAttempt, setCatalogAttempt] = useState(0);
   const [returnDirty, setReturnDirty] = useState(false);
   const [publishDirty, setPublishDirty] = useState(false);
+  const [failedTownHallIcon, setFailedTownHallIcon] = useState<string | null>(
+    null,
+  );
+
   const writing = useRef(false),
     indexTrigger = useRef<HTMLButtonElement | null>(null),
     editorHeading = useRef<HTMLHeadingElement | null>(null);
@@ -197,8 +210,13 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       leaving.current = false;
     }
   };
-  const open = async (section: ManagementSection, keepDocuments = false) => {
-    if (!(await mayLeave())) return;
+  const open = async (
+    section: ManagementSection,
+    keepDocuments = false,
+    navigate = true,
+    leaveChecked = false,
+  ) => {
+    if (!leaveChecked && !(await mayLeave())) return;
     if (section.destination) {
       onNavigate?.(section.destination);
       return;
@@ -224,7 +242,10 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     try {
       const result = await api<ManagementDocument>(endpoint(section));
       if (turn === sequence.current) {
-        if (result.documents) {
+        if (
+          result.documents &&
+          (result.id !== "town_halls" || !result.endpoint)
+        ) {
           setDocuments(
             result.documents.map((record) => ({ ...section, ...record })),
           );
@@ -235,7 +256,23 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
           setDocument({ ...result, fields });
           setDraft(fieldValues(fields));
           setPreview(result.preview || null);
+          if (result.id === "town_halls") {
+            setSelected({
+              ...section,
+              label: result.label,
+              endpoint: result.endpoint,
+              emoji_url: result.emoji_url,
+            });
+            setDocuments(
+              (result.documents || []).map((record) => ({
+                ...section,
+                ...record,
+              })),
+            );
+          }
         }
+        if (result.id === "town_halls" && navigate)
+          onTownHallNavigate?.(result.endpoint || "/manage/town-halls");
       }
     } catch (error) {
       if (turn === sequence.current) setError(message(error));
@@ -254,6 +291,8 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     setError("");
     setNotice("");
     setBusy(false);
+    if (selected && endpoint(selected).startsWith("/manage/town-halls"))
+      onTownHallNavigate?.("/server/fwa");
     window.requestAnimationFrame(() => indexTrigger.current?.focus());
   };
   // Band monitor holds one section: open it directly (D7). Once per visit,
@@ -270,6 +309,31 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     autoOpened.current = true;
     void open(directSection);
   });
+  const townHallSection = sections.find(
+    (section) => section.id === "town_halls" && section.allowed !== false,
+  );
+  useEffect(() => {
+    if (
+      !townHallPath ||
+      !townHallSection ||
+      busy ||
+      error ||
+      (selected && endpoint(selected) === townHallPath)
+    )
+      return;
+    void open(
+      { ...townHallSection, endpoint: townHallPath },
+      false,
+      false,
+      true,
+    );
+  }, [townHallPath, townHallSection, busy, error]);
+  const groupedTownHalls = documents.some((record) => !!record.list_group);
+  const openTownHall = (path: string) => {
+    const record = documents.find((item) => item.endpoint === path);
+    const section = record || townHallSection;
+    if (section) void open({ ...section, endpoint: path }, true);
+  };
   const checkAction = async (url: string, wait = false) => {
     for (let attempt = 0; attempt < (wait ? 30 : 1); attempt++) {
       const result = await api<{
@@ -315,10 +379,19 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
     setBusy(true);
     setError("");
     setNotice("");
+    const values =
+      document.id === "town_halls"
+        ? fieldValues(
+            document.fields.map((field) => ({
+              ...field,
+              value: draft[field.key],
+            })),
+          )
+        : changes;
     const requestKey = requestIds.current.key(
       endpoint(selected),
       document.revision,
-      changes,
+      values,
     );
     try {
       let result = await api<
@@ -332,7 +405,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         review ? "POST" : "PATCH",
         {
           revision: document.revision,
-          values: changes,
+          values,
           ...(review ? {} : { request_id: requestIds.current.get(requestKey) }),
         },
       );
@@ -355,12 +428,31 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
         setDraft(fieldValues(result.fields || []));
         setConflict(false);
         setPreview(result.preview || null);
+        if (result.id === "town_halls") {
+          const path = result.endpoint || endpoint(selected);
+          setSelected({
+            ...selected,
+            label: result.label,
+            endpoint: path,
+            emoji_url: result.emoji_url,
+          });
+          setDocuments(
+            (result.documents || []).map((record) => ({
+              ...selected,
+              ...record,
+            })),
+          );
+          onTownHallNavigate?.(path);
+          window.requestAnimationFrame(() => editorHeading.current?.focus());
+        }
         setNotice("Saved.");
       }
     } catch (error) {
       setConflict(error instanceof ApiError && error.status === 409);
       setError(
-        error instanceof ApiError && error.status === 409
+        error instanceof ApiError &&
+          error.status === 409 &&
+          document.id !== "town_halls"
           ? "Someone changed these settings. Your edits are still here. Keep a copy of your edits before refreshing."
           : message(error),
       );
@@ -378,7 +470,21 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       <CwlPageHeader
         title={
           <h1 ref={editorHeading} tabIndex={-1}>
-            {(selected?.id === directSection?.id && areaInfo?.title) ||
+            {document?.id === "town_halls" &&
+              document.emoji_url &&
+              failedTownHallIcon !== document.emoji_url && (
+                <img
+                  src={document.emoji_url}
+                  width={36}
+                  height={36}
+                  alt=""
+                  onError={() =>
+                    setFailedTownHallIcon(document.emoji_url || null)
+                  }
+                />
+              )}
+            {(document?.id === "town_halls" && document.label) ||
+              (selected?.id === directSection?.id && areaInfo?.title) ||
               selected?.label ||
               areaInfo?.title ||
               "Manage your server"}
@@ -492,7 +598,16 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
       {!selected && operationsWorkspace && busy && (
         <p role="status">Loading settings…</p>
       )}
-      {selected && documents.length > 0 && (
+      {selected && groupedTownHalls && (
+        <TownHallRecords
+          records={documents}
+          currentEndpoint={endpoint(selected)}
+          editor={!!document}
+          mayLeave={() => true}
+          open={openTownHall}
+        />
+      )}
+      {selected && documents.length > 0 && !groupedTownHalls && (
         <ManagementRecordNavigation
           documents={documents}
           selected={selected}
@@ -567,6 +682,7 @@ export default function ServerManagement({ onNavigate, onDirty, area }: Props) {
               setDocument={setDocument}
               setDraft={setDraft}
               setNotice={setNotice}
+              onOpenRecord={openTownHall}
             />
             {document.preview_supported && previewVisible && (
               <DiscordPreview parts={preview || []} status={previewStatus} />

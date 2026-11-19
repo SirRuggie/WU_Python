@@ -48,7 +48,11 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.providers = FakeProviders()
         self.app = create_app(db_path=str(Path(self.tmp.name) / "cwl.sqlite"), providers=self.providers, secure_cookies=False, live_access=True)
-        self.app["server_management_mongo"] = SimpleNamespace(bot_config=AccessCollection())
+        from town_halls_fixture import weight_registry
+        from cwl_web.server_management import GUILD_ID
+        collection = SimpleNamespace(find_one=AsyncMock(return_value=weight_registry(guild_id=GUILD_ID)))
+        parent = SimpleNamespace(database=SimpleNamespace(get_collection=lambda _name: collection))
+        self.app["server_management_mongo"] = SimpleNamespace(bot_config=AccessCollection(), fwa_data=parent)
         self.app['server_management_discord'] = AsyncMock(return_value={'user': {'username': 'Test member'}, 'roles': []})
         self.client = TestClient(TestServer(self.app))
         await self.client.start_server()
@@ -272,6 +276,13 @@ class WebFoundationTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 404)
         response = await self.call("GET", "/config")
         self.assertEqual((await response.json())["dev_fixture"], False)
+
+    async def test_config_rejects_missing_registry_without_enabling_fixture_login(self):
+        self.app["server_management_mongo"].fwa_data.database.get_collection("town_halls").find_one.return_value = None
+        response = await self.call("GET", "/config")
+        self.assertEqual(response.status, 503)
+        self.assertIn("Town Halls not migrated", await response.text())
+        self.assertEqual((await self.call("POST", "/dev/login")).status, 404)
 
     async def test_owner_grants_and_no_automatic_admin(self):
         response = await self.call("POST", "/seasons", self.member, json={"label": "October 2026", "signup_open": True})

@@ -1,4 +1,10 @@
 // @vitest-environment happy-dom
+vi.mock("./townHallRegistry", async () => {
+  const { townHallRegistryTestFixture } = await import(
+    "./townHallRegistryTestFixture"
+  );
+  return townHallRegistryTestFixture();
+});
 import { renderToStaticMarkup } from "react-dom/server";
 import { Window } from "happy-dom";
 import { readFileSync } from "node:fs";

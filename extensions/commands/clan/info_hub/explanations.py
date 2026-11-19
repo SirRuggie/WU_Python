@@ -19,7 +19,8 @@ from hikari.impl import (
 )
 
 from utils.constants import GREEN_ACCENT, BLUE_ACCENT
-from utils.emoji import emojis
+from utils.emoji import fwa_minimum_level, emojis
+from utils.town_halls import town_hall_emoji
 from utils.mongo import MongoClient
 
 
@@ -122,7 +123,7 @@ async def show_what_is_fwa(
                 Separator(divider=True),
                 Text(content=(
                     "## 📌 FWA Clans in Clash of Clans: A Quick Overview\n"
-                    f"> Minimum TH for FWA: TH13 {emojis.TH13}\n\n"
+                    f"> Minimum TH for FWA: TH{fwa_minimum_level()} {town_hall_emoji(fwa_minimum_level())}\n\n"
                     "FWA, or Farm War Alliance, is a unique concept in Clash of Clans. It's all about maximizing loot and clan XP, rather than focusing solely on winning wars.\n\n"
                     "### **__<a:FWA:1387882523358527608> What are the benefits?__**\n"
                     "**<:Money_Gob:1024851096847519794> Maximized Loot and XP**\n"

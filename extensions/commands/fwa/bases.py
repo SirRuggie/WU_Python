@@ -7,7 +7,8 @@ from utils.component_state import insert_state
 from utils.mongo import MongoClient
 from extensions.commands.fwa import loader, fwa
 from .helpers import get_fwa_base_object
-from utils.emoji import emojis
+from utils.emoji import emojis, town_hall_select_emoji, fwa_town_hall_options, fwa_town_hall_menu
+from utils.town_halls import town_hall_emoji
 
 from utils.constants import WU_GOLD, FWA_WAR_BASE, FWA_ACTIVE_WAR_BASE
 
@@ -75,78 +76,78 @@ class Bases(
                     ),
                     ActionRow(
                         components=[
-                            TextSelectMenu(
+                            fwa_town_hall_menu(TextSelectMenu(
                                 max_values=1,
                                 custom_id=f"fwa_bases_th_select:{action_id}",
                                 placeholder="Select a Base...",
-                                options=[
+                                options=fwa_town_hall_options([
                                     SelectOption(
-                                        emoji=emojis.TH18.partial_emoji,
+                                        emoji=town_hall_select_emoji(18),
                                         label="TH18",
                                         value="th18"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH18.partial_emoji,
+                                        emoji=town_hall_select_emoji(18),
                                         label="TH18 New",
                                         value="th18_new"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH17.partial_emoji,
+                                        emoji=town_hall_select_emoji(17),
                                         label="TH17",
                                         value="th17"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH17.partial_emoji,
+                                        emoji=town_hall_select_emoji(17),
                                         label="TH17 New",
                                         value="th17_new"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH16.partial_emoji,
+                                        emoji=town_hall_select_emoji(16),
                                         label="TH16",
                                         value="th16"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH16.partial_emoji,
+                                        emoji=town_hall_select_emoji(16),
                                         label="TH16 New",
                                         value="th16_new"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH15.partial_emoji,
+                                        emoji=town_hall_select_emoji(15),
                                         label="TH15",
                                         value="th15"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH14.partial_emoji,
+                                        emoji=town_hall_select_emoji(14),
                                         label="TH14",
                                         value="th14"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH13.partial_emoji,
+                                        emoji=town_hall_select_emoji(13),
                                         label="TH13",
                                         value="th13"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH12.partial_emoji,
+                                        emoji=town_hall_select_emoji(12),
                                         label="TH12",
                                         value="th12"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH11.partial_emoji,
+                                        emoji=town_hall_select_emoji(11),
                                         label="TH11",
                                         value="th11"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH10.partial_emoji,
+                                        emoji=town_hall_select_emoji(10),
                                         label="TH10",
                                         value="th10"
                                     ),
                                     SelectOption(
-                                        emoji=emojis.TH9.partial_emoji,
+                                        emoji=town_hall_select_emoji(9),
                                         label="TH9",
                                         value="th9"
                                     ),
-                                ],
-                            ),
+                                ]),
+                            )),
                         ]
                     ),
                     Media(items=[MediaItem(media="assets/Gold_Footer.png")]),

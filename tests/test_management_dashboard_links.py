@@ -133,3 +133,65 @@ def test_activity_signin_preserves_bounded_filters_and_legacy_alias():
     assert params=={'clans':['#PYY'],'marked':['1'],'sort':['quiet'],'q':['<Name>'],'tag':['#PQQ']}
     assert saved_login_destination(SimpleNamespace(cookies={'wu_login_page':'/clans/replacements?clan=%23PYY&marked=1'}))=='/replacements?clan=%23PYY&marked=1'
     assert login_destination({'view':'strikes','q':'x'*1000}).count('x')==80
+
+
+class TownHallDashboardLinksTests(unittest.IsolatedAsyncioTestCase):
+    async def test_exact_spa_and_legacy_redirects_preserve_api_auth(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "index.html").write_text("<html>Town Hall fixture</html>")
+            app = create_app(db_path=str(root / "test.sqlite"), static_dir=root,
+                             dev_fixture=True, secure_cookies=False)
+            async with TestClient(TestServer(app)) as client:
+                for suffix in ("", "/settings", "/add", "/1", "/19", "/99"):
+                    for slash in ("", "/"):
+                        response = await client.get("/manage/town-halls" + suffix + slash)
+                        self.assertEqual(response.status, 200)
+                        self.assertIn("Town Hall fixture", await response.text())
+                for old, expected in (("/manage/operations/fwa_weight", "/manage/town-halls"),
+                                      ("/manage/operations/fwa_weight/19", "/manage/town-halls/19"),
+                                      ("/fwa_weight/19", "/manage/town-halls/19")):
+                    for slash in ("", "/"):
+                        response = await client.get(old + slash + "?next=https://evil.test", allow_redirects=False)
+                        self.assertEqual(response.status, 302)
+                        self.assertEqual(response.headers["Location"], expected)
+                for prefix in ("/manage/town-halls", "/manage/operations/fwa_weight", "/fwa_weight"):
+                    for suffix in ("/0", "/01", "/100", "/-1", "/19/x", "/other", "/19//"):
+                        response = await client.get(prefix + suffix)
+                        self.assertEqual(response.status, 404, prefix + suffix)
+                from yarl import URL
+                for path in ("/manage/town-halls/%31", "/manage/operations/fwa_weight/%31", "/fwa_weight/%31"):
+                    self.assertEqual((await client.get(URL(path, encoded=True))).status, 404)
+                self.assertEqual((await client.get("/api/cwl/manage/town-halls")).status, 401)
+                self.assertEqual((await client.get("/api/cwl/town-halls")).status, 401)
+
+    async def test_oauth_cookie_capture_keeps_only_bounded_town_hall_record(self):
+        with tempfile.TemporaryDirectory() as directory:
+            app = create_app(db_path=str(Path(directory) / "test.sqlite"), dev_fixture=True,
+                             secure_cookies=False, oauth={"client_id": "id", "client_secret": "fixture",
+                             "redirect_uri": "https://app.example/api/cwl/auth/callback"})
+            async with TestClient(TestServer(app)) as client:
+                for token in ("list", "settings", "add", "1", "19", "99"):
+                    expected = "/manage/town-halls" + ("/" + token if token != "list" else "")
+                    response = await client.get("/api/cwl/auth/discord?view=fwa-settings&town_hall=" + token + "&next=https://evil.test", allow_redirects=False)
+                    self.assertEqual(response.status, 302)
+                    self.assertTrue(response.headers["Location"].startswith("https://discord.com/oauth2/authorize?"))
+                    self.assertEqual(response.cookies["wu_login_page"].value, expected)
+                    failed = await client.get("/api/cwl/auth/callback?error=access_denied", headers={"Accept": "text/html", "Cookie": "wu_login_page=" + expected}, allow_redirects=False)
+                    self.assertEqual(failed.headers["Location"], expected + "?signin_error=discord")
+
+    def test_canonical_bounded_destinations(self):
+        for token in ("list", "settings", "add", "1", "19", "99"):
+            expected = "/manage/town-halls" + ("/" + token if token != "list" else "")
+            self.assertEqual(login_destination({"view": "fwa-settings", "town_hall": token, "next": "https://evil.test"}), expected)
+            self.assertEqual(saved_login_destination(SimpleNamespace(cookies={"wu_login_page": expected + "/?next=https://evil.test"})), expected)
+        for token in ("", "0", "01", "100", "-1", "19/x", "https://evil.test", "//evil.test", "１９", "19?next=x"):
+            self.assertEqual(login_destination({"view": "fwa-settings", "town_hall": token}), "")
+        self.assertEqual(login_destination({"view": "access", "town_hall": "add"}), "/settings/access")
+        self.assertEqual(login_destination({"view": "fwa-settings"}), "/server/fwa")
+        for old, expected in (("/manage/operations/fwa_weight", "/manage/town-halls"),
+                              ("/manage/operations/fwa_weight/19", "/manage/town-halls/19"),
+                              ("/fwa_weight/19", "/manage/town-halls/19")):
+            self.assertEqual(saved_login_destination(SimpleNamespace(cookies={"wu_login_page": old})), expected)
+        for path in ("//evil.test/manage/town-halls/19", "https://evil.test/manage/town-halls", "/manage/town-halls/0", "/manage/town-halls/01", "/manage/town-halls/100", "/manage/town-halls/19/x", "/manage/town-halls//", "/manage/town-halls/%31"):
+            self.assertEqual(saved_login_destination(SimpleNamespace(cookies={"wu_login_page": path})), "")

@@ -5,7 +5,8 @@ from uuid import uuid4
 from aiohttp import web
 from pymongo.errors import DuplicateKeyError
 from pymongo.write_concern import WriteConcern
-from utils.constants import CLAN_TYPES,TH_LEVELS
+from utils.constants import CLAN_TYPES
+from utils import town_halls
 from utils.mongo import ensure_clan_tag_index
 from utils.media_store import MediaStore,MediaStoreError,clan_folder
 from utils.url_safety import MAX_IMAGE_BYTES
@@ -33,8 +34,12 @@ async def current(request,db,body):
 
 async def listing(request):
     await require_manage(request,'clans')
-    async with mongo(request) as db:rows=await db.clans.find({}).sort('name',1).to_list(length=None)
-    return web.json_response({'clans':[public(row) for row in rows],'types':CLAN_TYPES,'town_halls':TH_LEVELS})
+    async with mongo(request) as db:
+        rows=await db.clans.find({}).sort('name',1).to_list(length=None)
+        registry=await town_halls.load(db,GUILD_ID)
+        if registry is None:raise web.HTTPServiceUnavailable(text=town_halls.MISSING_MESSAGE)
+    return web.json_response({'clans':[public(row) for row in rows],'types':CLAN_TYPES,
+                              'town_halls':[str(level) for level in town_halls.levels(registry)]})
 
 async def choices(request):
     actor=await require_manage(request,'clans')
@@ -175,7 +180,6 @@ async def save(request):
             if len(value)>(1000 if key in ('logo','banner','profile') else 120):raise web.HTTPBadRequest(text='Clan field is too long.')
             if key=='name' and not value:raise web.HTTPBadRequest(text='Enter the clan name.')
             if key=='type' and value not in ['',*CLAN_TYPES]:raise web.HTTPBadRequest(text="Select a clan type.")
-            if key=='th_requirements' and value not in ['',*TH_LEVELS]:raise web.HTTPBadRequest(text="Select a Town Hall level.")
             if key in ('logo','banner','profile') and value:
                 from utils.text_commands import public_url
                 try:public_url(value,'image' if key!='profile' else 'profile')
@@ -184,6 +188,11 @@ async def save(request):
             changes[key]=value
     async with mongo(request) as db:
         row=await current(request,db,body)
+        if 'th_requirements' in changes and changes['th_requirements'] != str(row.get('th_requirements') or ''):
+            registry=await town_halls.load(db,GUILD_ID)
+            if registry is None:raise web.HTTPServiceUnavailable(text=town_halls.MISSING_MESSAGE)
+            if changes['th_requirements'] not in ['', *map(str,town_halls.levels(registry))]:
+                raise web.HTTPBadRequest(text="Select a Town Hall level.")
         for key,value in changes.items():
             if not value or key not in IDS or str(value)==str(row.get(key)):continue
             if key=='leader_id':await discord(request,'GET',f'/guilds/{GUILD_ID}/members/{value}')

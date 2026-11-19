@@ -70,6 +70,12 @@ export default function ClanFields({
               onChange={(e) => change("th_requirements", e.target.value)}
             >
               <option value="">Not set</option>
+              {draft.th_requirements &&
+                !data.town_halls.includes(draft.th_requirements) && (
+                  <option value={draft.th_requirements}>
+                    TH {draft.th_requirements}
+                  </option>
+                )}
               {data.town_halls.map((th) => (
                 <option key={th} value={th}>
                   TH {th}

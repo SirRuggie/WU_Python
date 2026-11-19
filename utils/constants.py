@@ -23,7 +23,6 @@ GOLDENROD_ACCENT = hikari.Color.from_hex_code("EEEEAA")
 
 # Clan Information
 CLAN_TYPES = ["Tactical", "Flexible Fun", "FWA", "CWL"]
-TH_LEVELS = [str(i) for i in range(3, 19)]
 
 # FWA War Plans
 MAX_OPPONENT_NAME_LENGTH = 50

@@ -4,7 +4,16 @@ import asyncio
 import time
 from aiohttp import web
 from utils.base_bank import read_base_bank, FWA_TH_LEVELS
+from utils.town_halls import TownHallsMissing, MISSING_MESSAGE
 from .server_management import mongo
+
+GENERATION = web.AppKey('base_bank_cache_generation', int)
+
+
+def invalidate(app):
+    """Invalidate completed and in-flight reads after an explicit minimum Save."""
+    app[GENERATION] = app.get(GENERATION, 0) + 1
+    app.pop('base_bank_cache', None)
 
 
 async def read(request):
@@ -26,14 +35,25 @@ async def read(request):
     if cache is None or time.monotonic() >= cache[0]:
         try:
             async with asyncio.timeout(8):
-                async with mongo(request) as client:
-                    rows, details = await read_base_bank(client)
+                for _attempt in range(2):
+                    generation = request.app.get(GENERATION, 0)
+                    async with mongo(request) as client:
+                        rows, details = await read_base_bank(client)
+                    if request.app.get(GENERATION, 0) != generation:
+                        continue
+                    cache = (time.monotonic() + 30, rows, details)
+                    request.app['base_bank_cache'] = cache
+                    break
+                else:
+                    raise web.HTTPServiceUnavailable(
+                        text='Base bank settings changed. Try again.'
+                    )
+        except TownHallsMissing:
+            raise web.HTTPServiceUnavailable(text=MISSING_MESSAGE) from None
         except TimeoutError:
             raise web.HTTPServiceUnavailable(
                 text="Base bank is unavailable. Try again later."
             )
-        cache = (time.monotonic() + 30, rows, details)
-        request.app["base_bank_cache"] = cache
     if level is not None:
         if level not in cache[2]:
             raise web.HTTPNotFound(text="This base is not available")
