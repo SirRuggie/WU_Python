@@ -183,6 +183,7 @@ it("combines season, visible counts and status without an eyebrow or duplicate m
   expect(html).not.toContain('class="eyebrow"');
   expect(html).toMatch(/class="[^"]*roster-header-title-row/);
   expect(html).toContain('class="roster-header-summary"');
+  expect(html.replace(/<[^>]*>/g, "")).toContain("Roster tools");
   expect(html).toContain("3 signups · 2 unplaced · 2 no weight");
   expect(html).toContain("Signups open");
   expect(html).toContain('aria-label="Working roster counts"');

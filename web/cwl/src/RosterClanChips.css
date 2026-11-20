@@ -10,13 +10,6 @@
   scroll-snap-type: x mandatory;
   scrollbar-width: none;
   -ms-overflow-style: none;
-  /* keep: #000 is mask alpha, not a color */
-  mask-image: linear-gradient(
-    to right,
-    #000 0,
-    #000 calc(100% - 22px),
-    transparent 100%
-  );
 }
 
 .roster-clan-chips::-webkit-scrollbar {
@@ -173,6 +166,36 @@
   .roster-clan-chip-top,
   .roster-clan-chip-meta {
     gap: 4px;
+  }
+  .roster-workspace .roster-clan-chips {
+    padding-bottom: 2px;
+  }
+  .roster-workspace .roster-clan-chips-group h2 {
+    margin-bottom: 4px;
+  }
+  .roster-clan-chips .roster-clan-chip.roster-ui-button {
+    min-height: 44px;
+    padding-block: 2px;
+  }
+  .roster-clan-chips .roster-clan-chip-content {
+    gap: 1px;
+  }
+  .roster-clan-chips .roster-clan-chip-top strong,
+  .roster-clan-chips .roster-clan-chip-count {
+    font-size: 14px;
+    line-height: 1.25;
+  }
+  .roster-clan-chips .roster-clan-chip-meta,
+  .roster-clan-chips .roster-clan-chip-meta > span,
+  .roster-clan-chips .roster-clan-chip-meta small {
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .roster-clan-chips .roster-clan-chip-meta small {
+    flex-basis: auto;
+  }
+  .roster-clan-chips .roster-ui-progress-track {
+    height: 4px;
   }
 }
 

@@ -14,45 +14,80 @@
   position: relative;
   min-width: 0;
 }
-.roster-header-summary {
-  min-width: 0;
-  border: 1px solid var(--roster-border);
-  border-radius: var(--roster-radius-control);
-}
-.roster-header-summary > summary {
+.roster-header-overview {
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  justify-content: space-between;
-  gap: 2px 8px;
-  min-height: 44px;
-  padding: 5px 10px;
+  gap: 4px 12px;
+  min-width: 0;
+}
+.roster-header-counts {
+  display: block;
   color: var(--roster-text);
   font-size: var(--wu-text-sm);
-  line-height: 1.3;
+  line-height: 1.4;
+}
+.roster-header-status-line {
+  display: flex;
+  flex: 1 1 auto;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  min-width: 0;
+  font-size: var(--wu-text-sm);
+}
+.roster-header-status {
+  order: 1;
+  color: var(--roster-text-muted);
+}
+.roster-header-signups,
+.roster-header-signups .staff-signup-controls,
+.roster-header-signups .staff-signup-bar {
+  display: contents;
+}
+.roster-header-summary {
+  order: 4;
+  flex: 0 0 auto;
+  min-width: 0;
+}
+.roster-header-summary[open] {
+  flex-basis: 100%;
+}
+.roster-header-summary > summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  order: 4;
+  width: auto;
+  min-width: 44px;
+  min-height: 44px;
+  padding: 4px 6px;
+  gap: 4px;
+  font-size: var(--wu-text-xs);
+  white-space: nowrap;
   cursor: pointer;
   list-style: none;
 }
 .roster-header-summary > summary::-webkit-details-marker {
   display: none;
 }
-.roster-header-status::after {
-  content: " ▾";
-}
-.roster-header-summary[open] .roster-header-status::after {
-  content: " ▴";
-}
-.roster-header-status {
-  color: var(--roster-text-muted);
+.roster-header-summary[open] > summary svg {
+  transform: rotate(180deg);
 }
 .roster-header-summary-content {
   display: grid;
   gap: 6px;
   min-width: 0;
-  padding: 6px;
+  padding-block: 6px;
 }
-.roster-header-summary .staff-signup-controls {
-  margin: 0;
+.roster-header-signups .staff-signup-bar > button {
+  order: 2;
+}
+.roster-header-signups .staff-signup-bar-actions {
+  order: 3;
+}
+.roster-header-signups .staff-signup-controls > :not(.staff-signup-bar) {
+  flex-basis: 100%;
 }
 .roster-header-working,
 .roster-header-unplaced {
@@ -102,34 +137,64 @@
     grid-column: 1 / -1;
   }
 }
-.roster-header-signups {
-  display: none;
-  grid-column: 1 / -1;
-  min-width: 0;
-}
-.roster-header-summary[open] ~ .roster-header-signups,
-.roster-header-signups[data-attention="true"] {
-  display: block;
-}
-.roster-header-signups .staff-signup-controls {
-  margin-bottom: 0;
-}
-
-.roster-header-view-label {
-  display: none;
-}
-@media (max-width: 650px) {
-  .roster-header-view-label {
-    display: inline;
-  }
-  .roster-header-details-label {
-    display: none;
-  }
-}
-
 .shell .roster-header .cwl-page-header {
   margin-bottom: 0;
 }
 
 /* Keep title/actions and summary in separate flow rows: refresh status, season
    labels and publication state can each change their required width. */
+
+@media (max-width: 650px) {
+  .shell .roster-header .cwl-page-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(100px, 132px) 44px;
+    gap: 6px;
+  }
+  .shell .roster-header .cwl-page-header-title {
+    padding: 0;
+  }
+  .shell .roster-header .cwl-page-header > .roster-header-season {
+    width: 100%;
+    max-width: none;
+  }
+  .shell .roster-header .cwl-step-strip {
+    margin-bottom: 0;
+  }
+  .roster-header-overview > .roster-header-counts {
+    flex-basis: 100%;
+  }
+  .roster-header-status-line {
+    gap: 4px;
+  }
+  .roster-header .staff-signup-bar > .roster-ui-status {
+    padding: 3px 6px;
+    font-size: 12px;
+    line-height: 1.2;
+  }
+  .roster-header-status-line > .roster-header-status {
+    flex: 0 1 85px;
+    max-width: 85px;
+    font-size: 12px;
+    line-height: 1.2;
+    overflow-wrap: normal;
+  }
+  .roster-workspace .roster-header-summary > summary.roster-ui-button {
+    box-sizing: border-box;
+    min-height: 44px;
+    padding: 2px;
+    gap: 2px;
+    font-size: 12px;
+  }
+  .roster-header-summary > summary svg {
+    width: 14px;
+    height: 14px;
+    flex: none;
+  }
+  .roster-header .refresh-control-status {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+  }
+}

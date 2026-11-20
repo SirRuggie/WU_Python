@@ -2,7 +2,7 @@ import RefreshControl from "./RefreshControl";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useRef, useState } from "react";
-import { WandSparkles } from "lucide-react";
+import { ChevronDown, WandSparkles } from "lucide-react";
 import { api, ApiError, type Pool, type Season } from "./api";
 import { draftPublicationStatus, type PublicationDraft } from "./publication";
 import type { RosterSnapshot } from "./roster";
@@ -22,6 +22,7 @@ type Props = {
   onFillSignupSpot: (item: SignupChange) => boolean;
   onSignupDetails: (tag: string) => boolean;
   signupControls?: import("react").ReactNode;
+  steps?: import("react").ReactNode;
   signupAttention?: boolean;
   seasonId: string;
   seasons: Season[];
@@ -73,6 +74,7 @@ export default function RosterHeader({
   onStatusFilter,
   onAccessError,
   signupControls,
+  steps,
   signupAttention = false,
   onFillSignupSpot,
   onSignupDetails,
@@ -86,7 +88,6 @@ export default function RosterHeader({
     draft?: PublicationDraft;
   } | null>(null);
   const [publicationAttempt, setPublicationAttempt] = useState(0);
-  const summary = useRef<HTMLDetailsElement>(null);
   const workingFades = useHorizontalFades<HTMLDivElement>();
   const request = useRef(0);
   const onAccessErrorRef = useRef(onAccessError);
@@ -189,13 +190,6 @@ export default function RosterHeader({
           </h1>
         }
       >
-        <RefreshControl
-          updatedAt={refreshUpdatedAt}
-          busy={refreshBusy}
-          disabled={uiLocked}
-          onRefresh={onRefresh}
-          showRefresh={!refreshError}
-        />
         <div className="roster-header-season">
           <RosterMenu
             label="Season"
@@ -212,18 +206,39 @@ export default function RosterHeader({
             ]}
           />
         </div>
+        <RefreshControl
+          updatedAt={refreshUpdatedAt}
+          busy={refreshBusy}
+          disabled={uiLocked}
+          onRefresh={onRefresh}
+          showRefresh={!refreshError}
+        />
       </CwlPageHeader>
-      <details ref={summary} className="roster-header-summary">
-        <summary>
-          <span>
-            {roster
-              ? `${accounts.length} signups · ${unplaced} unplaced · ${missingWeight} no weight${pool !== "all" && missingWeight !== poolMissingWeight ? " (all pools)" : ""}`
-              : "Loading roster…"}
-          </span>
+      {steps}
+      <div className="roster-header-overview">
+        <span className="roster-header-counts">
+          {roster
+            ? `${accounts.length} signups · ${unplaced} unplaced · ${missingWeight} no weight${pool !== "all" && missingWeight !== poolMissingWeight ? " (all pools)" : ""}`
+            : "Loading roster…"}
+        </span>
+        <div className="roster-header-status-line">
+          {signupControls ? (
+            <div
+              className="roster-header-signups"
+              data-attention={signupAttention}
+            >
+              {signupControls}
+            </div>
+          ) : selectedSeason ? (
+            <span className="roster-header-season-status" role="status">
+              {archived
+                ? "Archived"
+                : selectedSeason.signup_open
+                  ? "Signups open"
+                  : "Signups closed"}
+            </span>
+          ) : null}
           <span className="roster-header-status" role="status">
-            {selectedSeasonLabel &&
-              `${archived ? "Archived" : seasons.find((season) => String(season.id) === seasonId)?.signup_open ? "Signups open" : "Signups closed"} · `}
-
             {publicationStatus === "current"
               ? `Published v${publication?.draft?.published?.version}`
               : publicationStatus === "changed"
@@ -233,81 +248,78 @@ export default function RosterHeader({
                   : publicationStatus === "unpublished"
                     ? "Not published"
                     : "Checking publication…"}
-            <span
-              className="roster-header-view-label"
-              style={{ whiteSpace: "nowrap" }}
-            >
-              {" "}
-              · {viewLabel}
-            </span>
-            <span className="roster-header-details-label">
-              {" "}
-              · Signup &amp; status
-            </span>
           </span>
-        </summary>
-        <div className="roster-header-summary-content">
-          {seasonId &&
-            publicationStatus === "current" &&
-            publication?.draft && (
-              <PublicationAwarenessBanner
-                published={publication.draft.published}
-                lastPublication={publication.draft.last_publication}
-                changed={publication.draft.draft_changed}
-                canPublish={canPublish}
-                onReview={onFinalize}
-                disabled={uiLocked}
-              />
-            )}
-          {roster && (
-            <div
-              ref={workingFades.ref}
-              className="roster-header-working has-horizontal-fades"
-              data-fade-left={workingFades.left}
-              data-fade-right={workingFades.right}
-              aria-label="Working roster counts"
+          <details className="roster-header-summary">
+            <summary
+              className="roster-ui-button"
+              aria-label={`Roster tools · ${viewLabel}`}
+              title="Roster tools"
             >
-              <Button onClick={() => onStatusFilter("all")} disabled={uiLocked}>
-                <strong>{accounts.length}</strong> signup
-                {accounts.length === 1 ? "" : "s"}
-              </Button>
-              <div className="roster-header-unplaced">
-                <Button
-                  aria-pressed={activeStatuses.includes("unassigned")}
-                  onClick={() => onStatusFilter("unassigned")}
-                  disabled={uiLocked}
-                >
-                  <strong>{unplaced}</strong> unplaced
-                </Button>
-                {canAutoPlace && (
-                  <Button
-                    icon={WandSparkles}
+              <span>Roster tools</span>
+              <ChevronDown size={16} aria-hidden="true" />
+            </summary>
+            <div className="roster-header-summary-content">
+              {seasonId &&
+                publicationStatus === "current" &&
+                publication?.draft && (
+                  <PublicationAwarenessBanner
+                    published={publication.draft.published}
+                    lastPublication={publication.draft.last_publication}
+                    changed={publication.draft.draft_changed}
+                    canPublish={canPublish}
+                    onReview={onFinalize}
                     disabled={uiLocked}
-                    onClick={(event) => onAutoPlace(event.currentTarget)}
-                  >
-                    Auto-place
-                  </Button>
+                  />
                 )}
-              </div>
-              <Button
-                aria-pressed={activeStatuses.includes("missing_weight")}
-                onClick={() => onStatusFilter("missing_weight")}
-                disabled={uiLocked}
-              >
-                <strong>{missingWeight}</strong> no weight
-                {pool !== "all" && missingWeight !== poolMissingWeight
-                  ? " (all pools)"
-                  : ""}
-              </Button>
+              {roster && (
+                <div
+                  ref={workingFades.ref}
+                  className="roster-header-working has-horizontal-fades"
+                  data-fade-left={workingFades.left}
+                  data-fade-right={workingFades.right}
+                  aria-label="Working roster counts"
+                >
+                  <Button
+                    onClick={() => onStatusFilter("all")}
+                    disabled={uiLocked}
+                  >
+                    <strong>{accounts.length}</strong> signup
+                    {accounts.length === 1 ? "" : "s"}
+                  </Button>
+                  <div className="roster-header-unplaced">
+                    <Button
+                      aria-pressed={activeStatuses.includes("unassigned")}
+                      onClick={() => onStatusFilter("unassigned")}
+                      disabled={uiLocked}
+                    >
+                      <strong>{unplaced}</strong> unplaced
+                    </Button>
+                    {canAutoPlace && (
+                      <Button
+                        icon={WandSparkles}
+                        disabled={uiLocked}
+                        onClick={(event) => onAutoPlace(event.currentTarget)}
+                      >
+                        Auto-place
+                      </Button>
+                    )}
+                  </div>
+                  <Button
+                    aria-pressed={activeStatuses.includes("missing_weight")}
+                    onClick={() => onStatusFilter("missing_weight")}
+                    disabled={uiLocked}
+                  >
+                    <strong>{missingWeight}</strong> no weight
+                    {pool !== "all" && missingWeight !== poolMissingWeight
+                      ? " (all pools)"
+                      : ""}
+                  </Button>
+                </div>
+              )}{" "}
             </div>
-          )}{" "}
+          </details>
         </div>
-      </details>
-      {signupControls && (
-        <div className="roster-header-signups" data-attention={signupAttention}>
-          {signupControls}
-        </div>
-      )}
+      </div>
 
       {seasonId &&
         publicationStatus !== "current" &&

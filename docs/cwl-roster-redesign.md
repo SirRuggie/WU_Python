@@ -91,6 +91,8 @@ HTML or screenshot matrix. Later: 246 family roles; 249/239 L remain separate.
 
 # CWL roster redesign — spec and status
 
+251 B5 status: Build roster D6 fixture checks pass: 125-account 360×800 first row improves from 699.140625px to 507.1875px published / 555.1875px with Draft/Review, across All/Main/Lazy; 220 UI cells preserve protected state, and 2,803 frontend tests plus type/build/format/diff pass. Source and the self-contained report await Shaka review.
+
 ## Town Halls registry (244), November 19, 2026
 
 Status: source prepared for Shaka review; no release claim. One guild-owned

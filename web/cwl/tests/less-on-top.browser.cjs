@@ -2,6 +2,7 @@ const { chromium } = require("playwright");
 const fs = require("node:fs"),
   path = require("node:path"),
   assert = require("node:assert/strict");
+const { checkRosterHeader251 } = require("./roster-header251.assertions.cjs");
 const staff = process.env.WU_LESS_STAFF_URL,
   member = process.env.WU_LESS_MEMBER_URL,
   output = process.env.WU_LAYOUT_OUTPUT;
@@ -58,12 +59,6 @@ const ping = {
     const context = await browser.newContext({
       viewport: { width, height: width === 1440 ? 1000 : 800 },
     });
-    await context.addInitScript(() =>
-      localStorage.setItem(
-        "wu-member-tour-v1",
-        JSON.stringify({ skips: 3, dismissed: true }),
-      ),
-    );
     const page = await context.newPage();
     page.on("pageerror", (e) => errors.push(String(e)));
     page.on("request", (request) => {
@@ -103,11 +98,7 @@ const ping = {
         )
           return fail();
         if (url.pathname.endsWith("/publication") && mode.publicationFailure) {
-          const clicked =
-            mode.publicationRetryClick &&
-            (await page.evaluate(
-              () => window.__qaPublicationRetryClicked === true,
-            ));
+          const clicked = mode.publicationRetryClick;
           if (!clicked) return fail();
         }
         if (/\/declaration-pings\/(main|lazy)$/.test(url.pathname))
@@ -210,7 +201,7 @@ const ping = {
       });
   }
   try {
-    for (const width of [320, 360, 390, 1440])
+    for (const width of [320, 360, 390, 1024, 1280, 1440])
       for (const count of [26, 65, 125]) {
         const { context, page, mode } = await pageFor(staff, width);
         await setup(page, staff, "count=" + count);
@@ -237,11 +228,10 @@ const ping = {
             })),
           };
         });
-        if (width === 360) assert(metrics.clan.y < 340);
-        if (width === 1440) assert(metrics.player.y < 500);
+        await checkRosterHeader251(page, { count, density: true });
         const refresh = page
-          .locator(".roster-filters-toolbar")
-          .getByRole("button", { name: "Refresh roster", exact: true });
+          .locator(".roster-header")
+          .getByRole("button", { name: "Refresh", exact: true });
         assert(await refresh.isVisible());
         let reads = 0;
         const observed = (request) => {
@@ -312,16 +302,12 @@ const ping = {
           );
           await shot(page, "publication-failure", width);
           mode.publicationRetryClick = true;
-          await retry.evaluate((button) =>
-            button.addEventListener(
-              "click",
-              () => {
-                window.__qaPublicationRetryClicked = true;
-              },
-              { capture: true, once: true },
+          await Promise.all([
+            page.waitForRequest((request) =>
+              new URL(request.url()).pathname.endsWith("/publication"),
             ),
-          );
-          await retry.click();
+            retry.click(),
+          ]);
           mode.publicationFailure = false;
           mode.publicationRetryClick = false;
           await page.waitForFunction(() =>

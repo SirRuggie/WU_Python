@@ -491,7 +491,7 @@ Direct-link Details uses the hosting page’s refresh, busy, open and dirty call
 - Ready requires at least the configured 15/30 players in the assigned clan, checked within five minutes. Unknown war size links to Clan settings and cannot be ready. Unassigned players have an Awaiting placement section.
 - Name opens published-snapshot Details, view-only, with Previous/Next following the open clan order. Removed players show the published identity/placement plus “No longer signed up · removed after version N”. No write callbacks are permitted.
 - Copy mentions is an explicit clipboard-only action on an open not-ready clan. List unlinked names and offer selectable text on clipboard failure. Never send automatically.
-- Preserve labels, 44px actions, shared card surfaces, ≥12px text and ≥4.5:1 contrast. Current 360px first-header offset is 402px including the app header and fixture banner; the requested ~250px target is still open for review.
+- Preserve labels, 44px actions, shared card surfaces, ≥12px text and ≥4.5:1 contrast. Build roster density is measured at the first account row with the 125-account fixture and no development banner; see B5 below for its current before/after evidence and acceptance target.
 
 ## Roster image posting
 
@@ -1046,3 +1046,21 @@ not establish a real phone touch result.
   - Height 600 px (7), 500 px (5), 540 px (1): short landscape phones.
     Merging near-equal values (for example 760/767/768) is a CSS change and is
     recorded as a later task, not done here.
+
+## B5 — Build roster header and account toolbar (251)
+
+Keep the Build roster title and season/Refresh actions together, followed by the existing B2 workflow steps. The visible summary carries signup counts, signup status, publication state and the existing hidden-signup Fix action. Keep Draft/Review immediately below that summary; publication errors, Retry and signup-visibility errors remain visible when Roster tools is closed. Occasional count-filter and Auto-place actions stay in that disclosure.
+
+There is one page-tab row: Accounts & signups, Compare clans, Hosting clans and Missing weights. Follow it with search, the All/Main/Lazy segmented account filter, Filters, sort and the gold Add signup action. Then show the hosting-clan rail, matching/selected counts with Select, and account rows. Retain the Main/Lazy grouping labels and the existing empty-clan reveal. Page tabs and clan chips use the shared horizontal edge-fade behavior.
+
+The pool filter reuses B3's `role="group"` with `aria-pressed` buttons, existing keyboard handling and 44px targets. It keeps the season-scoped `wu-roster-<season>-release-v1` session preference and existing setters; it adds no URL parameter. The workspace page still uses the existing `tab` query key. The Select ActionMenu calls the existing Select 15, Select 30 and conditional All (at most 50 matches) handlers; Clear selection appears only with a selection. Filtering does not alter hidden selections.
+
+Staff signup keeps one mounted controller. Its existing Add button appears in the account toolbar through a presentation portal, with a single header fallback outside that view or before the target mounts. Status, Fix, settings, errors, confirmation and navigation guards stay with that controller; no signup endpoint, permission or write behavior changes.
+
+Density evidence (251, isolated sample data): the unchanged 125-account baseline, with no development banner, placed the first account at y=699.140625 at 360×800 and y=539.984375 at 1440×1000. After the single visual correction, the 360×800 first account is y=507.1875 for published rosters and y=555.1875 with Draft/Review, across All/Main/Lazy and both zero/some-unplaced fixtures. Closed signup is y=555.1875 and hidden signup is y=539.1875. All meet the y≤560 target. The published 1440×1000 first account is y=533.984375.
+
+Phone search occupies the first toolbar row; the second contains three 44px pool buttons, 44px Filters/sort and the full Add signup label. At 320px the toolbar uses 2px viewport gutters while the other header gutters remain unchanged. Compact clan cards retain name/count, Total, weighed text and progress, with 14px names/counts, 12px metadata and at least 44px hit areas. Long content may increase card height rather than clip.
+
+The one confirmation round covers 220 UI cells: 26/65/125 accounts, 320/360/390/1024/1280/1440 widths, All/Main/Lazy, draft/published and zero/some unplaced, plus closed/hidden signup cases. All 14 root-owned case commands exited zero. Every UI cell has unchanged protected fixture state and season/member settings, no document overflow, no browser/HTTP/external errors and no application write except synthetic fixture login. The two unchanged D6 mock JPEGs are reused; they were rendered from the approved HTML because the original PNG files were unavailable. Builder Header regressions (18), independent frontend tests (2,803 in 404 files), type, Vite, scoped format and diff checks pass. The 1,066 Python files match the earlier 9,370-pass backend/war-gate snapshot; those suites were not repeated for the CSS correction.
+
+The initial layout failures, earlier test failures and two exit143 interruptions of unknown cause remain in the self-contained report. One incomplete image without a post-cell proof remains failed/noncanonical and was explicitly completed once by the parent. Evidence is isolated fixture review, not live Discord delivery, physical-device, assistive-technology or all-page verification.

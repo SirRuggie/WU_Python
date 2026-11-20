@@ -7,6 +7,7 @@
  */
 const { chromium } = require("playwright");
 const assert = require("node:assert/strict");
+const { checkRosterHeader251 } = require("./roster-header251.assertions.cjs");
 
 const port = Number(process.argv[2] || 8982);
 assert(Number.isInteger(port) && port >= 8900 && port <= 8999);
@@ -148,9 +149,11 @@ async function checkFades(page, selector) {
     /gradient/i.test(initial.mask || ""),
     `${selector}: fade mask missing`,
   );
-  await strip.evaluate((node) => {
-    node.scrollLeft = node.scrollWidth;
-  });
+  await strip.hover();
+  await page.mouse.wheel(
+    await strip.evaluate((node) => node.scrollWidth * 2),
+    0,
+  );
   await page.waitForFunction((selector) => {
     const node = document.querySelector(selector);
     return (
@@ -165,9 +168,11 @@ async function checkFades(page, selector) {
   );
   assert.equal(end.fadeRight, false, `${selector}: right fade shown at end`);
   passes.push(`${selector}: overflow fades track both edges`);
-  await strip.evaluate((node) => {
-    node.scrollLeft = 0;
-  });
+  await strip.hover();
+  await page.mouse.wheel(
+    -(await strip.evaluate((node) => node.scrollWidth * 2)),
+    0,
+  );
 }
 
 (async () => {
@@ -197,6 +202,7 @@ async function checkFades(page, selector) {
     );
 
     phone = await openRoster(browser, 360, 800);
+    await checkRosterHeader251(phone, { count: 125 });
     assert.equal(
       await phone.evaluate(
         () => document.documentElement.scrollWidth > innerWidth,
@@ -281,7 +287,7 @@ async function checkFades(page, selector) {
     await setPublicationState("hidden");
     await phone.reload();
     await phone.locator(".roster-player-card").first().waitFor();
-    await checkFades(phone, ".roster-header-working");
+    await checkFades(phone, ".roster-clan-chips");
     await checkFades(phone, ".roster-workflow-nav");
 
     const activityLine = phone.locator(".signup-activity-line").first();
@@ -513,7 +519,7 @@ async function checkFades(page, selector) {
       false,
       "desktop page overflows horizontally",
     );
-    await checkFades(desktop, ".roster-header-working");
+    await checkFades(desktop, ".roster-clan-chips");
     await checkFades(desktop, ".roster-workflow-nav");
     const columns = desktop.locator(".roster-account-columns").first();
     await columns.waitFor();

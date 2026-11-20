@@ -21,6 +21,7 @@ type Props = {
   onChange: (next: RosterReleaseFilters) => void;
   disabled: boolean;
   children?: ReactNode;
+  poolControl?: ReactNode;
   onOpenChange?: (open: boolean) => void;
 };
 
@@ -91,6 +92,7 @@ export default function RosterFilters({
   onChange,
   disabled,
   children,
+  poolControl,
   onOpenChange,
 }: Props) {
   const [open, setOpen] = useState(false);
@@ -169,6 +171,7 @@ export default function RosterFilters({
             onChange({ ...value, search: event.target.value })
           }
         />
+        {poolControl}
         <Button
           icon={SlidersHorizontal}
           disabled={disabled}

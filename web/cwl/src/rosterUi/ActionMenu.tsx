@@ -37,11 +37,13 @@ export type ActionMenuItem = {
 export default function ActionMenu({
   name,
   label,
+  triggerIcon: TriggerIcon = MoreHorizontal,
   items,
   disabled = false,
 }: {
   name: string;
   label?: string;
+  triggerIcon?: LucideIcon;
   items: ActionMenuItem[];
   disabled?: boolean;
 }) {
@@ -106,7 +108,7 @@ export default function ActionMenu({
           aria-label={label || `Actions for ${name}`}
           isDisabled={disabled}
         >
-          <MoreHorizontal size={22} aria-hidden="true" />
+          <TriggerIcon size={22} aria-hidden="true" />
           {label && <span>{label}</span>}
         </AriaButton>
         <Popover
