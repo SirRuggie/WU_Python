@@ -1,0 +1,3 @@
+.swipe-nav-area {
+  touch-action: pan-y pinch-zoom;
+}

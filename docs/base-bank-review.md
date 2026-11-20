@@ -1,5 +1,19 @@
 # Base bank
 
+## Phone swipe between Town Halls (254)
+
+The cards area alone accepts a discrete left swipe to the next lower Town Hall
+and a right swipe to the next higher one. Header and chip-row touches do not
+change the selection. At either end nothing moves; loading, empty, denied and
+single-level states cannot swipe. Chips remain the visible single-tap and
+keyboard alternative, stay selected correctly, and scroll into view as before.
+Only the current level's cards are mounted. Swipe changes enter from the swipe
+side with a 24 px slide and fade over 180 ms ease-out; first load and chip selection
+have no enter animation, and reduced motion is instant. The shared hook keeps
+vertical scrolling and pinch zoom native and guards viewport edges, multi-touch,
+selected text and the click following a swipe. Existing below-TH16 labels and
+all read-only data behavior remain unchanged.
+
 Signed-in members can open `/bases`, choose a Town Hall, and open the stored
 Clash layout link with Copy base. Plain keys are merged defenses; `_new` keys are
 non-merged. Cards use war-base images without cropping. Missing links have no

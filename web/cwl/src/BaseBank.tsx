@@ -5,6 +5,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import { defaultTownHall, type BankBase } from "./baseBank";
 import BaseBankCard from "./BaseBankCard";
+import useSwipeNavigation, { type SwipeDirection } from "./useSwipeNavigation";
 import { loadAccountDisplay } from "./accountDisplay";
 import ServerJoinNotice, {
   BASE_BANK_JOIN_TEXT,
@@ -22,6 +23,10 @@ export default function BaseBank({
   const [retry, setRetry] = useState(0);
   const [joinRequired, setJoinRequired] = useState(false);
   const [chosen, setChosen] = useState<number | null>(null);
+  const [motion, setMotion] = useState<{
+    level: number;
+    direction: SwipeDirection;
+  } | null>(null);
   const accessLost = useRef(false);
   const denied = useCallback(() => {
     accessLost.current = true;
@@ -96,6 +101,16 @@ export default function BaseBank({
           bases || [],
           townHalls === undefined ? linkedHalls : townHalls,
         );
+  const swipe = useSwipeNavigation({
+    enabled: !!bases?.length && levels.length > 1 && !error && !joinRequired,
+    onSwipe: (direction) => {
+      const index = levels.indexOf(selected!);
+      const next = levels[index + (direction === "next" ? 1 : -1)];
+      if (index < 0 || next === undefined) return;
+      setMotion({ level: next, direction });
+      setChosen(next);
+    },
+  });
   useEffect(() => {
     document
       .querySelector<HTMLButtonElement>(
@@ -131,23 +146,32 @@ export default function BaseBank({
             })}
             value={selected}
             onChange={(th) => {
+              setMotion(null);
               setChosen(th);
             }}
             variant="pill"
             role="group"
             revealSelection
           />
-          <div className="base-bank-grid">
-            {bases
-              .filter((b) => b.town_hall === selected)
-              .sort(
-                (a, b) =>
-                  Number(a.variant !== "merged") -
-                  Number(b.variant !== "merged"),
-              )
-              .map((base) => (
-                <BaseBankCard key={base.key} base={base} onDenied={denied} />
-              ))}
+          <div className="base-bank-swipe swipe-nav-area" {...swipe}>
+            <div
+              key={selected}
+              className={`base-bank-grid${motion?.level === selected ? ` base-bank-enter-${motion.direction}` : ""}`}
+              onAnimationEnd={(event) => {
+                if (event.target === event.currentTarget) setMotion(null);
+              }}
+            >
+              {bases
+                .filter((b) => b.town_hall === selected)
+                .sort(
+                  (a, b) =>
+                    Number(a.variant !== "merged") -
+                    Number(b.variant !== "merged"),
+                )
+                .map((base) => (
+                  <BaseBankCard key={base.key} base={base} onDenied={denied} />
+                ))}
+            </div>
           </div>
         </>
       )}
