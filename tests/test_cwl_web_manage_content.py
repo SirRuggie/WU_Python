@@ -12,17 +12,19 @@ def run(value):
 
 
 def db():
-    return SimpleNamespace(bot_config=ConfigCollection(), ticket_staff_templates=ConfigCollection())
+    from test_info_channel_content import Clans
+    return SimpleNamespace(bot_config=ConfigCollection(), ticket_staff_templates=ConfigCollection(), clans=Clans())
 
 
 @pytest.mark.parametrize('item', content.catalog(), ids=lambda item: item['id'])
 def test_all_native_defaults_have_editable_schema_and_preview(item):
-    loaded = run(content.load(db(), item))
+    mongo = db()
+    loaded = run(content.load(mongo, item))
     schema = content.schema(item, loaded)
     assert schema['fields']
     assert len({field['key'] for field in schema['fields']}) == len(schema['fields'])
     updated = content.candidate(item, loaded, {'revision': loaded['revision'], 'values': {}})
-    assert run(content.preview(item, updated))
+    assert run(content.preview(item, updated, mongo=mongo))
 
 
 def test_unknown_fields_and_stale_revision_rejected():
@@ -54,7 +56,7 @@ def test_preview_does_not_write():
     mongo = db()
     item = content.descriptor('war--win')
     loaded = run(content.load(mongo, item))
-    assert run(content.preview(item, loaded))
+    assert run(content.preview(item, loaded, mongo=db()))
     assert not mongo.bot_config.rows
 
 
@@ -191,7 +193,7 @@ def walk_parts(parts):
 def test_native_preview_preserves_artwork_groups_buttons_and_separators():
     item = content.descriptor('gauntlet--about-us')
     loaded = run(content.load(db(), item))
-    parts = list(walk_parts(run(content.preview(item, loaded))))
+    parts = list(walk_parts(run(content.preview(item, loaded, mongo=db()))))
     assert any(p['type'] == 'container' and p['accent'].startswith('#') for p in parts)
     assert any(p['type'] == 'separator' for p in parts)
     media = next(p for p in parts if p['type'] == 'media')
@@ -247,7 +249,7 @@ def test_artwork_requires_permission_and_renderer_registered_path():
         from unittest.mock import AsyncMock,patch
         from cwl_web import server_management
         item=content.descriptor('gauntlet--about-us')
-        preview=await content.preview(item,await content.load(db(),item))
+        preview=await content.preview(item,await content.load(db(),item),mongo=db())
         url=next(p for p in walk_parts(preview) if p['type']=='media')['items'][0]['url']
         req=SimpleNamespace(match_info={'item':item['id'],'token':url.rsplit('/',1)[1]})
         with patch.object(server_management,'require_manage',AsyncMock(side_effect=web.HTTPForbidden())):
@@ -263,9 +265,49 @@ def test_artwork_requires_permission_and_renderer_registered_path():
 def test_preview_ready_and_recovery_actions_are_secondary():
     item = content.descriptor('gauntlet--about-us')
     loaded = run(content.load(db(), item))
-    document = run(content.editor_document(item, loaded))
+    document = run(content.editor_document(item, loaded, mongo=db()))
     assert document['preview']
     assert document['publish_endpoint'].endswith('/manage/publish/about-us')
     assert {action['label'] for action in document['actions']} == {'Copy from Discord', 'Reset to default'}
     assert all(action['advanced'] for action in document['actions'])
     assert not run(content.editor_document(content.descriptor('question--family_codes'), run(content.load(db(), content.descriptor('question--family_codes')))))['publish_endpoint']
+
+
+def test_info_channel_preview_passes_explicit_database_and_guild_to_native_renderer(monkeypatch):
+    from unittest.mock import AsyncMock
+    gauntlet, _, _, _ = content.modules()
+    renderer = AsyncMock(return_value=[])
+    monkeypatch.setattr(gauntlet, 'render', renderer)
+    mongo = db()
+    item = content.descriptor('gauntlet--wu-faq')
+    template = run(content.load(mongo, item))
+    run(content.preview(item, template, mongo=mongo))
+    assert renderer.await_args.kwargs['mongo'] is mongo
+    assert renderer.await_args.kwargs['guild_id'] == content.GUILD_ID
+
+
+def test_family_rules_is_editable_but_has_no_destination_publish_or_adoption_action():
+    ids = {item['id'] for item in content.catalog()}
+    assert 'gauntlet--family-rules' in ids
+    assert 'destination--family-rules' not in ids
+    item = content.descriptor('gauntlet--family-rules')
+    template = run(content.load(db(), item))
+    schema = content.schema(item, template)
+    assert schema['publish_endpoint'] is None
+    assert not any(action['id'] == 'load-published' for action in schema['actions'])
+    with pytest.raises(web.HTTPNotFound):
+        content.descriptor('destination--family-rules')
+
+
+def test_registry_failure_is_visible_in_editor_without_hiding_editable_fields_or_posting():
+    from pymongo.errors import ServerSelectionTimeoutError
+    from test_info_channel_content import Clans
+    mongo=db();mongo.clans=Clans(error=ServerSelectionTimeoutError('private'))
+    item=content.descriptor('gauntlet--about-us')
+    loaded=run(content.load(mongo,item))
+    result=run(content.editor_document(item,loaded,mongo=mongo))
+    assert result['fields']
+    assert 'Preview unavailable:' in result['preview'][0]['text']
+    assert 'cannot read the clan registry' in result['preview'][0]['text']
+    assert 'private' not in result['preview'][0]['text']
+    assert not mongo.bot_config.rows

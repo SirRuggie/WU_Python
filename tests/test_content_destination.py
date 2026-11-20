@@ -103,7 +103,7 @@ def state(monkeypatch, sections):
 
 def test_native_channel_select_persists_per_document_and_posts_current_draft_once(monkeypatch):
     document = content.DOCUMENTS["about-us"]
-    sections = [node.content for node in content.text_nodes(run(content.baseline(document)))]
+    sections = [node.content for node in content.editable_text_nodes(document, run(content.baseline(document)))]
     sections[0] = "## Current unsaved draft"
     states = state(monkeypatch, sections)
     before = content.panel(states["initial"])[0].build()[0]
@@ -112,7 +112,8 @@ def test_native_channel_select_persists_per_document_and_posts_current_draft_onc
                       for button in row["components"]
                       if button["type"] == hikari.ComponentType.BUTTON]
     assert next(button for button in before_buttons if button["custom_id"] == "content_send:initial")["disabled"]
-    db = SimpleNamespace(bot_config=Config())
+    from test_info_channel_content import Clans
+    db = SimpleNamespace(bot_config=Config(), clans=Clans())
     client = bot()
     selector = context()
 
@@ -151,9 +152,10 @@ def test_native_channel_select_persists_per_document_and_posts_current_draft_onc
 
 def test_invalid_selection_permission_and_cross_guild_state_cannot_send(monkeypatch):
     document = content.DOCUMENTS["about-us"]
-    sections = [node.content for node in content.text_nodes(run(content.baseline(document)))]
+    sections = [node.content for node in content.editable_text_nodes(document, run(content.baseline(document)))]
     states = state(monkeypatch, sections)
-    db = SimpleNamespace(bot_config=Config())
+    from test_info_channel_content import Clans
+    db = SimpleNamespace(bot_config=Config(), clans=Clans())
     wrong_guild_bot = bot(destination_guild=99)
     run(content.choose_destination(context(), "initial", mongo=db, bot=wrong_guild_bot))
     assert not db.bot_config.rows
@@ -196,8 +198,9 @@ def test_admin_destination_uses_bot_member_endpoint_and_bypasses_overwrites():
 
 
 def test_stale_discord_destination_does_not_overwrite_dashboard(monkeypatch):
-    states = state(monkeypatch, [node.content for node in content.text_nodes(run(content.baseline(content.DOCUMENTS["about-us"])))])
-    db = SimpleNamespace(bot_config=Config())
+    states = state(monkeypatch, [node.content for node in content.editable_text_nodes(content.DOCUMENTS["about-us"], run(content.baseline(content.DOCUMENTS["about-us"])))])
+    from test_info_channel_content import Clans
+    db = SimpleNamespace(bot_config=Config(), clans=Clans())
     key = "content_destination:20:about-us"
     db.bot_config.rows[key] = {"_id": key, "channel_id": 456}
     # A dashboard created a destination after this native draft was opened.

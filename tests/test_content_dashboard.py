@@ -15,16 +15,19 @@ def _count_components(items):
 
 def test_native_document_baselines_keep_original_layout_and_text_totals():
     async def check():
-        expected = {"about-us": (12, 2579), "strike-system": (12, 3236), "family-particulars": (28, 3710)}
-        expected_components = {"about-us": 22, "strike-system": 29, "family-particulars": 40}
+        expected = {"about-us": (14, 2997), "strike-system": (12, 3236), "family-particulars": (28, 3710)}
+        expected_components = {"about-us": 25, "strike-system": 29, "family-particulars": 40}
         for key in expected:
             document = content.DOCUMENTS[key]
             components = await content.baseline(document)
             nodes = content.text_nodes(components)
             assert (len(nodes), sum(len(node.content) for node in nodes)) == expected[key]
             assert _count_components(components) == expected_components[key]
-            preview = await content.render(document, [node.content for node in nodes], preview=True)
-            assert sum(len(node.content) for node in content.text_nodes(preview)) == expected[key][1]
+            from test_info_channel_content import Clans
+            from test_content_dashboard_runtime import _ConfigCollection
+            db = SimpleNamespace(bot_config=_ConfigCollection(), clans=Clans())
+            preview = await content.render(document, [node.content for node in content.editable_text_nodes(document, components)], preview=True, mongo=db, guild_id=20)
+            assert sum(len(node.content) for node in content.text_nodes(preview)) == (3831 if key == "about-us" else expected[key][1])
             assert _count_components(preview) == expected_components[key]
     asyncio.run(check())
 
@@ -163,27 +166,6 @@ def test_revoked_clan_dashboard_role_is_refused_before_child_mutation():
 
 def test_native_document_changed_fields_match_exact_approved_text():
     expected = [
-        ('about-us', "We're an English-speaking", (
-            "We're an English-speaking clan family based in the USA, with Clashers from around the gl"
-            'obe. We use a game system that lets you take part in war while your base is upgrading.\n\n'
-            '**Note:** None of our clans is a Family Friendly Clan. If one of your accounts needs a F'
-            "amily Friendly Clan, join a clan outside Warriors United.\n\nHere's what we provide:\n:shie"
-            'ld: 2 High-Level Tactical Clans\n:shield: 3 Flexible Fun War Clans\n:shield: 5 Official FW'
-            'A Clans for Farmers\n:shield: CWL opportunities for everyone\n:shield: An Experienced Base'
-            '-Building Team\n:shield: Experienced Attack Trainers'
-        )),
-        ('about-us', 'We look at each new recruit', (
-            'We look at each new recruit case by case. We explain each clan type in your interview. T'
-            'he requirements above are guides. Leadership makes the final decision.'
-        )),
-        ('about-us', '**Clash of Thrones', (
-            '**Clash of Thrones (#Q889GPL)**\n**CoT Wildlings (#2YJVQUCYJ)**\n**Four and Twenty (#8CV0G'
-            'PPR)**\n**The Horde (#2RRCJCI0)**\n**PlaneClashers (#9UGQ0GL)**\n\nFWA (Farm War Alliance) i'
-            's an alliance of clans. The clans have organized wars, one after the other, for loot. Th'
-            'e war result is decided before the war, and simple war plans tell you how to get that re'
-            'sult. Heroes are not required.\n\nMinimum requirements: TH12 or higher, a war weight of 11'
-            '5 or more, and all buildings built for your current TH level.'
-        )),
         ('strike-system', '🛡️**WARRIORS UNITED**', (
             '🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little bant'
             'er and joking is fine, but we do not allow some things...\n\n**1.** No form of sexism, rac'

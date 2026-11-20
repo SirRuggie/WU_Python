@@ -22,7 +22,7 @@ def _buttons(row):
 
 def test_content_panel_uses_real_snapshot_and_separate_navigation_footer():
     document = content.DOCUMENTS["about-us"]
-    sections = [node.content for node in content.text_nodes(asyncio.run(content.baseline(document)))]
+    sections = [node.content for node in content.editable_text_nodes(document, asyncio.run(content.baseline(document)))]
     state = {
         "_id": "draft", "guild_id": 2, "document": document.key, "sections": sections,
         "media": {}, "destination_channel_id": 123, "manage_token": "home",

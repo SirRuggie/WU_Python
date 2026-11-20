@@ -234,7 +234,7 @@ def test_selected_image_shows_default_or_current_override(document, slot, expect
     definition = content.DOCUMENTS[document]
     rendered = content.document_renderer(definition)()
     state = _state(document=document, selected_media_slot=slot,
-                   sections=[node.content for node in content.text_nodes(rendered)])
+                   sections=[node.content for node in content.editable_text_nodes(definition, rendered)])
     dashboard = content.panel(state)
     galleries = content.media_galleries(dashboard)
     assert len(galleries) == 1

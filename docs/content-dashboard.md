@@ -5,7 +5,8 @@ onboarding editor, or use the optional `section` choice to open it directly.
 See [Server Management](manage-dashboard.md) for navigation and permissions.
 
 Recruit Gauntlet is a private, per-server Components V2 editor for Join the Family, About Us,
-WU Strike System, and Family Particulars. Administrators with Manage Server can
+WU Strike System, Family Particulars, WU FAQ, and shared Family Rules, as well as
+the existing Apply and Rite of Passage templates. Administrators with Manage Server can
 edit named sections with heading and body together, replace images in R2, preview the public layout,
 save a reusable template, and send the current draft to a selected channel.
 
@@ -14,7 +15,7 @@ Manage CWL messages, artwork, destinations, and timing through **CWL** in
 
 ## Choose a channel and send
 
-Each document (Join the Family, About Us, WU Strike System, and Family Particulars) has its own
+Each public document (Join the Family, About Us, WU Strike System, Family Particulars, and WU FAQ) has its own
 native Discord channel dropdown and **Send to channel** button. Choose a text
 or announcement channel in this server. The choice is saved per server and
 document and is shown in the editor when reopened. MongoDB stores it separately
@@ -84,6 +85,74 @@ The selection stays active and the editor immediately shows the restored default
 | About Us | Welcome banner |
 | WU Strike System | Basic rules banner; main clan strike chart; FWA strike chart |
 | Family Particulars | Welcome banner; CWL banner |
+| WU FAQ | None; shared Family Rules followed by Questions |
+| Family Rules | None; shared Heading and Body, with no standalone post |
+
+## WU FAQ and shared Family Rules (259)
+
+**Family Rules** has two editable fields, Heading and Body, under
+`content:family-rules:<guild id>`. The body may contain Markdown subheadings.
+It has no posting channel, Send button, acknowledgement button, or role grant.
+**WU FAQ** stores only its Questions heading/body under `content:wu-faq:<guild id>`;
+its public gold Components V2 layout renders the current shared rules first and
+Questions second. WU FAQ uses the normal per-guild posting channel and linked-post
+keys, with no acknowledgement or role grant.
+
+After saving Family Rules, explicitly choose **Update linked posts** to update
+the existing linked WU FAQ and About Us messages. The offer identifies each
+post and snapshots its complete text and media. Confirmation rechecks the saved
+rules revision, tracked message pointer, guild, author, layout, text, media, and
+each existing publication lease. It preserves each published post's own text and
+artwork. One successful update and one failed update are reported separately;
+the rules stay saved. Saving does not send a new message or automatically edit
+either post. An interrupted or uncertain update is not automatically retried;
+check the existing posts before opening a fresh review. Drafts and update claims
+survive a restart for their existing component-state lifetime.
+
+The existing web content adapter passes its database/guild context to the same
+renderer. Family Rules has no web channel or publish action either. After saving
+shared rules from the web editor, open Family Rules in Discord `/manage` to review
+and explicitly update its linked posts.
+
+The current plain-content WU FAQ is not adopted, edited, or deleted by this
+feature. An administrator must explicitly send the new V2 FAQ and separately
+remove the old post when authorized. Untracked plain messages cannot become
+update targets by guessing their type.
+
+About Us keeps its twelve editable fields and inserts Family Rules immediately
+before Next Step. Tactical, Flexible Fun, and FWA names/tags and the corresponding
+offer counts are derived from one read-only clan-registry query. CWL, archived,
+and removed clans are excluded; names are sorted, and clan names are escaped for
+Discord Markdown. The registry is read only when rendering Preview, Send, or Update. Native
+menu/template selection does not read it; the web editor renders a preview on
+open through the same renderer. A registry failure or incomplete active list is visible
+and blocks sending/updating; it never posts empty fallback lists.
+
+Existing saved About Us templates are not migrated or rewritten on read. Only
+leading old manual name/tag lines are omitted when composing the public clan
+details; description text remains intact. Legacy V2 About Us posts can still be
+reviewed as linked targets before their first explicit update to the new layout.
+
+The authoritative November 20 final-copy fixture with ten clans in **each** of
+the three types renders **3,831 characters**, leaving **169** under the existing
+4,000-character policy. The extra old built-in-copy comparison renders **4,161**
+and remains over the limit. Real clan names or saved text may be longer: the full
+rendered payload, including rules and generated lists, is checked before Preview,
+Send, and Update. Over-limit text is shown as an actionable error; no copy is cut,
+saved data rewritten, or template silently substituted.
+
+Strike System's first four labels are **How strikes work heading**, **How strikes
+work**, **At 4 strikes heading**, and **At 4 strikes**. Family Particulars uses
+**Intro heading** and **Intro** in place of Golden rule labels. These label changes
+do not change field counts, order, decorations, roles, or routing.
+
+Validation covers exact approved copy, registry filtering/sorting/counts/failure,
+rendered-size boundaries, saved-data preservation, permission and draft ownership,
+rules CAS conflicts, no-ack/no-Send controls, linked stale/media/pointer guards,
+partial update/restart behavior, and disabled mentions. Tests use synthetic clans
+and simulated Discord responses; they do not prove live delivery. The final review
+report records the focused and builder network-isolated full-suite results. No
+frontend build is required because this batch changes no frontend source.
 
 ## Storage and publication
 
@@ -116,6 +185,9 @@ Preview uses the public renderer and reuses its acknowledgement button as
 layout. Decorative text stays fixed and still counts toward the bot's
 4,000-character total policy. Published acknowledgement actions retain their
 original role behavior.
+
+WU FAQ and Family Rules have no public acknowledgement control. Their private
+previews add a separate Back to editor button, which is never part of a sent post.
 
 ## Setup checks
 

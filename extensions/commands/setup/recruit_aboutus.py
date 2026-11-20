@@ -36,142 +36,47 @@ STRIKE_SYSTEM_CHANNEL_ID = 1547242610819604560
 ABOUT_US_GUILD_ID = 644963518025826315
 
 
-def build_aboutus(sections=None, *, media=None, action_id="preview", preview=False):
-    """Single renderer for published messages and private editor previews."""
-    if sections is not None and len(sections) != 12:
-        raise ValueError("About Us requires exactly twelve editable text fields.")
-    values = iter(sections) if sections is not None else None
+def build_aboutus(sections=None, *, media=None, action_id="preview", preview=False,
+                  family_rules=None, clans=None, include_family_rules=True):
+    """Build the public shape; registry I/O belongs to the shared async renderer."""
+    from utils.info_channel_content import (
+        about_us_defaults, about_us_sections, family_rules_sections, validate_fields,
+    )
+    fields = about_us_defaults() if sections is None else list(sections)
+    validate_fields(fields, 12, "About Us")
+    if clans is not None:
+        fields = about_us_sections(fields, clans)
     media = media or {}
-
-    def text(default):
-        # TextDisplayComponentBuilder has no set_content method in hikari 2.6.
-        # Construct each display with its draft value so the pinned SDK can
-        # render both editor previews and saved posts.
-        return Text(content=next(values) if values is not None else default)
-
-    def image(slot, default):
-        return media.get(slot, default)
-
-    # Create all embeds
     components = [
-        # Image at the top
-        Media(
-            items=[
-                MediaItem(
-                    media=image("welcome", "assets/branding/banners/Warriors_United.gif")
-                )
-            ]
-        ),
-
-        # Embed 1: Welcome and Overview
-        Container(
-            accent_color=WU_GOLD,
-            components=[
-                text("## :shield: **Welcome to Warriors United!** :shield:"),
-                Separator(divider=True),
-                text((
-                    "We're an English-speaking clan family based in the USA, with Clashers from around the globe. "
-                    "We use a game system that lets you take part in war while your base is upgrading.\n\n"
-                    "**Note:** None of our clans is a Family Friendly Clan. If one of your accounts needs a Family "
-                    "Friendly Clan, join a clan outside Warriors United.\n\n"
-                    "Here's what we provide:\n"
-                    ":shield: 2 High-Level Tactical Clans\n"
-                    ":shield: 3 Flexible Fun War Clans\n"
-                    ":shield: 5 Official FWA Clans for Farmers\n"
-                    ":shield: CWL opportunities for everyone\n"
-                    ":shield: An Experienced Base-Building Team\n"
-                    ":shield: Experienced Attack Trainers"
-                )),
-                Separator(divider=True),
-                text("## ☠️ **High Level Tactical Clans** ☠️"),
-                text((
-                    "**Funnies (#2Q9RLRCG)**\n"
-                    "**WeAreBrother (#YQPYJCQ2)**\n\n"
-                    "Our High-Level Tactical Clans require TH13+ and a fully maxed previous TH level, and they always strive to earn 3 ⭐ in war. "
-                    "Do not worry if you do not 3-star every time. Nobody is perfect. We expect our members to follow the War Format "
-                    "and to work as a team to win every war.\n\n"
-                    "Wars are always at full strength. No Heroes can be upgrading."
-                )),
-            ]
-        ),
-
-        # Embed 2: Flexible Fun War Clans
-        Container(
-            accent_color=WU_GOLD,
-            components=[
-                text("## 🪖 **Flexible Fun War Clans** 🪖"),
-                text((
-                    "**Warriors United (#2YRVY8YCP)**\n"
-                    "**Noahs Ark (#8VPQCR2R)**\n"
-                    "**Morning Woods! (#8VQP9VQ9)**\n\n"
-                    "Our \"Flexible Fun\" Clans are relaxed Farm/War Clans that do 50v50 wars or the highest number possible. "
-                    "You must make your first attack. We do not judge your result. "
-                    "No Heroes necessary!\n\n"
-                    "These clans are designed for lower-level, more relaxed players. If you're in a Tactical Clan and have one or more heroes "
-                    "upgrading but still want some war loot, move to a Flexible Fun Clan, then move back to Tactical "
-                    "when the upgrades are done.\n\n"
-                    "These are not Camping Clans. They are competitive, and we want to win!\n\n"
-                    "No War Activity = No Clan Membership. EzPz"
-                )),
-            ]
-        ),
-
-        # Embed 3: FWA Clans
-        Container(
-            accent_color=WU_GOLD,
-            components=[
-                text("## 💰 **FWA Clans** 💰"),
-                text((
-                    "**Clash of Thrones (#Q889GPL)**\n"
-                    "**CoT Wildlings (#2YJVQUCYJ)**\n"
-                    "**Four and Twenty (#8CV0GPPR)**\n"
-                    "**The Horde (#2RRCJCI0)**\n"
-                    "**PlaneClashers (#9UGQ0GL)**\n\n"
-                    "FWA (Farm War Alliance) is an alliance of clans. The clans have organized wars, one after the other, for loot. "
-                    "The war result is decided before the war, and simple war plans tell you how to get that result. "
-                    "Heroes are not required.\n\n"
-                    "Minimum requirements: TH12 or higher, a war weight of 115 or more, and all buildings built for your current TH level."
-                )),
-                Separator(divider=True),
-                text("### **Disclaimer**"),
-                text((
-                    "We look at each new recruit case by case. We explain each clan type in your interview. "
-                    "The requirements above are guides. Leadership makes the final decision."
-                )),
-            ]
-        ),
-
-        # Embed 4: Next Steps
-        Container(
-            accent_color=WU_GOLD,
-            components=[
-                text("## ⏩ **NEXT STEP**"),
-                text((
-                    "Select **I understand - Continue** to unlock WU Strike System, then read its rules "
-                    "and follow the next step of the Recruit Gauntlet."
-                )),
-                ActionRow(
-                    components=[
-                        Button(
-                            style=hikari.ButtonStyle.SUCCESS,
-                            custom_id=f"aboutus_acknowledge:{action_id}",
-                            label="I understand - Continue",
-                            emoji=hikari.Snowflake(ICONS["yes"])
-                        )
-                    ]
-                )
-            ]
-        ),
+        Media(items=[MediaItem(media=media.get("welcome", "assets/branding/banners/Warriors_United.gif"))]),
+        Container(accent_color=WU_GOLD, components=[
+            Text(content=fields[0]), Separator(divider=True), Text(content=fields[1]),
+            Separator(divider=True), Text(content=fields[2]), Text(content=fields[3]),
+        ]),
+        Container(accent_color=WU_GOLD, components=[Text(content=fields[4]), Text(content=fields[5])]),
+        Container(accent_color=WU_GOLD, components=[
+            Text(content=fields[6]), Text(content=fields[7]), Separator(divider=True),
+            Text(content=fields[8]), Text(content=fields[9]),
+        ]),
     ]
-
-    if preview:
-        components[-1].components[-1].components[0].set_is_disabled(True)
+    if include_family_rules:
+        rules = family_rules_sections(family_rules)
+        components.append(Container(accent_color=WU_GOLD, components=[Text(content=rules[0]), Text(content=rules[1])]))
+    components.append(Container(accent_color=WU_GOLD, components=[
+        Text(content=fields[10]), Text(content=fields[11]),
+        ActionRow(components=[Button(
+            style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"aboutus_acknowledge:{action_id}",
+            label="I understand - Continue", emoji=hikari.Snowflake(ICONS["yes"]),
+            is_disabled=preview,
+        )]),
+    ]))
     return components
 
 
 def default_sections():
-    return [child.content for item in build_aboutus() if isinstance(item, Container)
-            for child in item.components if isinstance(child, Text)]
+    from utils.info_channel_content import about_us_defaults
+    return about_us_defaults()
 
 
 def configured_sections(document):
@@ -181,7 +86,6 @@ def configured_sections(document):
         not isinstance(sections, list)
         or len(sections) != 12
         or any(not isinstance(section, str) or not section.strip() for section in sections)
-        or sum(map(len, sections)) > 4000
     ):
         return default_sections()
     return list(sections)
@@ -207,19 +111,16 @@ class RecruitAboutUs(
             ctx, bot, role_id=ABOUT_US_ROLE_ID, next_channel_id=STRIKE_SYSTEM_CHANNEL_ID
         ):
             return
-        document = await mongo.bot_config.find_one({"_id": f"content:about-us:{ctx.guild_id}"})
-        if document:
-            from extensions.commands.content import DOCUMENTS, render
-            try:
-                components = await render(
-                    DOCUMENTS["about-us"], document["sections"], media=document.get("media"),
-                    action_id=str(uuid.uuid4()),
-                )
-            except (KeyError, ValueError):
-                document = None
-        if not document:
-            legacy = await mongo.bot_config.find_one({"_id": f"recruit_aboutus:{ctx.guild_id}"})
-            components = build_aboutus(configured_sections(legacy), action_id=str(uuid.uuid4()))
+        from extensions.commands.content import DOCUMENTS, render, template_for
+        sections, media, _revision = await template_for(mongo, DOCUMENTS["about-us"], int(ctx.guild_id))
+        try:
+            components = await render(
+                DOCUMENTS["about-us"], sections, media=media,
+                action_id=str(uuid.uuid4()), mongo=mongo, guild_id=int(ctx.guild_id),
+            )
+        except ValueError as error:
+            await ctx.respond(str(error), ephemeral=True)
+            return
         await bot.rest.create_message(
             channel=ctx.channel_id,
             components=components,
