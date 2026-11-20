@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from "react";
+import { ChevronDown } from "lucide-react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import ActionMenu from "./ActionMenu";
@@ -437,4 +438,23 @@ it("blocks outside-ActionPanel opening-drag selection until a new press", async 
   await pointerClick(item, "mouse");
   expect(action).toHaveBeenCalledTimes(1);
   expect(document.querySelector('[role="menu"]')).toBeNull();
+});
+
+it("uses the supplied Select dropdown indicator without changing menu actions", async () => {
+  act(() =>
+    root.render(
+      <ActionMenu
+        name="Selection"
+        label="Select"
+        triggerIcon={ChevronDown}
+        items={[{ id: "select15", label: "Select 15", onAction: action }]}
+      />,
+    ),
+  );
+  const select = document.querySelector('[aria-label="Select"]')!;
+  expect(select.querySelector(".lucide-chevron-down")).not.toBeNull();
+  expect(select.querySelector(".lucide-ellipsis")).toBeNull();
+  await click(select);
+  await click(document.querySelector('[role="menuitem"]')!);
+  expect(action).toHaveBeenCalledTimes(1);
 });

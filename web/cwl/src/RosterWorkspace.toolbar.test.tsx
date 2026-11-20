@@ -66,6 +66,31 @@ it("keeps one header Refresh that actually rereads the roster", async () => {
         />,
       ),
     );
+    const tabs = host.querySelector('[aria-label="Roster workspace views"]')!;
+    expect(tabs.getAttribute("role")).toBe("tablist");
+    expect(tabs.querySelectorAll('[role="tab"]')).toHaveLength(4);
+    const toolbar = host.querySelector(".roster-filters-toolbar")!;
+    const pool = toolbar.querySelector('[aria-label="CWL account pool"]')!;
+    expect(pool.getAttribute("role")).toBe("group");
+    expect(
+      host.querySelectorAll('[aria-label="CWL account pool"]'),
+    ).toHaveLength(1);
+    const lazy = [...pool.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.includes("Lazy"),
+    )!;
+    const beforePoolUrl = window.location.search;
+    await act(async () => lazy.click());
+    expect(lazy.getAttribute("aria-pressed")).toBe("true");
+    expect(host.textContent).toContain("0 matching");
+    expect(window.location.search).toBe(beforePoolUrl);
+    expect(
+      JSON.parse(sessionStorage.getItem("wu-roster-1-release-v1")!).pool,
+    ).toBe("lazy");
+    const all = [...pool.querySelectorAll<HTMLButtonElement>("button")].find(
+      (button) => button.textContent?.includes("All"),
+    )!;
+    await act(async () => all.click());
+    expect(host.textContent).toContain("1 matching");
     const refresh = host.querySelector<HTMLButtonElement>(
       '.roster-header button[aria-label="Refresh"]',
     );

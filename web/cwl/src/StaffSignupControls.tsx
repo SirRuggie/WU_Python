@@ -1,3 +1,4 @@
+import { createPortal } from "react-dom";
 import { RefreshButton } from "./RefreshControl";
 import { countLabel } from "./countLabel";
 import SectionTabs, { SectionTabPanel } from "./SectionTabs";
@@ -27,6 +28,7 @@ type Props = {
   disabled?: boolean;
   onAttentionChange?: (attention: boolean) => void;
   primaryAction?: boolean;
+  addTarget?: HTMLElement | null;
 };
 
 export default function StaffSignupControls({
@@ -38,6 +40,7 @@ export default function StaffSignupControls({
   disabled = false,
   onAttentionChange,
   primaryAction = false,
+  addTarget = null,
 }: Props) {
   const canSignups = useDashboardPermission("cwl_signups");
   const signup = useSignupAction(season, () => onChanged(false));
@@ -216,6 +219,22 @@ export default function StaffSignupControls({
     }
   }
 
+  const addAction = canSignups && !archived && (
+    <button
+      ref={addButton}
+      type="button"
+      className={`roster-ui roster-ui-button ${primaryAction ? "is-primary" : "is-secondary"}`}
+      disabled={working || disabled || settingsOpen}
+      onClick={() => {
+        setError("");
+        setOpen(true);
+      }}
+      aria-expanded={open}
+    >
+      <Plus size={17} aria-hidden="true" /> Add signup
+    </button>
+  );
+
   return (
     <section
       className="staff-signup-controls"
@@ -250,21 +269,7 @@ export default function StaffSignupControls({
           </Button>
         )}
         <span className="staff-signup-bar-actions">
-          {canSignups && !archived && (
-            <button
-              ref={addButton}
-              type="button"
-              className={`roster-ui roster-ui-button ${primaryAction ? "is-primary" : "is-secondary"}`}
-              disabled={working || disabled || settingsOpen}
-              onClick={() => {
-                setError("");
-                setOpen(true);
-              }}
-              aria-expanded={open}
-            >
-              <Plus size={17} aria-hidden="true" /> Add signup
-            </button>
-          )}
+          {addTarget ? createPortal(addAction, addTarget) : addAction}
           {canSettings && !archived && (
             <button
               ref={settingsButton}

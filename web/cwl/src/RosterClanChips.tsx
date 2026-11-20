@@ -1,3 +1,5 @@
+import { useHorizontalFades } from "./useHorizontalFades";
+import "./horizontalFades.css";
 import { rosterCapacity } from "./rosterCapacity";
 import { useState } from "react";
 import { totalRosterWeight } from "./rosterTotalWeight";
@@ -105,6 +107,7 @@ export default function RosterClanChips({
   onSelect,
   disabled,
 }: Props) {
+  const fades = useHorizontalFades<HTMLDivElement>();
   const [revealed, setRevealed] = useState<string[]>([]);
   const summaries = buildRosterClanChipSummaries(
     roster.accounts,
@@ -116,7 +119,10 @@ export default function RosterClanChips({
 
   return (
     <div
-      className="roster-clan-chips roster-ui"
+      ref={fades.ref}
+      className="roster-clan-chips roster-ui has-horizontal-fades"
+      data-fade-left={fades.left}
+      data-fade-right={fades.right}
       aria-label="Hosting clan filters"
     >
       {GROUPS.map((group) => {

@@ -205,7 +205,7 @@ it("announces Archived instead of closed signups in the restored status region",
   });
   try {
     const status = view.host.querySelector(
-      '.roster-header-status[role="status"]',
+      '.roster-header-season-status[role="status"]',
     );
     expect(status).not.toBeNull();
     expect(status?.textContent).toContain("Archived");

@@ -16,6 +16,8 @@ import { placementMessage } from "./publicationAwareness";
 import { createComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
 import { rosterSortOptions } from "./rosterSortOptions";
+import ActionMenu from "./rosterUi/ActionMenu";
+import { ChevronDown } from "lucide-react";
 import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
 import RosterBalance from "./RosterBalance";
 import ActionPanel from "./ActionPanel";
@@ -119,6 +121,8 @@ export default function RosterWorkspace({
   const canSettings = useDashboardPermission("cwl_settings");
   const canPublish = useDashboardPermission("cwl_publish");
   const comparisonMemory = useMemo(createComparisonMemory, [seasonId]);
+  const [signupActionTarget, setSignupActionTarget] =
+    useState<HTMLDivElement | null>(null);
   const season = seasons.find((item) => String(item.id) === seasonId);
   const archived = season?.status === "archived";
   const [detailsOrder, setDetailsOrder] = useState<string[]>([]);
@@ -1017,6 +1021,7 @@ export default function RosterWorkspace({
         />
       )}
       <RosterHeader
+        steps={steps}
         refreshBusy={loading}
         refreshUpdatedAt={refreshUpdatedAt}
         refreshError={
@@ -1153,6 +1158,7 @@ export default function RosterWorkspace({
           (canSignups || canSettings) && (
             <StaffSignupControls
               primaryAction
+              addTarget={signupActionTarget}
               onAttentionChange={setSignupAttention}
               key={`${seasonId}:${discardToken}`}
               disabled={
@@ -1175,7 +1181,6 @@ export default function RosterWorkspace({
         }
         onAccessError={(error) => void fail(error)}
       />
-      {steps}
       {!seasonId && (
         <EmptyState
           title="No season selected"
@@ -1248,33 +1253,7 @@ export default function RosterWorkspace({
                 revealSelection
               />
             )}
-            {mode === "assign" ? (
-              <SectionTabs
-                mode="segmented"
-                className="roster-list-pool-tabs workflow-tabs section-tabs--flow"
-                label="CWL account pool"
-                items={(["all", "main", "lazy"] as const).map((pool) => {
-                  return {
-                    id: pool,
-                    label: (
-                      <>
-                        {pool === "all"
-                          ? "All accounts"
-                          : pool === "main"
-                            ? "Main CWL"
-                            : "Lazy CWL"}
-                      </>
-                    ),
-                  };
-                })}
-                value={releasePreferences.pool}
-                onChange={(pool) => {
-                  setReleasePreferences((current) => ({ ...current, pool }));
-                }}
-                disabled={uiLocked}
-                revealSelection
-              />
-            ) : mode === "weights" ? null : (
+            {mode !== "assign" && mode !== "weights" && (
               <CwlPoolTabs
                 value={poolFilter}
                 disabled={uiLocked && !working}
@@ -1293,24 +1272,6 @@ export default function RosterWorkspace({
             value={mode}
             enabled={canRoster}
           >
-            <div hidden={mode !== "assign"}>
-              <RosterClanChips
-                key={seasonId}
-                roster={roster}
-                pool={viewPool}
-                selectedTags={releasePreferences.assignedClanTags}
-                disabled={uiLocked}
-                onSelect={(tag) =>
-                  setReleasePreferences((current) => ({
-                    ...current,
-                    assignedClanTags: current.assignedClanTags.includes(tag)
-                      ? current.assignedClanTags.filter((item) => item !== tag)
-                      : [...current.assignedClanTags, tag],
-                  }))
-                }
-              />
-            </div>
-
             {canRoster && mode === "weights" && (
               <WeightQueue
                 onOrderChange={setDetailsOrder}
@@ -1453,6 +1414,40 @@ export default function RosterWorkspace({
             {mode === "assign" && (
               <>
                 <RosterFilters
+                  poolControl={
+                    <SectionTabs
+                      mode="segmented"
+                      className="roster-list-pool-tabs workflow-tabs section-tabs--flow"
+                      label="CWL account pool"
+                      items={(["all", "main", "lazy"] as const).map((pool) => {
+                        return {
+                          id: pool,
+                          label: (
+                            <>
+                              {pool === "all"
+                                ? "All"
+                                : pool === "main"
+                                  ? "Main"
+                                  : "Lazy"}
+                              <span className="roster-pool-label-extra">
+                                {" "}
+                                {pool === "all" ? "accounts" : "CWL"}
+                              </span>
+                            </>
+                          ),
+                        };
+                      })}
+                      value={releasePreferences.pool}
+                      onChange={(pool) => {
+                        setReleasePreferences((current) => ({
+                          ...current,
+                          pool,
+                        }));
+                      }}
+                      disabled={uiLocked}
+                      revealSelection
+                    />
+                  }
                   onOpenChange={setFilterOpen}
                   roster={roster}
                   value={releasePreferences}
@@ -1516,7 +1511,30 @@ export default function RosterWorkspace({
                       </div>
                     </ActionPanel>
                   )}
+                  <div
+                    className="roster-toolbar-signup"
+                    ref={setSignupActionTarget}
+                  />
                 </RosterFilters>
+                <div className="roster-clan-strip">
+                  <RosterClanChips
+                    key={seasonId}
+                    roster={roster}
+                    pool={viewPool}
+                    selectedTags={releasePreferences.assignedClanTags}
+                    disabled={uiLocked}
+                    onSelect={(tag) =>
+                      setReleasePreferences((current) => ({
+                        ...current,
+                        assignedClanTags: current.assignedClanTags.includes(tag)
+                          ? current.assignedClanTags.filter(
+                              (item) => item !== tag,
+                            )
+                          : [...current.assignedClanTags, tag],
+                      }))
+                    }
+                  />
+                </div>
                 <div
                   className="roster-list-heading"
                   ref={listHeading}
@@ -1526,49 +1544,50 @@ export default function RosterWorkspace({
                     className="roster-quick-select"
                     aria-label="Quick account selection"
                   >
-                    <Button
-                      disabled={
-                        uiLocked ||
-                        archived ||
-                        (!canRoster && !canSignups) ||
-                        !matchingTags.length
-                      }
-                      onClick={() => quickSelect(15)}
-                    >
-                      Select 15
-                    </Button>
-                    <Button
-                      disabled={
-                        uiLocked ||
-                        archived ||
-                        (!canRoster && !canSignups) ||
-                        !matchingTags.length
-                      }
-                      onClick={() => quickSelect(30)}
-                    >
-                      Select 30
-                    </Button>
-                    {matchingTags.length > 0 && matchingTags.length <= 50 && (
-                      <Button
-                        disabled={
-                          uiLocked || archived || (!canRoster && !canSignups)
-                        }
-                        onClick={selectAllMatching}
-                      >
-                        All {matchingTags.length}
-                      </Button>
-                    )}
-                    {selectedTags.length > 0 && (
-                      <Button
-                        disabled={uiLocked || archived}
-                        onClick={() => {
-                          applySelection([]);
-                          setSelectionNotice("");
-                        }}
-                      >
-                        Clear
-                      </Button>
-                    )}
+                    <ActionMenu
+                      name="Select accounts"
+                      label="Select"
+                      triggerIcon={ChevronDown}
+                      items={[
+                        ...([15, 30] as const).map((count) => ({
+                          id: `select-${count}`,
+                          label: `Select ${count}`,
+                          disabled:
+                            uiLocked ||
+                            archived ||
+                            (!canRoster && !canSignups) ||
+                            !matchingTags.length,
+                          onAction: () => quickSelect(count),
+                        })),
+                        ...(matchingTags.length > 0 && matchingTags.length <= 50
+                          ? [
+                              {
+                                id: "select-all",
+                                label: `All ${matchingTags.length}`,
+                                disabled:
+                                  uiLocked ||
+                                  archived ||
+                                  (!canRoster && !canSignups),
+                                onAction: selectAllMatching,
+                              },
+                            ]
+                          : []),
+                        ...(selectedTags.length > 0
+                          ? [
+                              {
+                                id: "clear",
+                                label: "Clear selection",
+                                disabled: uiLocked || archived,
+                                separatorBefore: true,
+                                onAction: () => {
+                                  applySelection([]);
+                                  setSelectionNotice("");
+                                },
+                              },
+                            ]
+                          : []),
+                      ]}
+                    />
                   </div>
                   <span className="roster-list-count">
                     <span className="roster-list-count-text">
