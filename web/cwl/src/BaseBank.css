@@ -14,12 +14,47 @@
   gap: var(--wu-space-4);
   align-items: start;
 }
+.base-bank-swipe {
+  overflow-x: clip;
+}
 .base-bank-card {
   min-width: 0;
   overflow: hidden;
   border: 1px solid var(--wu-border);
   border-radius: var(--roster-radius-card, var(--wu-radius-md));
   background: var(--wu-surface);
+}
+.base-bank-enter-next {
+  animation: base-bank-enter-next 180ms ease-out;
+}
+.base-bank-enter-previous {
+  animation: base-bank-enter-previous 180ms ease-out;
+}
+@keyframes base-bank-enter-next {
+  from {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@keyframes base-bank-enter-previous {
+  from {
+    transform: translateX(-24px);
+    opacity: 0;
+  }
+  to {
+    transform: translateX(0);
+    opacity: 1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .base-bank-enter-next,
+  .base-bank-enter-previous {
+    animation: none;
+  }
 }
 .base-bank-image {
   aspect-ratio: 16 / 10;

@@ -1,5 +1,15 @@
 # Roster UI patterns
 
+## Shared discrete swipe navigation (254)
+
+Compare's player-list swipe uses `useSwipeNavigation`, shared with Base bank,
+instead of inline touch refs/handlers. Left selects the next visible clan and
+right selects the previous, without wrapping. The existing 70 px / 1.5 axis thresholds
+remain; viewport-edge 24 px, multi-touch, zoom, selection and cancellation guards
+also apply. Passive listeners and `pan-y pinch-zoom` retain browser scroll/zoom;
+the next click after a swipe is blocked once. The clan rail, arrows, taps,
+keyboard selection and `useCompareRail` synchronization remain unchanged.
+
 ## Labels, type and shared formats (252)
 
 Use sentence-case labels without tracking for eyebrows, navigation groups,

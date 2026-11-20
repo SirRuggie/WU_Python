@@ -22,6 +22,22 @@ not claims of testing private installations of other products.
 | [GOV.UK validation recovery](https://design-system.service.gov.uk/patterns/validation/)                            | Distinguish user input errors from service/permission problems and provide recovery.              | Preserve edits after failed saves; service retry does not masquerade as an empty family; revoked access clears overview data.              |
 | [WCAG 2.2](https://www.w3.org/TR/WCAG22/)                                                                          | Keyboard operation, visible/unobscured focus, adequate targets, reflow, and status feedback.      | Native controls, manual-activation settings tabs, mobile cards, visible focus, 44px control targets, and short-screen sticky-bar fallback. |
 
+## Swipe navigation (254)
+
+Use the shared `useSwipeNavigation` hook for discrete touch navigation on content
+that does not itself scroll sideways. Keep a visible, single-tap alternative:
+Base bank's Town Hall chips and Compare's clan rail/arrows remain usable with
+touch, mouse and keyboard. A swipe commits on finger lift, never follows the
+finger, and never wraps at the ends.
+
+Ignore starts within 24 px of either viewport edge, multi-touch (including a
+second finger outside the area), zoom above 1.01, selected text and cancelled
+gestures. Require more than 70 px and a horizontal distance greater than 1.5 times
+the vertical distance. Touch listeners are passive, with `pan-y pinch-zoom`;
+never prevent default touch input, capture pointers or lock scrolling. Suppress
+only the next click after a counted swipe. Base bank enters the new cards with
+a 24 px slide/fade over 180 ms ease-out; reduced motion changes instantly.
+
 ## Required interaction rules
 
 1. **Design around frequency.** The landing view answers what exists, what is on,

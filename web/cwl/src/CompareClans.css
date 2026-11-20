@@ -449,7 +449,6 @@
   .compare-player-list {
     overflow: visible;
     max-height: none;
-    touch-action: pan-y;
   }
 }
 

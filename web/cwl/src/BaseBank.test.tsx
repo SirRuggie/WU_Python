@@ -12,6 +12,8 @@ import { ApiError } from "./api";
 import BaseBank from "./BaseBank";
 import { loginPath } from "./memberLinks";
 import { defaultTownHall, baseLink, type BankBase } from "./baseBank";
+import { swipeEvent } from "./swipeTestEvents";
+import { readFileSync } from "node:fs";
 const link = "https://link.clashofclans.com/en?action=OpenLayout&id=fixture";
 const bases: BankBase[] = [
   {
@@ -311,4 +313,125 @@ it("a non-member sees the join line and no bases", async () => {
   );
   expect(host.querySelector("article")).toBeNull();
   expect(host.textContent).not.toContain("Sign in again");
+});
+
+const swipeBases: BankBase[] = [19, 18, 17, 16].map((level) => ({
+  ...bases[0],
+  key: `th${level}`,
+  town_hall: level,
+  variant: "merged",
+  variant_label: "Merged",
+  has_details: false,
+}));
+const chosenHall = () =>
+  host.querySelector('button[aria-pressed="true"]')?.textContent;
+const cardArea = () =>
+  host.querySelector<HTMLElement>(".base-bank > .swipe-nav-area")!;
+it("swipes current cards high-to-low and back, keeps chips synced, and never wraps at ends", async () => {
+  mock.api.mockResolvedValue({ bases: swipeBases });
+  await mount([19]);
+  expect(chosenHall()).toBe("19");
+  await act(async () => {
+    swipeEvent(cardArea());
+  });
+  expect(chosenHall()).toBe("18");
+  expect(host.querySelector('article[aria-label="TH18 Merged"]')).toBeTruthy();
+  expect(host.querySelectorAll("article")).toHaveLength(1);
+  expect(host.querySelector(".base-bank-enter-next")).toBeTruthy();
+  await act(async () => {
+    swipeEvent(cardArea(), 100, 250);
+  });
+  expect(chosenHall()).toBe("19");
+  expect(host.querySelector(".base-bank-enter-previous")).toBeTruthy();
+  await act(async () =>
+    host
+      .querySelector(".base-bank-grid")!
+      .dispatchEvent(new Event("animationend", { bubbles: true })),
+  );
+  await act(async () => {
+    swipeEvent(cardArea(), 100, 250);
+  });
+  expect(chosenHall()).toBe("19");
+  expect(host.querySelector('[class*="base-bank-enter-"]')).toBeNull();
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('button[aria-label="Town Hall 16"]')!
+      .click(),
+  );
+  await act(async () => {
+    swipeEvent(cardArea());
+  });
+  expect(chosenHall()).toBe("16");
+  expect(host.querySelector('[class*="base-bank-enter-"]')).toBeNull();
+});
+it("keeps header/rail touches and single-level data unchanged; chips do not animate", async () => {
+  mock.api.mockResolvedValue({ bases: swipeBases });
+  await mount([19]);
+  await act(async () => {
+    swipeEvent(host.querySelector(".base-bank-levels")!);
+    swipeEvent(host.querySelector(".cwl-page-header")!);
+  });
+  expect(chosenHall()).toBe("19");
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('button[aria-label="Town Hall 18"]')!
+      .click(),
+  );
+  expect(chosenHall()).toBe("18");
+  expect(host.querySelector('[class*="base-bank-enter-"]')).toBeNull();
+  await act(async () => root.unmount());
+  root = createRoot(host);
+  mock.api.mockResolvedValue({ bases: [swipeBases[0]] });
+  await mount([19]);
+  await act(async () => {
+    swipeEvent(cardArea());
+  });
+  expect(chosenHall()).toBe("19");
+});
+it("restarts fast same-direction motion and blocks the click that ends on Copy base once", async () => {
+  mock.api.mockResolvedValue({ bases: swipeBases });
+  await mount([19]);
+  await act(async () => {
+    swipeEvent(cardArea());
+  });
+  const first = host.querySelector(".base-bank-grid");
+  await act(async () => {
+    swipeEvent(cardArea());
+  });
+  expect(chosenHall()).toBe("17");
+  expect(host.querySelector(".base-bank-grid")).not.toBe(first);
+  expect(host.querySelector(".base-bank-enter-next")).toBeTruthy();
+  const copy = host.querySelector(".base-bank-copy")!;
+  const allowedClicks: boolean[] = [];
+  copy.addEventListener("click", (event) => {
+    allowedClicks.push(event.defaultPrevented);
+    // Observe the hook's decision without letting the fixture navigate to Clash.
+    event.preventDefault();
+  });
+  const firstClick = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => {
+    copy.dispatchEvent(firstClick);
+  });
+  expect(firstClick.defaultPrevented).toBe(true);
+  expect(allowedClicks).toEqual([]);
+  const secondClick = new MouseEvent("click", {
+    bubbles: true,
+    cancelable: true,
+  });
+  await act(async () => {
+    copy.dispatchEvent(secondClick);
+  });
+  expect(allowedClicks).toEqual([false]);
+});
+it("disables the swipe enter animation for reduced motion in CSS", () => {
+  const bankStyles = readFileSync("src/BaseBank.css", "utf8");
+  expect(bankStyles).toMatch(
+    /prefers-reduced-motion:\s*reduce[\s\S]*base-bank-enter-next[\s\S]*base-bank-enter-previous[\s\S]*animation:\s*none/,
+  );
+  expect(bankStyles).toMatch(/translateX\(24px\)/);
+  expect(bankStyles).toMatch(/translateX\(-24px\)/);
+  expect(bankStyles).toContain("180ms ease-out");
 });

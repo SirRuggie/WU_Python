@@ -1,6 +1,7 @@
 import RefreshControl from "./RefreshControl";
 import LoadError from "./LoadError";
 import useCompareRail from "./useCompareRail";
+import useSwipeNavigation from "./useSwipeNavigation";
 import type { ComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
 import {
@@ -75,8 +76,6 @@ export default function CompareClans({
     previousPool = useRef(pool),
     scroller = useRef<HTMLDivElement>(null),
     rail = useRef<HTMLDivElement>(null);
-  const swiped = useRef(false);
-  const touch = useRef<{ x: number; y: number } | null>(null);
   const allClans = sortClans(
     assignmentOptions(roster.clans).filter((clan) => clan.pool === pool),
     "name",
@@ -240,6 +239,13 @@ export default function CompareClans({
     setFocusedClan(tag);
   }
   useCompareRail(rail, visibleClans, selectedFocus, setFocusedClan);
+  const swipe = useSwipeNavigation({
+    enabled: visibleClans.length > 1,
+    onSwipe: (direction) =>
+      focusAt(
+        visibleClans.indexOf(selectedFocus) + (direction === "next" ? 1 : -1),
+      ),
+  });
   const filterCount = leagues.length + townHalls.length;
   return (
     <section
@@ -519,37 +525,8 @@ export default function CompareClans({
                       }
                     />
                     <div
-                      className="compare-player-list"
-                      onClickCapture={(event) => {
-                        if (swiped.current) {
-                          swiped.current = false;
-                          event.preventDefault();
-                          event.stopPropagation();
-                        }
-                      }}
-                      onTouchStart={(event) => {
-                        const point = event.touches[0];
-                        swiped.current = false;
-                        touch.current = { x: point.clientX, y: point.clientY };
-                      }}
-                      onTouchEnd={(event) => {
-                        const start = touch.current;
-                        touch.current = null;
-                        if (!start) return;
-                        const point = event.changedTouches[0],
-                          dx = point.clientX - start.x,
-                          dy = point.clientY - start.y;
-                        if (
-                          Math.abs(dx) > 70 &&
-                          Math.abs(dx) > Math.abs(dy) * 1.5
-                        ) {
-                          swiped.current = true;
-                          focusAt(
-                            visibleClans.indexOf(selectedFocus) +
-                              (dx < 0 ? 1 : -1),
-                          );
-                        }
-                      }}
+                      className="compare-player-list swipe-nav-area"
+                      {...swipe}
                     >
                       {members.length ? (
                         members.map((account) => (
