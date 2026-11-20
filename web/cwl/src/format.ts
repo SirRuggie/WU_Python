@@ -11,7 +11,16 @@ export function formatNumber(
 type DateInput = Date | string | number | null | undefined;
 
 /** Locale and zone default to the viewer's; tests pin both. */
-type DateOptions = { locale?: string; timeZone?: string };
+export type DateOptions = {
+  locale?: string;
+  timeZone?: string;
+  /** Preserve a caller's date/time parts while sharing parsing and zone rules. */
+  format?: Intl.DateTimeFormatOptions;
+};
+
+export function viewerTimeZone(): string {
+  return Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC";
+}
 
 /** Shown when a date is missing or cannot be read. Helpers never throw. */
 export const DATE_FALLBACK = "—";
@@ -25,11 +34,18 @@ function readDate(value: DateInput): Date | null {
 function formatWith(
   value: DateInput,
   style: Intl.DateTimeFormatOptions,
-  { locale, timeZone }: DateOptions,
+  { locale, timeZone, format }: DateOptions,
 ): string {
   const date = readDate(value);
   if (!date) return DATE_FALLBACK;
-  return new Intl.DateTimeFormat(locale, { ...style, timeZone }).format(date);
+  try {
+    return new Intl.DateTimeFormat(locale, {
+      ...(format || style),
+      timeZone: timeZone || viewerTimeZone(),
+    }).format(date);
+  } catch {
+    return DATE_FALLBACK;
+  }
 }
 
 /** Dates and times follow the viewer's locale with fixed, explicit options. */
@@ -57,9 +73,8 @@ export function formatCycleMonth(
   cycle: string,
   month: "long" | "short" = "long",
 ): string {
-  return new Intl.DateTimeFormat(undefined, {
-    month,
-    ...(month === "short" ? { year: "numeric" } : {}),
+  return formatDate(`${cycle}-01T00:00:00Z`, {
     timeZone: "UTC",
-  }).format(new Date(`${cycle}-01T00:00:00Z`));
+    format: { month, ...(month === "short" ? { year: "numeric" } : {}) },
+  });
 }

@@ -5,11 +5,13 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import MemberSignupStatus, {
   memberDateLines,
   relativeMinutes,
+  signupHeading,
 } from "./MemberSignupStatus";
 import SidebarNavigation from "./SidebarNavigation";
 import { MemberStepStrip } from "./CwlStepStrip";
 import { memberTarget, loginPath } from "./memberLinks";
 import type { Season } from "./api";
+import HomeSignupSummary from "./HomeSignupSummary";
 
 beforeEach(() => {
   vi.useFakeTimers({ toFake: ["Date"] });
@@ -21,6 +23,45 @@ const accounts = ["Aurora", "Ace", "Birch", "Cedar", "Dawn"].map((name, i) => ({
   name,
   tag: `#P2Y2Y2Y${i}`,
 }));
+it("keeps the collapsed Home signup count singular and grouped without changing accounts", async () => {
+  const many = Array.from({ length: 1000 }, (_, i) => ({
+    tag: `#FIXTURE${i}`,
+    name: `Player ${i}`,
+  }));
+  const saved = many.map((account) => ({ tag: account.tag, pool: "main" }));
+  const before = JSON.stringify({ many, saved });
+  await act(async () =>
+    root.render(
+      <HomeSignupSummary
+        sessionKey="one-count"
+        signups={saved.slice(0, 1)}
+        accounts={many.slice(0, 1)}
+        onRemaining={() => {}}
+      />,
+    ),
+  );
+  expect(host.querySelector("summary")?.textContent).toContain(
+    "Signed up · 1 of 1 account",
+  );
+  expect(host.querySelector("details")?.open).toBe(false);
+  await act(async () =>
+    root.render(
+      <HomeSignupSummary
+        sessionKey="many-count"
+        signups={saved}
+        accounts={many}
+        onRemaining={() => {}}
+      />,
+    ),
+  );
+  expect(host.querySelector("summary")?.textContent).toContain(
+    "Signed up · 1,000 of 1,000 accounts",
+  );
+  expect(JSON.stringify({ many, saved })).toBe(before);
+  expect(signupHeading(1000, 1001)).toBe(
+    "✓ You are signed up · 1,000 of 1,001 accounts",
+  );
+});
 it("rounds relative days without pluralizing one day", () => {
   expect(relativeMinutes(1440 * 60000, 0)).toBe("in 1 day");
   expect(relativeMinutes(1441 * 60000, 0)).toBe("in 1 day");
@@ -233,9 +274,11 @@ it("sidebar is ordered, expanded initially and remembers collapse even on a memb
   const stored = JSON.parse(localStorage.getItem("wu-navigation-v3:member")!);
   expect(stored.clans).toBe(true);
   expect(stored["my-cwl"]).toBeUndefined();
-  expect([...nav.querySelectorAll("a")].map((b) => b.textContent)).toEqual(
-    ["Sign up", "My signups", "My clan assignments"],
-  );
+  expect([...nav.querySelectorAll("a")].map((b) => b.textContent)).toEqual([
+    "Sign up",
+    "My signups",
+    "My clan assignments",
+  ]);
   await click("My signups");
   expect(onSignup).toHaveBeenCalledWith("saved");
   const toggle = host.querySelector<HTMLButtonElement>(

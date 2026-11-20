@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { formatDateTime } from "./format";
 import {
   useId,
   useLayoutEffect,
@@ -66,9 +68,8 @@ export function detailsFreshnessText(
   const subject = kind === "player" ? "Player details" : "Clan details";
   const date =
     loadedAt && Number.isFinite(Date.parse(loadedAt))
-      ? new Date(loadedAt).toLocaleString([], {
-          dateStyle: "medium",
-          timeStyle: "short",
+      ? formatDateTime(new Date(loadedAt), {
+          format: { dateStyle: "medium", timeStyle: "short" },
         })
       : null;
   if (freshness === "partial")
@@ -315,8 +316,8 @@ export default function PlayerClanDetailsDialog(props: PlayerClanDetailsProps) {
                     {props.freshness === "unavailable"
                       ? "Linked player count is unavailable while account data cannot load."
                       : props.freshness === "partial"
-                        ? `${clanMembers.length} linked player${clanMembers.length === 1 ? "" : "s"} available so far in this clan. The list may be incomplete.`
-                        : `${clanMembers.length} of your linked player${clanMembers.length === 1 ? "" : "s"} currently shown in this clan. This is not the full clan roster.`}
+                        ? `${countLabel(clanMembers.length, "linked player")} available so far in this clan. The list may be incomplete.`
+                        : `${countLabel(clanMembers.length, "of your linked player")} currently shown in this clan. This is not the full clan roster.`}
                   </p>
                   {clanMembers.length > 0 && (
                     <details>

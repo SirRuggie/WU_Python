@@ -1,3 +1,5 @@
+import { countLabel } from "../countLabel";
+import { identifierInputProps } from "../inputProps";
 import ChannelCombobox from "../ChannelCombobox";
 import LoadError from "../LoadError";
 import DiscordPreview, { type PreviewPart } from "../DiscordMessagePreview";
@@ -129,8 +131,8 @@ export default function ReminderMessagesTab({
                 )}
                 <details className="reminder-disclosure">
                   <summary>
-                    Delivery settings · {variant.role_ids.length}{" "}
-                    {variant.role_ids.length === 1 ? "role" : "roles"} to notify
+                    Delivery settings ·{" "}
+                    {countLabel(variant.role_ids.length, "role")} to notify
                   </summary>
                   <ChannelCombobox
                     label="Destination channel"
@@ -221,6 +223,7 @@ export default function ReminderMessagesTab({
                     <label>
                       Role IDs to mention
                       <input
+                        {...identifierInputProps}
                         value={roleText}
                         onChange={(event) => {
                           setRoleText(event.target.value);

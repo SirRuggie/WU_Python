@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import { useMemo, useState } from "react";
 import BonusAccountCard from "./BonusAccountCard";
 import type { BonusListMode, RaffleAccount } from "./bonusRaffle";
@@ -36,10 +37,10 @@ export default function BonusAccountList({
         <label className="bonus-account-search">
           Find a player
           <input
+            {...searchInputProps}
             type="search"
             name="account-search"
             autoComplete="off"
-            spellCheck={false}
             value={query}
             onChange={(event) => {
               setQuery(event.target.value);

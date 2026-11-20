@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import type { Dispatch, SetStateAction } from "react";
 import DiscordIdentity, { discordIdentityName } from "../DiscordIdentity";
 import SearchPicker from "../SearchPicker";
@@ -66,11 +67,11 @@ export default function StrikesLeaveTab({
           <label>
             Find Discord member
             <input
+              {...searchInputProps}
               type="search"
               disabled={busy}
               value={memberQuery}
               onChange={(event) => onMemberQuery(event.target.value)}
-              spellCheck={false}
               autoComplete="off"
               placeholder="Name or Discord ID"
             />

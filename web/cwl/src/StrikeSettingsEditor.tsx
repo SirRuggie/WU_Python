@@ -1,3 +1,4 @@
+import { numericInputProps } from "./inputProps";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
@@ -152,6 +153,7 @@ export default function StrikeSettingsEditor({
       <label>
         Strike limit
         <input
+          {...numericInputProps}
           type="number"
           min={1}
           max={20}

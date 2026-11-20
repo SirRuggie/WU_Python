@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { identifierInputProps } from "./inputProps";
 import {
   useCallback,
   useEffect,
@@ -253,9 +255,9 @@ export default function BonusRepAccounts({
                 <label>
                   Player tag
                   <input
+                    {...identifierInputProps}
                     name="rep-tag"
                     autoComplete="off"
-                    spellCheck={false}
                     maxLength={20}
                     value={tag}
                     disabled={disabled}
@@ -304,9 +306,7 @@ export default function BonusRepAccounts({
                 ) : (
                   <strong>Not linked</strong>
                 )}
-                <small>
-                  {rows.length} account{rows.length === 1 ? "" : "s"}
-                </small>
+                <small>{countLabel(rows.length, "account")}</small>
                 {userId && rows.length > 1 && (
                   <small className="rep-accounts-warning">Keep 1 account</small>
                 )}

@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel, countNoun } from "./countLabel";
 import { relativeTime } from "./commandTime";
 import type { ActivityAccount } from "./strikeActivityView";
 import { Fragment, useEffect, useState, type ReactNode } from "react";
@@ -18,7 +20,9 @@ import {
 const warRatio = (row: ActivityAccount) => {
   const chain = warsWithoutAttacking(row);
   if (chain !== null && chain >= 1)
-    return chain === 1 ? "Missed last war" : `Missed last ${chain} wars`;
+    return chain === 1
+      ? "Missed last war"
+      : `Missed last ${formatNumber(chain)} wars`;
   if (row.war_chain_unavailable) return null;
   const total = knownWars(row),
     attacked = count(row.attacked_wars);
@@ -162,8 +166,7 @@ export default function StrikeActivityRows({
                 }
                 action={
                   <span className="strike-activity-count">
-                    {row.active_strikes}{" "}
-                    {row.active_strikes === 1 ? "strike" : "strikes"}
+                    {countLabel(row.active_strikes, "strike")}
                   </span>
                 }
                 detail={
@@ -303,9 +306,9 @@ export default function StrikeActivityRows({
                     {row.weight ? compactWeight(row.weight) : "—"}
                   </td>
                   <td className="strike-activity-count">
-                    {row.active_strikes}{" "}
+                    {formatNumber(row.active_strikes)}{" "}
                     <span className="strike-activity-mobile-label">
-                      {row.active_strikes === 1 ? "strike" : "strikes"}
+                      {countNoun(row.active_strikes, "strike")}
                     </span>
                   </td>
                   <td

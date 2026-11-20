@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import EmptyState from "./EmptyState";
 import { formatDateTime } from "./format";
 import LoadError from "./LoadError";
@@ -26,7 +27,9 @@ const statusName = (value: string) =>
     value
   ] || value;
 const when = (value: string | null) =>
-  value ? formatDateTime(new Date(value)) : "Date unavailable";
+  value
+    ? formatDateTime(new Date(value), { timeZone: "UTC" })
+    : "Date unavailable";
 export default function TicketBrowser() {
   const [status, setStatus] = useState(() =>
       parsePageParam("tickets", "status", window.location.search),
@@ -150,6 +153,7 @@ export default function TicketBrowser() {
         <label>
           Find a ticket
           <input
+            {...searchInputProps}
             type="search"
             placeholder="Member, ticket # or player tag"
             maxLength={80}

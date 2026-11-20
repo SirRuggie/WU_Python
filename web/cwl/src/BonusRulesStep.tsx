@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { numericInputProps } from "./inputProps";
 import type { ReactNode, RefObject } from "react";
 import BonusAccountList from "./BonusAccountList";
 import BonusBlockers from "./BonusBlockers";
@@ -88,11 +90,11 @@ export default function BonusRulesStep({
             <label>
               Minimum attacks
               <input
+                {...numericInputProps}
                 ref={minimumInput}
                 type="number"
                 name="minimum-attacks"
                 autoComplete="off"
-                inputMode="numeric"
                 min="0"
                 max="7"
                 step="1"
@@ -117,11 +119,11 @@ export default function BonusRulesStep({
           <label className="bonus-inline-count">
             <span>Bonuses shown in Clash</span>
             <input
+              {...numericInputProps}
               ref={countInput}
               type="number"
               name="bonus-count"
               autoComplete="off"
-              inputMode="numeric"
               min="1"
               max="50"
               step="1"
@@ -164,7 +166,7 @@ export default function BonusRulesStep({
           Lazy rules · 4+ attacks, or 3 attacks and 8+ stars ·{" "}
           {sitOutMonths === 0
             ? "No sit-out after a win"
-            : `No bonus in the previous ${sitOutMonths} CWL month${sitOutMonths === 1 ? "" : "s"}`}
+            : `No bonus in the previous ${countLabel(sitOutMonths, "CWL month")}`}
         </p>
       )}
       <div className="bonus-candidates-heading">
@@ -216,11 +218,11 @@ export default function BonusRulesStep({
           <label className="bonus-count-field">
             Total bonuses shown in Clash
             <input
+              {...numericInputProps}
               ref={countInput}
               type="number"
               name="bonus-count"
               autoComplete="off"
-              inputMode="numeric"
               min="1"
               max="50"
               step="1"

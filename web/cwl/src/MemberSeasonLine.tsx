@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import { seasonMonthLabel } from "./seasonLabels";
 import { memberSignupsOpen } from "./memberSeason";
 import type { Season } from "./api";
@@ -12,11 +13,13 @@ export default function MemberSeasonLine({
   const close = Date.parse(season.signup_deadline || "");
   const open = memberSignupsOpen(season);
   const date = Number.isFinite(close)
-    ? new Date(close).toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
+    ? formatDateTime(new Date(close), {
+        format: {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        },
       })
     : null;
   return (

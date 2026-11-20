@@ -1,5 +1,5 @@
 import type { FillerMarkQueue } from "./fillerMarkQueue";
-import { formatNumber } from "./format";
+import { formatNumber, formatDateTime } from "./format";
 import { useFillerQueueVersion } from "./useFillerMarkQueue";
 import type { FillerSaveResult } from "./RosterFillerCheckbox";
 import RosterFillerCheckbox from "./RosterFillerCheckbox";
@@ -70,11 +70,13 @@ const fullWeight = (value: number | null) =>
   value === null ? "Missing weight" : formatNumber(value);
 export const detailsDate = (value?: string | null) =>
   value && Number.isFinite(Date.parse(value))
-    ? new Date(value).toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
+    ? formatDateTime(new Date(value), {
+        format: {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        },
       })
     : "Not recorded";
 

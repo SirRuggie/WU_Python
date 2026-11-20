@@ -1,3 +1,6 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import RefreshControl, { useRefreshTime } from "./RefreshControl";
 import LoadError from "./LoadError";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
@@ -436,7 +439,7 @@ export default function PublicationWorkspace({
               : `Publish version ${draft.next_version}?`
           }
           confirmLabel="Publish roster"
-          text={`Publish the current draft for Main and Lazy? ${draft.preview.accounts.length} account${draft.preview.accounts.length === 1 ? "" : "s"}: ${draft.preview.assigned_count} assigned and ${draft.preview.unassigned_count} unplaced. Members will see these assignments. No Discord message is sent.`}
+          text={`Publish the current draft for Main and Lazy? ${countLabel(draft.preview.accounts.length, "account")}: ${formatNumber(draft.preview.assigned_count)} assigned and ${formatNumber(draft.preview.unassigned_count)} unplaced. Members will see these assignments. No Discord message is sent.`}
           onCancel={() => setConfirmRevision(null)}
           onConfirm={() => void publish()}
           disabled={!canPublish}
@@ -547,10 +550,9 @@ export default function PublicationWorkspace({
                       disabled={locked || loading}
                       onClick={() => onFix(check.filter)}
                     >
-                      {check.accounts.length}{" "}
                       {check.filter === "missing_weight"
-                        ? `missing weight${check.accounts.length === 1 ? "" : "s"}`
-                        : `account${check.accounts.length === 1 ? "" : "s"} unplaced`}{" "}
+                        ? countLabel(check.accounts.length, "missing weight")
+                        : `${countLabel(check.accounts.length, "account")} unplaced`}{" "}
                       ›
                     </Button>
                   ))}
@@ -560,9 +562,8 @@ export default function PublicationWorkspace({
                     disabled={locked || loading}
                     onClick={() => onFix("over_capacity")}
                   >
-                    {overCapacity.clans} clan
-                    {overCapacity.clans === 1 ? "" : "s"} over clan size · +
-                    {overCapacity.players} ›
+                    {countLabel(overCapacity.clans, "clan")} over clan size · +
+                    {formatNumber(overCapacity.players)} ›
                   </Button>
                 )}
                 {!hasWarnings && <span>Checks clear</span>}
@@ -588,10 +589,12 @@ export default function PublicationWorkspace({
                     onChange={(event) => setAcknowledged(event.target.checked)}
                   />
                   <span>
-                    I understand {draft.preview.unassigned_count} account
-                    {draft.preview.unassigned_count === 1
-                      ? " is"
-                      : "s are"}{" "}
+                    I understand{" "}
+                    {countLabel(
+                      draft.preview.unassigned_count,
+                      "account is",
+                      "accounts are",
+                    )}{" "}
                     still unplaced and will appear that way to members.
                   </span>
                 </label>
@@ -626,6 +629,7 @@ export default function PublicationWorkspace({
                 <label>
                   Find a player or clan
                   <input
+                    {...searchInputProps}
                     type="search"
                     value={rosterSearch}
                     disabled={locked || loading}
@@ -636,7 +640,7 @@ export default function PublicationWorkspace({
               </div>
               {query && (
                 <p className="publication-result-count">
-                  {visibleCount} matching account{visibleCount === 1 ? "" : "s"}
+                  {countLabel(visibleCount, "matching account")}
                 </p>
               )}
               {visibleGroups.length ? (
@@ -657,13 +661,13 @@ export default function PublicationWorkspace({
                           }
                         >
                           {group.tag === "unassigned"
-                            ? `${group.total} account${group.total === 1 ? "" : "s"}`
-                            : `${group.tag} · ${group.total} / ${group.capacity ?? "—"}`}
+                            ? `${countLabel(group.total, "account")}`
+                            : `${group.tag} · ${formatNumber(group.total)} / ${group.capacity == null ? "—" : formatNumber(group.capacity)}`}
                           {group.fillerCount > 0 && (
-                            <small>{` · +${group.fillerCount} filler${group.fillerCount === 1 ? "" : "s"}`}</small>
+                            <small>{` · +${countLabel(group.fillerCount, "filler")}`}</small>
                           )}
                           {group.capacity && group.occupancy.over ? (
-                            <span className="publication-over">{` · +${group.occupancy.regularOverflow} over`}</span>
+                            <span className="publication-over">{` · +${formatNumber(group.occupancy.regularOverflow)} over`}</span>
                           ) : null}
                         </span>
                       </summary>

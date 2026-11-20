@@ -1,10 +1,11 @@
+import { countLabel } from "../countLabel";
 import { formatNumber } from "../format";
 
 /** All text owned by the unified Members page. Shared editors keep their own text. */
 export const membersText = {
   refusedPeople: "People who cannot be changed",
   refusedCount: (count: number) =>
-    `${count} selected ${count === 1 ? "person cannot" : "people cannot"} be changed. No changes were queued.`,
+    `${countLabel(count, "selected person", "selected people")} cannot be changed. No changes were queued.`,
   selectionChanged: "Selection changed. Review the selected people.",
   roleRun: "Role changes",
   roleUpdating: "Changing role…",
@@ -26,8 +27,9 @@ export const membersText = {
   roleProgress: "Role change progress",
   rolePacing: "Changes one person at a time. You can stop at any time.",
   updatingRoles: (done: number, total: number) =>
-    `Updating roles ${done} of ${total}`,
-  chooseRole: (count: number) => `Select a role for ${count} members`,
+    `Updating roles ${formatNumber(done)} of ${formatNumber(total)}`,
+  chooseRole: (count: number) =>
+    `Select a role for ${countLabel(count, "member")}`,
   reviewChanges: "Review changes",
   protectedRole:
     "This role gives extra access. Check the role and people before continuing.",
@@ -92,13 +94,16 @@ export const membersText = {
   selectPage: "Select page",
   unselectPage: "Unselect page",
   selectedShort: (count: number, hidden: number) =>
-    hidden ? `${count} · ${hidden} hidden` : `${count} selected`,
-  selectMatching: (count: number) => `Select all ${count} matching`,
+    hidden
+      ? `${formatNumber(count)} · ${formatNumber(hidden)} hidden`
+      : `${formatNumber(count)} selected`,
+  selectMatching: (count: number) =>
+    `Select all ${formatNumber(count)} matching`,
   selectNone: "Select none",
   selected: (count: number, hidden: number) =>
-    `${count} selected${hidden ? ` · ${hidden} hidden` : ""}`,
+    `${formatNumber(count)} selected${hidden ? ` · ${formatNumber(hidden)} hidden` : ""}`,
   showing: (first: number, last: number, total: number) =>
-    `Showing ${first}-${last} of ${formatNumber(total)}`,
+    `Showing ${formatNumber(first)}-${formatNumber(last)} of ${formatNumber(total)}`,
   showSelected: "Show selected people",
   addRole: "Add role",
   removeRole: "Remove role",
@@ -118,9 +123,9 @@ export const membersText = {
   keepRole: "Keep role",
   undo: "Undo",
   addConfirm: (role: string, count: number) =>
-    `Add ${role} to ${count} members`,
+    `Add ${role} to ${countLabel(count, "member")}`,
   removeConfirm: (role: string, count: number) =>
-    `Remove ${role} from ${count} members`,
+    `Remove ${role} from ${countLabel(count, "member")}`,
   stop: "Stop",
   localTime: (value: string) => `Local time ${value}`,
 } as const;

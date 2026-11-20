@@ -1,6 +1,7 @@
 /* Shared dashboard frame: one brand, a scrollable directory, and a visible account. */
 div.shell {
   grid-template-columns: 256px minmax(0, 1fr);
+  --wu-topbar-h: 0px;
 }
 
 .shell .sidebar {
@@ -72,8 +73,8 @@ div.shell {
   color: var(--wu-accent);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 .shell .sidebar .navigation-staff {
   margin-top: var(--wu-space-3);
@@ -263,6 +264,15 @@ div.shell {
     inset: 0 auto 0 0;
     width: min(290px, 88vw);
   }
+  .shell .sidebar.open {
+    overscroll-behavior-y: contain;
+    grid-template-rows:
+      calc(70px + env(safe-area-inset-top, 0px)) minmax(0, 1fr)
+      auto;
+  }
+  .shell .sidebar.open > .brand-wrap {
+    padding-top: calc(var(--wu-space-3) + env(safe-area-inset-top, 0px));
+  }
   body:has(.sidebar.open) {
     overflow: hidden;
   }
@@ -274,6 +284,8 @@ div.shell {
     top: 0;
     z-index: 3;
     box-shadow: 0 2px 8px #0005; /* keep: shadow black */
+    height: calc(70px + env(safe-area-inset-top, 0px));
+    padding-top: env(safe-area-inset-top, 0px);
   }
   .shell .topbar .user-pill {
     display: inline-flex;
@@ -312,8 +324,9 @@ div.shell {
   }
   .shell .topbar {
     height: auto;
-    min-height: 64px;
+    min-height: calc(64px + env(safe-area-inset-top, 0px));
     padding: 0 var(--wu-space-3);
+    padding-top: env(safe-area-inset-top, 0px);
   }
   .shell .topbar > div > strong[data-page-heading-visible="true"] {
     display: none;

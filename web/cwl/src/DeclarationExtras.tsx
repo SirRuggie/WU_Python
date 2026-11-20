@@ -1,3 +1,4 @@
+import { formatNumber } from "./format";
 import { countLabel } from "./countLabel";
 import DeclarationMemberMarks, {
   type DeclarationMarkControl,
@@ -67,11 +68,9 @@ export default function DeclarationExtras({
   const counts = [
     `${countLabel(row.count, "player")} not on the roster`,
     ...(unpublishedCount ? [`${unpublishedCount} not published yet`] : []),
-    ...(low.length ? [`${low.length} low TH in clan`] : []),
+    ...(low.length ? [`${formatNumber(low.length)} low TH in clan`] : []),
     ...(otherFillers.length
-      ? [
-          `${otherFillers.length} other filler${otherFillers.length === 1 ? "" : "s"} in clan`,
-        ]
+      ? [`${countLabel(otherFillers.length, "other filler")} in clan`]
       : []),
   ].join(" · ");
   if (!rows.length)

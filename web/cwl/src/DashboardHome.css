@@ -453,6 +453,9 @@
   .hub-toolbar label:first-child {
     grid-column: 1/-1;
   }
+  .hub-toolbar label:last-child {
+    grid-column: 1/-1;
+  }
 }
 
 @media (max-width: 650px) {

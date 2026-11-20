@@ -10,8 +10,8 @@
   grid-template-columns: 44px minmax(0, 240px) 96px 44px;
   justify-content: start;
   position: sticky;
-  top: 0;
-  z-index: 5;
+  top: var(--wu-topbar-h, 0px);
+  z-index: 2;
   background: var(--wu-surface);
   padding: var(--wu-space-1) 0;
   gap: var(--wu-space-2);
@@ -333,8 +333,8 @@
 }
 .strike-activity-table th {
   position: sticky;
-  top: 54px;
-  z-index: 4;
+  top: calc(var(--wu-topbar-h, 0px) + var(--strike-activity-toolbar-h, 52px));
+  z-index: 1;
   background: var(--wu-surface);
   text-align: left;
 }
@@ -739,6 +739,12 @@
   justify-content: flex-start;
   border-radius: var(--wu-radius-sm);
   font-weight: inherit;
+}
+.strike-activity-sort .roster-sort-trigger > span {
+  white-space: normal;
+  overflow: visible;
+  text-overflow: clip;
+  overflow-wrap: anywhere;
 }
 .strike-activity-rule {
   margin: 0;

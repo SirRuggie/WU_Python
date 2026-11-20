@@ -147,6 +147,7 @@ export default function DiscordIdentity({
       <span className="roster-discord-person">
         <strong
           className="user-display-name"
+          translate={name ? "no" : undefined}
           dir="auto"
           title={name || undefined}
         >
@@ -156,7 +157,7 @@ export default function DiscordIdentity({
               : "Discord member unavailable")}
         </strong>
         {username && profile?.username && profile.username !== userId && (
-          <small>@{profile.username}</small>
+          <small translate="no">@{profile.username}</small>
         )}
         {failed && (
           <small role="status">

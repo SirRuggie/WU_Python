@@ -43,7 +43,10 @@ function DiscordPreview({
             }
           >
             <span aria-hidden="true">🔊</span>
-            <span className="world-clock-discord-name">
+            <span
+              className="world-clock-discord-name"
+              translate={clock.channel_missing ? undefined : "no"}
+            >
               {clock.channel_missing
                 ? "Missing channel"
                 : clock.enabled

@@ -1,4 +1,5 @@
-import { formatDateTime } from "./format";
+import { countLabel } from "./countLabel";
+import { formatDateTime, formatDate } from "./format";
 import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import { useState, type ReactNode } from "react";
 import {
@@ -44,9 +45,8 @@ export default function StrikeHistoryRow({
 }) {
   const [expanded, setExpanded] = useState(false);
   const date = item.war_end
-    ? new Date(item.war_end).toLocaleDateString(undefined, {
-        month: "numeric",
-        day: "numeric",
+    ? formatDate(new Date(item.war_end), {
+        format: { month: "numeric", day: "numeric" },
       })
     : "Date unavailable";
   const opponent =
@@ -93,7 +93,7 @@ export default function StrikeHistoryRow({
               {" · "}
               {days === null
                 ? "Expiry unavailable"
-                : `expires in ${days} ${days === 1 ? "day" : "days"}`}
+                : `expires in ${countLabel(days, "day")}`}
             </span>
           )}
         </span>

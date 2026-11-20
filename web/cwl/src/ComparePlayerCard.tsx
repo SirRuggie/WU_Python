@@ -75,6 +75,7 @@ export default function ComparePlayerCard({
             </span>
             <span
               className="player-card-name-text"
+              translate="no"
               dir="auto"
               title={account.player_name}
             >

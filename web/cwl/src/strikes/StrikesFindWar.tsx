@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import type { RefObject } from "react";
 import LoadError from "../LoadError";
 import { warMatchup, warSummary } from "../strikeHistoryView";
@@ -36,6 +37,7 @@ export default function StrikesFindWar({
       <label>
         Find war
         <input
+          {...searchInputProps}
           ref={warSearchRef}
           type="search"
           value={warQuery}

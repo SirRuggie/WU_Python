@@ -1,3 +1,5 @@
+import { countLabel } from "../countLabel";
+import { searchInputProps } from "../inputProps";
 import RefreshControl from "../RefreshControl";
 import CwlPageHeader from "../CwlPageHeader";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
@@ -362,6 +364,7 @@ export default function WarsWorkspace({
           <label>
             Find a clan
             <input
+              {...searchInputProps}
               type="search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
@@ -407,8 +410,7 @@ export default function WarsWorkspace({
         {quiet.length > 0 && (
           <details className="war-inactive">
             <summary>
-              No active war · {quiet.length}{" "}
-              {quiet.length === 1 ? "clan" : "clans"}
+              No active war · {countLabel(quiet.length, "clan")}
             </summary>
             <div className="activity-card-grid">{quiet.map(card)}</div>
           </details>

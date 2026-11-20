@@ -1,10 +1,11 @@
+import { countLabel } from "./countLabel";
 import { useCallback, useEffect, useRef, useState } from "react";
 import ActionPanel from "./ActionPanel";
 import BonusRepAccounts from "./BonusRepAccounts";
 import useConfirmDialog from "./useConfirmDialog";
 import { api, ApiError } from "./api";
 import { exportMonthLabel } from "./exportPreview";
-import { formatCycleMonth } from "./format";
+import { formatCycleMonth, formatNumber } from "./format";
 import { resultTimeText } from "./participationOutcome";
 import {
   validCwlCycle,
@@ -74,11 +75,11 @@ function sitOutValue(rows: NonNullable<RaffleData["sit_out_settings"]>) {
   const max = Math.max(...rows.map((row) => row.months));
   const length =
     min !== max
-      ? `${min}–${max} months`
+      ? `${formatNumber(min)}–${formatNumber(max)} months`
       : max === 0
         ? "None"
-        : `${max} month${max === 1 ? "" : "s"}`;
-  return `${rows.length} clan${rows.length === 1 ? "" : "s"} · ${length}`;
+        : `${countLabel(max, "month")}`;
+  return `${countLabel(rows.length, "clan")} · ${length}`;
 }
 
 /** CWL capture and FWA Rep accounts in one sheet, off the results and bonus flow. */
@@ -192,7 +193,7 @@ export default function ResultsSettingsSheet({
       cycleChanged &&
       dirtyResults &&
       !(await confirm(
-        `Changing the CWL month will discard unsaved result edits for ${dirtyResults} account${dirtyResults === 1 ? "" : "s"}. Continue?`,
+        `Changing the CWL month will discard unsaved result edits for ${countLabel(dirtyResults, "account")}. Continue?`,
         "Change CWL month",
       ))
     )
@@ -508,7 +509,7 @@ export default function ResultsSettingsSheet({
                           <option key={value} value={value}>
                             {value === 0
                               ? "None"
-                              : `${value} month${value === 1 ? "" : "s"}`}
+                              : `${countLabel(value, "month")}`}
                           </option>
                         ))}
                       </select>
@@ -540,7 +541,7 @@ export default function ResultsSettingsSheet({
                     : oddsError
                       ? "Not loaded"
                       : repAccounts.length
-                        ? `${repAccounts.length} account${repAccounts.length === 1 ? "" : "s"}`
+                        ? `${countLabel(repAccounts.length, "account")}`
                         : "None"
                 }
                 dirty={repDirty}

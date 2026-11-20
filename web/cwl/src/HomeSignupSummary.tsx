@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
 import MemberSignupStatus from "./MemberSignupStatus";
 import { useJourneyState } from "./journeyState";
 import type { ComponentProps } from "react";
@@ -17,8 +19,11 @@ export default function HomeSignupSummary({ sessionKey, ...props }: Props) {
     >
       <summary>
         <span>
-          ✓ Signed up · {props.signups.length} of{" "}
-          {props.accounts?.length ?? props.signups.length} accounts
+          ✓ Signed up · {formatNumber(props.signups.length)} of{" "}
+          {countLabel(
+            props.accounts?.length ?? props.signups.length,
+            "account",
+          )}
         </span>
         <span>{shown ? "Hide" : "Show"}</span>
       </summary>

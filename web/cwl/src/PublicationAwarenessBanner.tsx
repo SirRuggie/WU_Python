@@ -1,11 +1,9 @@
+import { formatDate } from "./format";
 import type { PublicationDraft, PublicationMeta } from "./publication";
 import { publicationReviewLabel } from "./publicationAwareness";
 import "./publicationAwareness.css";
 const shortDate = (value: string) =>
-  new Date(value).toLocaleDateString(undefined, {
-    month: "short",
-    day: "numeric",
-  });
+  formatDate(new Date(value), { format: { month: "short", day: "numeric" } });
 export default function PublicationAwarenessBanner({
   published,
   lastPublication = null,

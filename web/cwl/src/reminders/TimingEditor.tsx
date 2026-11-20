@@ -1,3 +1,4 @@
+import { numericInputProps } from "../inputProps";
 import type { Timing } from "../reminderCampaign";
 
 export default function TimingEditor({
@@ -96,6 +97,7 @@ export default function TimingEditor({
               ? "Days before month ends"
               : "Day of month"}
             <input
+              {...numericInputProps}
               type="number"
               min={rule.month_end_offset_days !== undefined ? 0 : 1}
               max={rule.month_end_offset_days !== undefined ? 27 : 31}
@@ -128,6 +130,7 @@ export default function TimingEditor({
         <label>
           Offset in minutes
           <input
+            {...numericInputProps}
             type="number"
             min={0}
             value={rule.offset_minutes ?? 1440}

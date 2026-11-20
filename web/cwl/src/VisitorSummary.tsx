@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
 import LoadError from "./LoadError";
 import { useContext, useEffect, useState } from "react";
 import { api } from "./api";
@@ -22,32 +24,92 @@ export default function VisitorSummary({ refresh = 0 }: { refresh?: number }) {
     let active = true;
     setError("");
     void api<Visits>("/manage/visitors").then(
-      (result) => { if (active) setData(result); },
-      () => { if (active) setError("Visitor counts could not be loaded."); },
+      (result) => {
+        if (active) setData(result);
+      },
+      () => {
+        if (active) setError("Visitor counts could not be loaded.");
+      },
     );
-    return () => { active = false; };
+    return () => {
+      active = false;
+    };
   }, [owner, refresh, retry]);
   if (!owner) return null;
   const peak = Math.max(1, ...(data?.series.map((day) => day.total) ?? []));
-  const points = data?.series.map((day, index) => `${4 + index * 10},${56 - day.total / peak * 48}`).join(" ");
+  const points = data?.series
+    .map((day, index) => `${4 + index * 10},${56 - (day.total / peak) * 48}`)
+    .join(" ");
   return (
     <section className="visitor-summary" aria-labelledby="visitor-title">
       <h2 id="visitor-title">Visitors</h2>
       <LoadError message={error} onRetry={() => setRetry((n) => n + 1)} />
       {!data && !error ? <p role="status">Loading visitor counts…</p> : null}
-      {data ? <>
-        <dl className="visitor-counts">
-          {[["1", "Today"], ["7", "7 days"], ["30", "30 days"]].map(([key, label]) => {
-            const counts = data.windows[key];
-            return <div key={key}><dt>{label}</dt><dd><strong>{counts.total}</strong><span>{counts.members} {counts.members === 1 ? "member" : "members"} · {counts.staff} staff</span></dd></div>;
-          })}
-        </dl>
-        <svg viewBox="0 0 298 64" role="img" aria-label="Unique dashboard visitors each day for the last 30 days">
-          <polyline points={points} fill="none" stroke="currentColor" strokeWidth="2" />
-        </svg>
-        <p className="visitor-note">Each person counts one time a day. Days use New York time. Staff means anyone who was staff in this period.</p>
-        <details><summary>Daily counts</summary><table><caption>Last 30 days</caption><thead><tr><th>Date</th><th>Members</th><th>Staff</th><th>Total</th></tr></thead><tbody>{data.series.map((day) => <tr key={day.day}><th scope="row">{day.day}</th><td>{day.members}</td><td>{day.staff}</td><td>{day.total}</td></tr>)}</tbody></table></details>
-      </> : null}
+      {data ? (
+        <>
+          <dl className="visitor-counts">
+            {[
+              ["1", "Today"],
+              ["7", "7 days"],
+              ["30", "30 days"],
+            ].map(([key, label]) => {
+              const counts = data.windows[key];
+              return (
+                <div key={key}>
+                  <dt>{label}</dt>
+                  <dd>
+                    <strong>{formatNumber(counts.total)}</strong>
+                    <span>
+                      {countLabel(counts.members, "member")} ·{" "}
+                      {formatNumber(counts.staff)} staff
+                    </span>
+                  </dd>
+                </div>
+              );
+            })}
+          </dl>
+          <svg
+            viewBox="0 0 298 64"
+            role="img"
+            aria-label="Unique dashboard visitors each day for the last 30 days"
+          >
+            <polyline
+              points={points}
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="2"
+            />
+          </svg>
+          <p className="visitor-note">
+            Each person counts one time a day. Days use New York time. Staff
+            means anyone who was staff in this period.
+          </p>
+          <details>
+            <summary>Daily counts</summary>
+            <table>
+              <caption>Last 30 days</caption>
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Members</th>
+                  <th>Staff</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {data.series.map((day) => (
+                  <tr key={day.day}>
+                    <th scope="row">{day.day}</th>
+                    <td>{day.members}</td>
+                    <td>{day.staff}</td>
+                    <td>{day.total}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </details>
+        </>
+      ) : null}
     </section>
   );
 }

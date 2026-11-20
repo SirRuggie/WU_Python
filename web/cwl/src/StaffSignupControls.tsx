@@ -202,7 +202,7 @@ export default function StaffSignupControls({
       );
       reset();
       setNotice(
-        `${result.count} account${result.count === 1 ? "" : "s"} added to ${pool === "main" ? "Main" : "Lazy"} CWL. Assign a host in the roster below.`,
+        `${countLabel(result.count, "account")} added to ${pool === "main" ? "Main" : "Lazy"} CWL. Assign a host in the roster below.`,
       );
       try {
         await onChanged(true);

@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
 import RefreshControl, { useRefreshTime } from "./RefreshControl";
 import EmptyState from "./EmptyState";
 import DashboardLink from "./DashboardLink";
@@ -197,8 +199,7 @@ export default function MemberAssignments({
                   <p key={line}>{line}</p>
                 ))}
               <p>
-                {data.accounts.length} account
-                {data.accounts.length === 1 ? "" : "s"} signed up ·{" "}
+                {countLabel(data.accounts.length, "account")} signed up ·{" "}
                 <a
                   href="/my-signups"
                   onClick={(event) => {
@@ -237,10 +238,11 @@ export default function MemberAssignments({
           {assignedGroups > 0 ? (
             <>
               <p className="member-assignment-count">
-                {data.accounts.length} account
-                {data.accounts.length === 1 ? "" : "s"} · {assignedGroups}{" "}
-                hosting clan{assignedGroups === 1 ? "" : "s"}
-                {awaiting ? ` · ${awaiting} waiting for a clan` : ""}
+                {countLabel(data.accounts.length, "account")} ·{" "}
+                {countLabel(assignedGroups, "hosting clan")}
+                {awaiting
+                  ? ` · ${formatNumber(awaiting)} waiting for a clan`
+                  : ""}
               </p>
               <p>✅ = in the right clan</p>
               <div className="member-clan-list">
@@ -264,7 +266,7 @@ export default function MemberAssignments({
                           <small>
                             {group.clanTag
                               ? `${group.clanTag} · ${assignmentArrivalLabel(group.accounts)}`
-                              : `${group.accounts.length} account${group.accounts.length === 1 ? "" : "s"} waiting for a clan`}
+                              : `${countLabel(group.accounts.length, "account")} waiting for a clan`}
                           </small>
                         </div>
                         {group.clanTag && (

@@ -21,7 +21,7 @@ export default function PlayerCardMeta({
   return (
     <span id={id} className={`player-card-meta ${className}`}>
       <span className="player-card-meta-core" aria-hidden="true">
-        TH{account.town_hall ?? "—"} · {account.tag}
+        TH{account.town_hall ?? "—"} · <span translate="no">{account.tag}</span>
       </span>
       {pool && (
         <span
@@ -41,8 +41,8 @@ export default function PlayerCardMeta({
         />
       )}
       <span className="sr-only">
-        Town Hall {account.town_hall ?? "unknown"}. {account.tag}.
-        {pool ? ` ${pool} CWL.` : ""}
+        Town Hall {account.town_hall ?? "unknown"}.{" "}
+        <span translate="no">{account.tag}</span>.{pool ? ` ${pool} CWL.` : ""}
         {account.kept ? " Locked placement." : ""}
       </span>
     </span>

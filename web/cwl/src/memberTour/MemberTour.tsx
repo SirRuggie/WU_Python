@@ -511,20 +511,6 @@ export default function MemberTour({
                 </button>
               )}
             </section>
-            {step === 8 && (
-              <div className="tour-confetti" aria-hidden="true">
-                {Array.from({ length: 24 }, (_, i) => (
-                  <i
-                    key={i}
-                    style={{
-                      left: `${(i * 17) % 100}%`,
-                      animationDelay: `${(i % 5) * 0.12}s`,
-                      background: i % 2 ? "#FAC775" : "#68d7b0",
-                    }}
-                  />
-                ))}
-              </div>
-            )}
           </dialog>,
           document.body,
         )}

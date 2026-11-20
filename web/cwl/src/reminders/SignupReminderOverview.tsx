@@ -1,3 +1,4 @@
+import { formatDate, formatDateTime } from "../format";
 import { Button } from "../rosterUi/primitives";
 import type { Pool } from "../api";
 import {
@@ -11,10 +12,9 @@ export function targetCwlMonth(cycle: string | null) {
   if (!cycle || !/^\d{4}-\d{2}$/.test(cycle)) return "CWL month unavailable";
   const [year, month] = cycle.split("-").map(Number);
   if (month < 1 || month > 12) return "CWL month unavailable";
-  return new Date(Date.UTC(year, month, 1)).toLocaleDateString(undefined, {
-    month: "long",
-    year: "numeric",
+  return formatDate(new Date(Date.UTC(year, month, 1)), {
     timeZone: "UTC",
+    format: { month: "long", year: "numeric" },
   });
 }
 export function shortReminderTime(value?: string | null) {
@@ -22,11 +22,13 @@ export function shortReminderTime(value?: string | null) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? value
-    : date.toLocaleString(undefined, {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
+    : formatDateTime(date, {
+        format: {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        },
       });
 }
 export default function SignupReminderOverview({

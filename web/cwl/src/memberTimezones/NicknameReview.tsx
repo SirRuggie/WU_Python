@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import { useState } from "react";
 import { membersText } from "../members/strings";
 import DiscordIdentity from "../DiscordIdentity";
@@ -94,7 +95,9 @@ export default function NicknameReview({
         value={filter}
         disabled={disabled}
         options={(Object.keys(labels) as ReviewCategory[])
-          .filter((k) => k !== "check_name" || rows.some((r) => r.category === k))
+          .filter(
+            (k) => k !== "check_name" || rows.some((r) => r.category === k),
+          )
           .map((k) => ({
             value: k,
             label: labels[k],
@@ -109,6 +112,7 @@ export default function NicknameReview({
         <label>
           Search nicknames
           <input
+            {...searchInputProps}
             type="search"
             value={query}
             onChange={(e) => {

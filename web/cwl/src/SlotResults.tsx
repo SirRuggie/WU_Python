@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { compactWeight } from "./replacementView";
 import { memberName } from "./strikeActivityFilters";
 import type { ActivityAccount } from "./strikeActivityView";
@@ -204,8 +205,7 @@ export default function SlotResults({
                               : "Weight unavailable"}
                           </span>
                           <span>
-                            {item.active_strikes}{" "}
-                            {item.active_strikes === 1 ? "strike" : "strikes"}
+                            {countLabel(item.active_strikes, "strike")}
                           </span>
                         </span>
                         {item.left_label && (
@@ -237,9 +237,12 @@ export default function SlotResults({
             )}
             {(data.unknown_weight ?? 0) > 0 && (
               <p>
-                {data.unknown_weight}{" "}
-                {data.unknown_weight === 1 ? "account has" : "accounts have"} no
-                weight
+                {countLabel(
+                  data.unknown_weight!,
+                  "account has",
+                  "accounts have",
+                )}{" "}
+                no weight
               </p>
             )}
             {shown < group.total && shown < 100 && (

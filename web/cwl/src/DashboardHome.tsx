@@ -1,3 +1,6 @@
+import { countLabel } from "./countLabel";
+import { formatTime } from "./format";
+import { searchInputProps } from "./inputProps";
 import GameSearch from "./GameSearch";
 import HomeSignupSummary from "./HomeSignupSummary";
 import EmptyState from "./EmptyState";
@@ -118,7 +121,7 @@ export function homeNextStep(
     };
   if (memberSignupsOpen(season) && unsigned)
     return {
-      title: `${unsigned} account${unsigned === 1 ? "" : "s"} to sign up`,
+      title: `${countLabel(unsigned, "account")} to sign up`,
       detail:
         "Select Main or Lazy for your accounts. Then review your choices and save.",
       destination: "signup" as const,
@@ -638,7 +641,7 @@ export default function DashboardHome(props: Props) {
                 : error || seasonError
                   ? "Refresh needs attention"
                   : data
-                    ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    ? `Updated ${formatTime(new Date(data.checkedAt), { format: { hour: "2-digit", minute: "2-digit" } })}`
                     : "Loading your accounts…"}
           </span>
         </div>
@@ -856,6 +859,7 @@ export default function DashboardHome(props: Props) {
               <label>
                 Filter accounts
                 <input
+                  {...searchInputProps}
                   type="search"
                   placeholder="Filter accounts"
                   value={search}
@@ -1074,8 +1078,7 @@ export default function DashboardHome(props: Props) {
                 <div className="hub-selected-bar">
                   <div>
                     <strong>
-                      {selected.length} account
-                      {selected.length === 1 ? "" : "s"} selected
+                      {countLabel(selected.length, "account")} selected
                     </strong>
                     <small>
                       Select a pool, then review. Nothing is submitted yet.

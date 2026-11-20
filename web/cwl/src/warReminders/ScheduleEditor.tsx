@@ -1,3 +1,4 @@
+import { numericInputProps } from "../inputProps";
 import { useState } from "react";
 import ChannelCombobox from "../ChannelCombobox";
 import Switch from "../rosterUi/Switch";
@@ -117,6 +118,7 @@ export default function ScheduleEditor({
               <label>
                 Custom time
                 <input
+                  {...numericInputProps}
                   type="number"
                   min={1 / unit}
                   max={1440 / unit}

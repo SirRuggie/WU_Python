@@ -1,3 +1,5 @@
+import { formatTime } from "./format";
+import { searchInputProps } from "./inputProps";
 import EmptyState from "./EmptyState";
 import RefreshControl from "./RefreshControl";
 import LoadError from "./LoadError";
@@ -292,7 +294,7 @@ export default function TodoWorkspace({
                   : gaps
                     ? "Some activity could not be checked · try again shortly"
                     : data
-                      ? `${paused ? "Paused · checked" : "Checked"} ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      ? `${paused ? "Paused · checked" : "Checked"} ${formatTime(new Date(data.checked_at), { format: { hour: "2-digit", minute: "2-digit" } })}`
                       : "Loading your activity…"}
           </span>
         )}
@@ -354,7 +356,7 @@ export default function TodoWorkspace({
                               : "Not checked"
                             : activity.unavailable
                               ? "Not active"
-                              : `${count} account${count === 1 ? "" : "s"}`}
+                              : countLabel(count, "account")}
                     </small>
                   </>
                 ),
@@ -419,11 +421,11 @@ export default function TodoWorkspace({
                   <span className="todo-visually-hidden">Search tasks</span>
                   <Search aria-hidden="true" size={16} />
                   <input
+                    {...searchInputProps}
                     ref={searchInput}
                     type="search"
                     name="todo-search"
                     autoComplete="off"
-                    spellCheck={false}
                     value={search}
                     onFocus={() => setSearchOpen(true)}
                     onChange={(event) => {
@@ -455,6 +457,7 @@ export default function TodoWorkspace({
                 <label>
                   Find linked accounts
                   <input
+                    {...searchInputProps}
                     type="search"
                     value={accountSearch}
                     onChange={(event) => setAccountSearch(event.target.value)}

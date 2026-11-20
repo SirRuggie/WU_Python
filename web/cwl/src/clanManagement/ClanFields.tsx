@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import DiscordIdentity from "../DiscordIdentity";
 import RolePicker, { type RoleChoice } from "../RolePicker";
 import ChannelCombobox from "../ChannelCombobox";
@@ -98,6 +99,7 @@ export default function ClanFields({
           <label>
             Find clan leader
             <input
+              {...searchInputProps}
               type="search"
               placeholder="Member name or Discord ID"
               value={memberQuery}

@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import type { ExportRow } from "./exportPreview";
 export type ExportKind =
   "accounts" | "participation" | "participation-history" | "bonus-history";
@@ -28,4 +29,4 @@ export function exportGroups(rows: ExportRow[], winners = false) {
     }));
 }
 export const groupLabel = (group: ReturnType<typeof exportGroups>[number]) =>
-  `${group.name} · ${group.pool === "main" ? "Main CWL" : group.pool === "lazy" ? "Lazy CWL" : "Unassigned"} · ${group.rows.length} account${group.rows.length === 1 ? "" : "s"}`;
+  `${group.name} · ${group.pool === "main" ? "Main CWL" : group.pool === "lazy" ? "Lazy CWL" : "Unassigned"} · ${countLabel(group.rows.length, "account")}`;

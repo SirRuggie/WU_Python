@@ -281,7 +281,8 @@
   color: var(--wu-text-muted);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
 }
 
 .world-clock-discord ul {

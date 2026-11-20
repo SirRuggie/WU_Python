@@ -1,3 +1,4 @@
+import { identifierInputProps, searchInputProps } from "./inputProps";
 import { useEffect, useRef, useState } from "react";
 import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
@@ -208,6 +209,7 @@ export default function HostingClanControls({
           {mode === "family" ? (
             <>
               <Input
+                {...searchInputProps}
                 label="Search family clans"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -245,6 +247,7 @@ export default function HostingClanControls({
           ) : (
             <>
               <Input
+                {...identifierInputProps}
                 label="Clan tag"
                 value={tag}
                 disabled={busy}
@@ -256,9 +259,7 @@ export default function HostingClanControls({
                   setError("");
                 }}
                 placeholder="#CLANTAG"
-                spellCheck={false}
                 autoComplete="off"
-                autoCapitalize="characters"
                 inputMode="text"
               />
               <Button

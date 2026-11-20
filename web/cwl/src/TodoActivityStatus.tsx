@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { LockKeyhole } from "lucide-react";
 import type { TodoRow, TodoView } from "./todo";
 
@@ -58,7 +59,7 @@ export default function TodoActivityStatus({
 }
 
 function accounts(count: number) {
-  return `${count} account${count === 1 ? "" : "s"}`;
+  return countLabel(count, "account");
 }
 
 /** Neutral note under the War list for accounts whose clan war is unreadable. */

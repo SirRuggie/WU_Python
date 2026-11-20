@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
@@ -271,6 +272,7 @@ export default function ManualStrikeEditor({
                 <label>
                   Find player or Discord member
                   <input
+                    {...searchInputProps}
                     type="search"
                     value={query}
                     maxLength={80}

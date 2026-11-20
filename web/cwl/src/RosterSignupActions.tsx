@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
 import { useEffect, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import { ArrowRightLeft, Trash2 } from "lucide-react";
@@ -89,10 +91,10 @@ export function RosterSignupReview({
         Review {actionLabel[action]}
       </h3>
       <p>
-        {changed.length} of {accounts.length} selected account
-        {accounts.length === 1 ? "" : "s"} will change.
+        {formatNumber(changed.length)} of{" "}
+        {countLabel(accounts.length, "selected account")} will change.
         {assigned > 0 &&
-          ` ${assigned} working placement${assigned === 1 ? "" : "s"} will be cleared.`}{" "}
+          ` ${countLabel(assigned, "working placement")} will be cleared.`}{" "}
         {action !== "remove"
           ? "The working placement and lock are cleared. Signup type changes are visible to members immediately."
           : "Signup removal is visible to members immediately."}{" "}

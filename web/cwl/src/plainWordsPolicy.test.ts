@@ -25,7 +25,7 @@ const terms: [string, RegExp][] = [
     /Roster hidden\. Members will see assignments only after you publish again\./,
   ],
   ["PublicationWorkspace.tsx", /"Announcements" : "Finalize roster"/],
-  ["RosterHeader.tsx", /signup\s*\{accounts\.length === 1 \? "" : "s"\}/],
+  ["RosterHeader.tsx", /countNoun\(accounts\.length, "signup"\)/],
   ["StaffSignupControls.tsx", /label="Find a player or clan"/],
   ["DeclarationPingPanel.tsx", /row\.published_clan \|\| "Unplaced"/],
   ["DeclarationPingPanel.tsx", /row\.draft_clan \|\| "Unplaced"/],

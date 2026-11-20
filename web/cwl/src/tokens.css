@@ -25,6 +25,8 @@
 :root {
   --wu-page-width: 1200px;
   --wu-page-width-wide: 1440px;
+  --wu-ease-out: cubic-bezier(0.23, 1, 0.32, 1);
+  --wu-ease-drawer: cubic-bezier(0.32, 0.72, 0, 1);
   --wu-bg: #0c0c0e;
   --wu-surface: #19191d;
   --wu-surface-raised: #242429;

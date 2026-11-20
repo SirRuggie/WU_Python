@@ -68,7 +68,8 @@
 .signup-walkthrough .walkthrough-step {
   font-size: var(--wu-text-sm);
   font-weight: var(--wu-weight-bold);
-  text-transform: uppercase;
+  text-transform: none;
+  letter-spacing: normal;
 }
 .signup-walkthrough .walkthrough-title {
   font-size: var(--wu-text-md);

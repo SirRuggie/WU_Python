@@ -54,3 +54,19 @@
 .compare-toolbar > button:last-child {
   flex: 0 0 auto;
 }
+.action-panel.strike-sort-panel {
+  transform-origin: top right;
+  transition: none;
+  animation: wu-popover-enter 150ms var(--wu-ease-out);
+}
+.action-panel.strike-sort-panel.is-closing {
+  animation: wu-popover-exit 100ms var(--wu-ease-out) both;
+}
+@media (prefers-reduced-motion: reduce) {
+  .action-panel.strike-sort-panel {
+    animation: none !important;
+    transition: none !important;
+    opacity: 1;
+    scale: none;
+  }
+}

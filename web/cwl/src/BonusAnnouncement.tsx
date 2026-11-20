@@ -1,61 +1,173 @@
-import { useDashboardPermission } from './DashboardPermissions'
-import LoadError from './LoadError'
-import { lazy, Suspense, useEffect, useState } from 'react'
-import { api } from './api'
-const DiscordPreview = lazy(() => import('./DiscordPreview'))
-import ChannelCombobox from './ChannelCombobox'
-import type { AnnouncementChannel } from './announcements'
-import type { SavedDraw } from './bonusRaffle'
+import { countLabel } from "./countLabel";
+import { useDashboardPermission } from "./DashboardPermissions";
+import LoadError from "./LoadError";
+import { lazy, Suspense, useEffect, useState } from "react";
+import { api } from "./api";
+const DiscordPreview = lazy(() => import("./DiscordPreview"));
+import ChannelCombobox from "./ChannelCombobox";
+import type { AnnouncementChannel } from "./announcements";
+import type { SavedDraw } from "./bonusRaffle";
 
-type Props = { draw: SavedDraw; disabled: boolean; onSend: (channel: string, retry?: boolean) => void }
+type Props = {
+  draw: SavedDraw;
+  disabled: boolean;
+  onSend: (channel: string, retry?: boolean) => void;
+};
 
 export default function BonusAnnouncement({ draw, disabled, onSend }: Props) {
-  const canManage = useDashboardPermission('cwl_send')
-  const [channels, setChannels] = useState<AnnouncementChannel[]>([])
-  const [channel, setChannel] = useState('')
-  const [error, setError] = useState('')
-  const [retry, setRetry] = useState(0)
-  const [loading, setLoading] = useState(false)
-  const [reviewed, setReviewed] = useState(false)
-  const [previewOpen, setPreviewOpen] = useState(false)
+  const canManage = useDashboardPermission("cwl_send");
+  const [channels, setChannels] = useState<AnnouncementChannel[]>([]);
+  const [channel, setChannel] = useState("");
+  const [error, setError] = useState("");
+  const [retry, setRetry] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [reviewed, setReviewed] = useState(false);
+  const [previewOpen, setPreviewOpen] = useState(false);
   useEffect(() => {
-    let active = true
-    if (draw.delivery) return
-    setLoading(true)
-    setError('')
-    api<{ channels: AnnouncementChannel[] }>('/announcement-channels')
-      .then(result => { if (active) setChannels(result.channels) })
-      .catch(cause => { if (active) setError(cause.message) })
-      .finally(() => { if (active) setLoading(false) })
-    return () => { active = false }
-  }, [draw.id, !!draw.delivery, retry])
-  const delivery = draw.delivery
-  return <section className="bonus-announcement">
-    <h3>{delivery ? 'Announcement delivery' : 'Send announcement'}</h3>
-    {delivery ? <>
-      <p role="status"><strong>{delivery.status === 'sent' ? 'Announcement sent' : delivery.status === 'sending' ? 'Delivery in progress or awaiting verification' : `Delivery ${delivery.status}`}</strong></p>
-      {delivery.failure && <p role="alert">{delivery.failure}</p>}
-      {delivery.status === 'failed' && <button disabled={!canManage || disabled} onClick={() => onSend(delivery.channel_id, true)}>Retry unsent messages</button>}
-      {delivery.status === 'sending' && <p>Refresh to see the result. If the send stopped, check Discord before you do anything else.</p>}
-      <p className="small">Channel {delivery.channel_id} · {delivery.pages.filter(p => p.status === 'sent').length}/{draw.messages.length} messages confirmed</p>
-      {delivery.pages.some(p => p.message_id) && <details className="bonus-secondary"><summary>Sent messages in Discord</summary>
-        {delivery.pages.filter(p => p.message_id).map(p => <p key={p.page}><a href={`https://discord.com/channels/644963518025826315/${delivery.channel_id}/${p.message_id}`} target="_blank" rel="noreferrer">View message {p.page + 1} in Discord ↗</a></p>)}
-      </details>}
-    </> : <>
-      <ChannelCombobox label="Announcement channel" channels={channels} value={channel}
-        disabled={!canManage || disabled || loading} onChange={value => { setChannel(value); setReviewed(false) }} />
-      {loading && <p role="status">Loading channels…</p>}
-      <LoadError message={error} disabled={loading || disabled} onRetry={() => setRetry(n => n + 1)} />
-      <details className="bonus-secondary" onToggle={event => setPreviewOpen(event.currentTarget.open)}>
-        <summary>Preview announcement ({draw.messages.length} message{draw.messages.length === 1 ? '' : 's'})</summary>
-        {previewOpen && <div className="bonus-message-preview" aria-label="Announcement preview">
-          {draw.messages.map((message, index) => <Suspense key={index} fallback={<p>Loading preview…</p>}><DiscordPreview label={`Message ${index + 1}`} parts={[{ type: 'text', text: message }]} caption="Announcement preview · No pings" /></Suspense>)}
-        </div>}
-      </details>
-      <label className="bonus-check"><input type="checkbox" checked={reviewed} disabled={!canManage || disabled || !channel}
-        onChange={event => setReviewed(event.target.checked)} /> I reviewed the winners and selected channel.</label>
-      <div className="bonus-action-bar"><span>{draw.messages.length} message{draw.messages.length === 1 ? '' : 's'} · No pings</span>
-        <button className="primary" disabled={!canManage || disabled || !reviewed || !channel || !channels.some(c => c.id === channel)} onClick={() => onSend(channel)}>Send announcement</button></div>
-    </>}
-  </section>
+    let active = true;
+    if (draw.delivery) return;
+    setLoading(true);
+    setError("");
+    api<{ channels: AnnouncementChannel[] }>("/announcement-channels")
+      .then((result) => {
+        if (active) setChannels(result.channels);
+      })
+      .catch((cause) => {
+        if (active) setError(cause.message);
+      })
+      .finally(() => {
+        if (active) setLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [draw.id, !!draw.delivery, retry]);
+  const delivery = draw.delivery;
+  return (
+    <section className="bonus-announcement">
+      <h3>{delivery ? "Announcement delivery" : "Send announcement"}</h3>
+      {delivery ? (
+        <>
+          <p role="status">
+            <strong>
+              {delivery.status === "sent"
+                ? "Announcement sent"
+                : delivery.status === "sending"
+                  ? "Delivery in progress or awaiting verification"
+                  : `Delivery ${delivery.status}`}
+            </strong>
+          </p>
+          {delivery.failure && <p role="alert">{delivery.failure}</p>}
+          {delivery.status === "failed" && (
+            <button
+              disabled={!canManage || disabled}
+              onClick={() => onSend(delivery.channel_id, true)}
+            >
+              Retry unsent messages
+            </button>
+          )}
+          {delivery.status === "sending" && (
+            <p>
+              Refresh to see the result. If the send stopped, check Discord
+              before you do anything else.
+            </p>
+          )}
+          <p className="small">
+            Channel {delivery.channel_id} ·{" "}
+            {delivery.pages.filter((p) => p.status === "sent").length}/
+            {draw.messages.length} messages confirmed
+          </p>
+          {delivery.pages.some((p) => p.message_id) && (
+            <details className="bonus-secondary">
+              <summary>Sent messages in Discord</summary>
+              {delivery.pages
+                .filter((p) => p.message_id)
+                .map((p) => (
+                  <p key={p.page}>
+                    <a
+                      href={`https://discord.com/channels/644963518025826315/${delivery.channel_id}/${p.message_id}`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      View message {p.page + 1} in Discord ↗
+                    </a>
+                  </p>
+                ))}
+            </details>
+          )}
+        </>
+      ) : (
+        <>
+          <ChannelCombobox
+            label="Announcement channel"
+            channels={channels}
+            value={channel}
+            disabled={!canManage || disabled || loading}
+            onChange={(value) => {
+              setChannel(value);
+              setReviewed(false);
+            }}
+          />
+          {loading && <p role="status">Loading channels…</p>}
+          <LoadError
+            message={error}
+            disabled={loading || disabled}
+            onRetry={() => setRetry((n) => n + 1)}
+          />
+          <details
+            className="bonus-secondary"
+            onToggle={(event) => setPreviewOpen(event.currentTarget.open)}
+          >
+            <summary>
+              Preview announcement (
+              {countLabel(draw.messages.length, "message")})
+            </summary>
+            {previewOpen && (
+              <div
+                className="bonus-message-preview"
+                aria-label="Announcement preview"
+              >
+                {draw.messages.map((message, index) => (
+                  <Suspense key={index} fallback={<p>Loading preview…</p>}>
+                    <DiscordPreview
+                      label={`Message ${index + 1}`}
+                      parts={[{ type: "text", text: message }]}
+                      caption="Announcement preview · No pings"
+                    />
+                  </Suspense>
+                ))}
+              </div>
+            )}
+          </details>
+          <label className="bonus-check">
+            <input
+              type="checkbox"
+              checked={reviewed}
+              disabled={!canManage || disabled || !channel}
+              onChange={(event) => setReviewed(event.target.checked)}
+            />{" "}
+            I reviewed the winners and selected channel.
+          </label>
+          <div className="bonus-action-bar">
+            <span>
+              {countLabel(draw.messages.length, "message")} · No pings
+            </span>
+            <button
+              className="primary"
+              disabled={
+                !canManage ||
+                disabled ||
+                !reviewed ||
+                !channel ||
+                !channels.some((c) => c.id === channel)
+              }
+              onClick={() => onSend(channel)}
+            >
+              Send announcement
+            </button>
+          </div>
+        </>
+      )}
+    </section>
+  );
 }

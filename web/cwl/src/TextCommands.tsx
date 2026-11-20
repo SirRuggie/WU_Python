@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import LoadError from "./LoadError";
 import { formatNumber } from "./format";
 import CwlPageHeader from "./CwlPageHeader";
@@ -340,12 +342,13 @@ export default function TextCommands({
             Saved commands
           </h2>
           <p className="small">
-            {rows.length} commands · {rows.filter((row) => row.enabled).length}{" "}
-            enabled
+            {countLabel(rows.length, "command")} ·{" "}
+            {formatNumber(rows.filter((row) => row.enabled).length)} enabled
           </p>
           <label>
             Find a command
             <input
+              {...searchInputProps}
               type="search"
               placeholder="!trigger"
               value={search}
@@ -374,8 +377,7 @@ export default function TextCommands({
                     <span className="text-command-row-info">
                       <strong>{row.command}</strong>
                       <small>
-                        Used {row.use_count ?? 0}{" "}
-                        {(row.use_count ?? 0) === 1 ? "time" : "times"} · last{" "}
+                        Used {countLabel(row.use_count ?? 0, "time")} · last{" "}
                         {relativeTime(row.last_used_at)}
                       </small>
                       {row.last_delete_error && (
@@ -532,7 +534,8 @@ export default function TextCommands({
                   </details>
                   <details key={draft.command + ":reply"}>
                     <summary>
-                      Reply · {commandBlocks(draft).length} blocks ·{" "}
+                      Reply · {countLabel(commandBlocks(draft).length, "block")}{" "}
+                      ·{" "}
                       {formatNumber(
                         draft.text.length +
                           commandBlocks(draft).reduce(

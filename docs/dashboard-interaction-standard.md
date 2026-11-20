@@ -67,6 +67,50 @@ not claims of testing private installations of other products.
 
 ## Review before shipping
 
+### Phone inputs, formats and menu motion (252)
+
+Use the shared `inputProps` objects for search, game-tag and Discord-ID fields:
+no capitalization, autocorrect or spell checking; search fields add the search
+keyboard action. Native number fields use numeric input mode. Keep prose and
+existing decimal-text editors' keyboard behavior. The shared roster Input derives
+these props from its existing search/number type; direct inputs use the same owner.
+
+Use `formatNumber` and `countLabel` for grouped counts and singular/plural labels.
+When responsive markup separates the number from its noun, or a label intentionally
+caps its visible count at `100+`, use `countNoun` from the same owner. Preserve
+unknown placeholders, verb agreement, IDs, versions and input values; count
+formatting must not change validation or selection semantics.
+Use shared date/time helpers with an explicit zone: the default resolves the
+viewer browser zone, while UTC month and Tickets views retain their UTC meaning
+and labels. Caller-specific date parts do not bypass shared parsing, invalid-date
+fallback or zone handling. Tags and Discord names are not translated; surrounding
+explanatory text remains translatable.
+
+Use `--wu-ease-out` and `--wu-ease-drawer` for the existing curves. Menus open with
+opacity/0.97 scale over 150 ms and close over 100 ms, from their trigger side; reduced
+motion disables them. The sort sheet's explicit dismissal may finish its short
+exit, but Back/route unmount stays immediate. Other sheets retain existing close
+guards. Tour tap demonstrations stop after three cycles; decorative falling
+confetti is removed and reduced motion disables all tour animation.
+
+The topbar publishes its measured sticky height as `--wu-topbar-h`; sticky content
+uses it, including safe-area padding. Activity table headings additionally account
+for their own measured toolbar. Containment belongs to open sheets/sidebar and
+nonselection belongs to controls, not normal page text or inputs. Physical keyboard
+overlap, safe areas, long-press and overscroll require Ruggie's phone check.
+
+The 500-account baseline crossed 100 ms for all 20 filter samples. Results therefore
+uses the roster's 50-at-a-time `Load more` pattern, with summaries/search over the
+full set. Offscreen dirty, busy and active-editor records stay mounted under stable
+keys, retaining notes/errors/revision context; clean offscreen rows may remount
+from saved parent data. Filtering never clears retained work or writes. The prompt
+called this pattern “Show more”; the incumbent roster label is kept. The isolated
+review covers Home, Strikes, Members, Build roster, Results & bonuses, Tasks,
+Command triggers and Clan weights at 320/360/390/1440 px. Its portable artifact
+records the exact source, regression checks, write-denied fixture counts,
+performance samples and historical failures; it does not establish physical-phone
+or complete assistive-technology coverage.
+
 ### Shared refresh, empty states, links and tabs (249)
 
 Use `RefreshControl` in page or panel header actions: muted last-successful-read

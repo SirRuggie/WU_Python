@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import { formatDateTime } from "./format";
 import useConfirmDialog from "./useConfirmDialog";
 import LoadError from "./LoadError";
@@ -297,6 +299,7 @@ export default function AccessSettings({
             <label>
               Find existing access
               <input
+                {...searchInputProps}
                 type="search"
                 value={search}
                 onChange={(event) => setSearch(event.target.value)}
@@ -336,8 +339,7 @@ export default function AccessSettings({
                       contact={false}
                     />
                     <small>
-                      {grant.permissions.length}{" "}
-                      {grant.permissions.length === 1 ? "action" : "actions"}
+                      {countLabel(grant.permissions.length, "action")}
                     </small>
                   </span>
                 ) : (
@@ -470,6 +472,7 @@ export default function AccessSettings({
                         <label>
                           Search roles
                           <input
+                            {...searchInputProps}
                             type="search"
                             value={roleSearch}
                             onChange={(event) =>
@@ -668,8 +671,7 @@ export default function AccessSettings({
                       <div className="access-savebar">
                         <span role="status">
                           {dirty ? "Unsaved changes" : "No unsaved changes"} ·{" "}
-                          {selected.length}{" "}
-                          {selected.length === 1 ? "action" : "actions"}
+                          {countLabel(selected.length, "action")}
                         </span>
                         <div>
                           <button

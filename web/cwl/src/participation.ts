@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import type { Pool } from "./api";
 import { formatCycleMonth } from "./format";
 
@@ -154,10 +155,10 @@ export function participationSummary(
   const withoutSaved = failed.length - saved;
   const failureDetails = [
     saved
-      ? `Showing last saved results for ${saved} account${saved === 1 ? "" : "s"} in this view.`
+      ? `Showing last saved results for ${countLabel(saved, "account")} in this view.`
       : "",
     withoutSaved
-      ? `No saved results yet for ${withoutSaved} account${withoutSaved === 1 ? "" : "s"} in this view.`
+      ? `No saved results yet for ${countLabel(withoutSaved, "account")} in this view.`
       : "",
   ]
     .filter(Boolean)
@@ -168,7 +169,7 @@ export function participationSummary(
     ? sync?.warning
     : null;
   const warning = clans.length
-    ? `${clans.length} clan${clans.length === 1 ? "" : "s"} could not refresh: ${clans.join(", ")}. ${failureDetails}`
+    ? `${countLabel(clans.length, "clan")} could not refresh: ${clans.join(", ")}. ${failureDetails}`
     : [...new Set([...otherWarnings, previousFailure].filter(Boolean))].join(
         " ",
       );

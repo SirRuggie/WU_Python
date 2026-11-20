@@ -84,7 +84,7 @@ export const steps = [
   {
     number: 1,
     progressGroup: 1,
-    title: "Hey Chief! Welcome to Warriors United!",
+    title: "Hey Chief, welcome to Warriors United!",
     text: "Let's take a minute to show you around.",
     art: "U33",
     target: "",

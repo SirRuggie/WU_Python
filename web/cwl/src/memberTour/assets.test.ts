@@ -14,11 +14,12 @@ it("ships every step's local WebP within its budget and records provenance", () 
   expect(source).toContain("https://fankit.supercell.com/");
 });
 
-it("uses fade-only reduced motion, hides confetti and keeps 44px controls", () => {
+it("disables all reduced motion, removes confetti and keeps 44px controls", () => {
   const css = readFileSync("src/memberTour/tour.css", "utf8");
   const reduced = css.slice(css.indexOf("@media (prefers-reduced-motion"));
   expect(reduced).toContain("animation: none !important");
-  expect(reduced).toMatch(/\.tour-confetti\s*\{\s*display: none/);
-  expect(reduced).toContain("tour-fade 120ms");
+  expect(css).not.toContain("tour-confetti");
+  expect(css).not.toContain("tour-fall");
+  expect(reduced).not.toContain("tour-fade");
   expect(css).toContain("min-height: 44px");
 });

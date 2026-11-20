@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import RefreshControl from "./RefreshControl";
 import LoadError from "./LoadError";
 import { formatDateTime } from "./format";
@@ -33,7 +34,9 @@ const statusName = (value: string) =>
     value
   ] || value;
 const when = (value: string | null) =>
-  value ? formatDateTime(new Date(value)) : "Date unavailable";
+  value
+    ? formatDateTime(new Date(value), { timeZone: "UTC" })
+    : "Date unavailable";
 export default function TicketConversation({
   ticket,
   onBack,
@@ -248,6 +251,7 @@ export default function TicketConversation({
                 <label>
                   Find in these {data.messages.length} messages
                   <input
+                    {...searchInputProps}
                     type="search"
                     placeholder="Name or words in this page"
                     value={search}

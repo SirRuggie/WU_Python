@@ -1,3 +1,4 @@
+import { identifierInputProps } from "../inputProps";
 import { useRef, useState } from "react";
 import { api } from "../api";
 import ConfirmDialog from "../ConfirmDialog";
@@ -99,11 +100,10 @@ export default function AddClan({
         <label>
           Clan tag
           <input
+            {...identifierInputProps}
             required
             placeholder="#CLANTAG"
-            spellCheck={false}
             autoComplete="off"
-            autoCapitalize="characters"
             inputMode="text"
             disabled={disabled || busy}
             value={tag}

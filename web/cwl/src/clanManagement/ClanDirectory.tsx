@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import LoadError from "../LoadError";
 import ClanCategories, { clanCategory } from "./ClanCategories";
 import { useEffect, useRef } from "react";
@@ -78,6 +79,7 @@ export default function ClanDirectory<T extends Row>({
         <label>
           Find a clan
           <input
+            {...searchInputProps}
             ref={search}
             type="search"
             placeholder="Name, tag or type"

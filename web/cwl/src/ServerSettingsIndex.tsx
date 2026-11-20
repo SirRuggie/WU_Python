@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import type { ManagementSection } from "./serverManagement";
 import { filterSections } from "./serverManagement";
 import "./ServerSettingsIndex.css";
@@ -37,6 +39,7 @@ export default function ServerSettingsIndex({
       <label>
         Find a setting
         <input
+          {...searchInputProps}
           type="search"
           value={query}
           placeholder="Search tools and settings"
@@ -72,7 +75,7 @@ export default function ServerSettingsIndex({
               >
                 <summary>
                   <strong>{category}</strong>
-                  <span>{items.length} settings</span>
+                  <span>{countLabel(items.length, "setting")}</span>
                 </summary>
                 {list}
               </details>

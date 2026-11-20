@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
 import { ArrowRight, Coffee, Swords } from "lucide-react";
 import AccountLinkHelp from "./AccountLinkHelp";
@@ -263,10 +265,11 @@ export default function SignupPage({
               </h2>
               <p>
                 <strong>
-                  {activeCompletion.accounts.length}{" "}
-                  {activeCompletion.accounts.length === 1
-                    ? "account is"
-                    : "accounts are"}{" "}
+                  {countLabel(
+                    activeCompletion.accounts.length,
+                    "account is",
+                    "accounts are",
+                  )}{" "}
                   signed up
                 </strong>{" "}
                 for {poolName(activeCompletion.pool)} in{" "}
@@ -517,6 +520,7 @@ export default function SignupPage({
                               <label className="signup-account-search">
                                 Find a player or clan
                                 <input
+                                  {...searchInputProps}
                                   type="search"
                                   value={signupSearch}
                                   onChange={(event) =>
@@ -670,10 +674,7 @@ export default function SignupPage({
                               <div className="submit-bar">
                                 <div>
                                   <strong>
-                                    {selected.length}{" "}
-                                    {selected.length === 1
-                                      ? "account"
-                                      : "accounts"}{" "}
+                                    {countLabel(selected.length, "account")}{" "}
                                     selected
                                   </strong>
                                   <small>
@@ -790,7 +791,7 @@ export default function SignupPage({
                         >
                           {pending
                             ? "Saving…"
-                            : `Sign up ${selected.length} ${selected.length === 1 ? "account" : "accounts"}`}
+                            : `Sign up ${countLabel(selected.length, "account")}`}
                         </button>
                       </div>
                     </section>

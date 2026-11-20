@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countNoun } from "./countLabel";
 import type { RosterClan } from "./roster";
 export type SignupChange = {
   id: number;
@@ -14,8 +16,8 @@ export type SignupChange = {
 export const signupPoolName = (pool: string | null) =>
   pool === "lazy" ? "Lazy CWL" : "Main CWL";
 export function signupChangeLabel(items: SignupChange[]) {
-  const count = items.length === 100 ? "100+" : items.length;
-  return `${count} signup change${items.length === 1 ? "" : "s"} to review · Review ›`;
+  const count = items.length === 100 ? "100+" : formatNumber(items.length);
+  return `${count} ${countNoun(items.length, "signup change")} to review · Review ›`;
 }
 export function signupShortage(items: SignupChange[], clans: RosterClan[]) {
   const affected = new Set(items.map((item) => item.assigned_clan_tag));

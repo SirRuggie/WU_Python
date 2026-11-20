@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import {
   useEffect,
   useId,
@@ -284,15 +285,13 @@ export default function SearchPicker({
       <div className="search-picker-search">
         <Search aria-hidden="true" size={18} />
         <input
+          {...searchInputProps}
           ref={input}
           id={inputId}
           type="text"
           role="combobox"
           inputMode="search"
-          enterKeyHint="search"
           autoComplete="off"
-          autoCorrect="off"
-          spellCheck={false}
           aria-label={`Search ${label.toLowerCase()}`}
           aria-autocomplete="list"
           aria-expanded={open}

@@ -1,3 +1,4 @@
+import { countLabel } from "../countLabel";
 import { RefreshButton } from "../RefreshControl";
 import LoadError from "../LoadError";
 import { formatDateTime, formatTime } from "../format";
@@ -330,9 +331,7 @@ export default function WeightTrial({
       setRoster((previous) => retainSavedWarSource(previous, result));
       setValues(draftsForRoster(result, selectedWar));
       setDirectoryAttempt((value) => value + 1);
-      setNotice(
-        `${changes.length} weight${changes.length === 1 ? "" : "s"} saved.`,
-      );
+      setNotice(`${countLabel(changes.length, "weight")} saved.`);
     } catch (cause) {
       if (id === request.current) {
         setError(message(cause));
@@ -431,7 +430,7 @@ export default function WeightTrial({
       {pendingAction && (
         <ConfirmDialog
           heading="Unsaved changes"
-          text={`You have ${totalChanged} unsaved weight${totalChanged === 1 ? "" : "s"}.`}
+          text={`You have ${countLabel(totalChanged, "unsaved weight")}.`}
           confirmLabel="Discard"
           cancelLabel="Keep editing"
           danger
@@ -776,7 +775,7 @@ export default function WeightTrial({
                 <div className="weight-trial-save">
                   <span>
                     {dirty
-                      ? `${changed.length} unsaved weight${changed.length === 1 ? "" : "s"}`
+                      ? `${countLabel(changed.length, "unsaved weight")}`
                       : "All changes saved"}
                     <small className="weight-keyboard-hint">
                       Enter moves down. Tab moves across.
@@ -869,8 +868,7 @@ export default function WeightTrial({
               </ul>
               {missingWarLoot.length > 0 && (
                 <p>
-                  {missingWarLoot.length} player
-                  {missingWarLoot.length === 1 ? "" : "s"} missing loot ·{" "}
+                  {countLabel(missingWarLoot.length, "player")} missing loot ·{" "}
                   <button
                     onClick={() => {
                       setFilter("missing");

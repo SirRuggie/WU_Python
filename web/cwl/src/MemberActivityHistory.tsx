@@ -1,3 +1,5 @@
+import { formatTime } from "./format";
+import { searchInputProps } from "./inputProps";
 import {
   useCallback,
   useEffect,
@@ -158,9 +160,9 @@ export default function MemberActivityHistory({
         <label className="member-activity-search">
           Search name or Discord ID
           <input
+            {...searchInputProps}
             value={search}
             onChange={(event) => setSearch(event.target.value)}
-            spellCheck={false}
             autoComplete="off"
             placeholder="Name or Discord ID"
           />
@@ -222,9 +224,8 @@ export default function MemberActivityHistory({
         <p className="member-activity-loaded">
           Updated{" "}
           <time dateTime={loadedAt}>
-            {new Date(loadedAt).toLocaleTimeString([], {
-              hour: "numeric",
-              minute: "2-digit",
+            {formatTime(new Date(loadedAt), {
+              format: { hour: "numeric", minute: "2-digit" },
             })}
           </time>
         </p>

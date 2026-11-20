@@ -1,3 +1,4 @@
+import { mobileInputProps, searchInputProps } from "./inputProps";
 import { useEffect, useState } from "react";
 import TownHallBaseImagePreview from "./TownHallBaseImagePreview";
 import TownHallEmojiPicker from "./TownHallEmojiPicker";
@@ -94,6 +95,7 @@ export default function Field({
           </label>
           {picker && (
             <input
+              {...searchInputProps}
               aria-label={`Find ${field.label.toLowerCase()}`}
               placeholder="Search"
               value={search}
@@ -199,6 +201,7 @@ export default function Field({
             </select>
           ) : (
             <input
+              {...mobileInputProps(field.type)}
               id={id}
               type={field.type === "number" ? "number" : "text"}
               value={String(value ?? "")}

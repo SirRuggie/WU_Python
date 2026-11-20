@@ -88,6 +88,7 @@ export default function RosterAccountCard({
             </span>
             <span
               className="player-card-name-text"
+              translate="no"
               dir="auto"
               title={account.player_name}
             >
@@ -113,12 +114,13 @@ export default function RosterAccountCard({
             <span className="roster-account-column-name">
               <span className="roster-account-column-identity">
                 <TownHallIcon level={account.town_hall} />
-                <strong title={account.player_name}>
+                <strong title={account.player_name} translate="no">
                   {account.player_name}
                 </strong>
               </span>
               <small>
-                {account.tag} · TH{account.town_hall ?? "—"}
+                <span translate="no">{account.tag}</span> · TH
+                {account.town_hall ?? "—"}
                 {account.kept && (
                   <LockKeyhole size={13} aria-label="Locked placement" />
                 )}

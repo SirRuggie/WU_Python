@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { useHorizontalFades } from "./useHorizontalFades";
 import "./horizontalFades.css";
 import { rosterCapacity } from "./rosterCapacity";
@@ -226,8 +227,7 @@ export default function RosterClanChips({
                     setRevealed((current) => [...current, group.label])
                   }
                 >
-                  +{emptyCount} {emptyCount === 1 ? "clan" : "clans"} with no
-                  players
+                  +{countLabel(emptyCount, "clan")} with no players
                 </Button>
               )}
             </div>

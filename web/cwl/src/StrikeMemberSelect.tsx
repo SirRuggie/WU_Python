@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { useMemo } from "react";
 import SearchPicker, { type PickerOption } from "./SearchPicker";
 import { foldSearch, memberName } from "./strikeActivityFilters";
@@ -38,7 +39,7 @@ function memberOption(option: StrikeMemberOption): PickerOption {
     option.username && foldSearch(option.username) !== foldSearch(option.name)
       ? option.username
       : "";
-  const accounts = `${option.accounts} ${option.accounts === 1 ? "account" : "accounts"}`;
+  const accounts = `${countLabel(option.accounts, "account")}`;
   return {
     value: option.id,
     label: option.name,

@@ -79,9 +79,9 @@ it("selected page exposes Unselect page and preserves the hidden count", async (
     "Unselect page",
   );
   expect(host.querySelector(".members-selection-short")?.textContent).toBe(
-    "1411 · 1410 hidden",
+    "1,411 · 1,410 hidden",
   );
   expect(host.querySelector("button")?.getAttribute("aria-label")).toBe(
-    "1411 selected · 1410 hidden",
+    "1,411 selected · 1,410 hidden",
   );
 });

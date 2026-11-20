@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import { formatDateTime, formatTime } from "./format";
 import FilterChips from "./FilterChips";
 import LoadError from "./LoadError";
@@ -335,6 +336,7 @@ export default function ReturnReminderOverview({
           <label>
             <span className="members-search-label">Find a clan</span>
             <input
+              {...searchInputProps}
               type="search"
               value={query}
               placeholder="Find a clan"

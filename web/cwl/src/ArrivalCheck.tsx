@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
 import RefreshControl, { type RefreshControlProps } from "./RefreshControl";
 import EmptyState from "./EmptyState";
 import LoadError from "./LoadError";
@@ -433,8 +435,8 @@ export default function ArrivalCheck({
         {fillerQueue.notSaved.length > 0 && (
           <section aria-label="Filler marks not saved">
             <p role="alert">
-              {fillerQueue.notSaved.length} not saved. Refresh and tick{" "}
-              {fillerQueue.notSaved.length === 1 ? "it" : "them"} again.
+              {formatNumber(fillerQueue.notSaved.length)} not saved. Refresh and
+              tick {fillerQueue.notSaved.length === 1 ? "it" : "them"} again.
             </p>
             {fillerQueue.unknownOutcome && (
               <p>The save may have worked. Refresh to see the result.</p>
@@ -525,7 +527,7 @@ export default function ArrivalCheck({
                 ) &&
                   ` · ${extras.data.clans.reduce((n, c) => n + (c.unpublished_count || 0), 0)} ${failedExtras ? "confirmed " : ""}not published yet`}
                 {failedExtras > 0 &&
-                  ` · ${failedExtras} ${failedExtras === 1 ? "clan" : "clans"} could not be checked`}
+                  ` · ${countLabel(failedExtras, "clan")} could not be checked`}
                 {" · "}
                 <span className="declaration-last-checked">
                   {checkedAt

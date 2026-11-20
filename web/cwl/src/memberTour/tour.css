@@ -215,7 +215,6 @@
   box-shadow:
     0 0 0 9999px #000a,
     /* keep: overlay scrim, no token */ 0 0 22px #ef9f2780; /* keep: gold glow alpha, no token */
-  animation: tour-pulse 1.6s ease-in-out 2;
 }
 .tour-glove {
   position: absolute;
@@ -229,7 +228,7 @@
 }
 .tour-glove svg {
   position: relative;
-  animation: tour-tap 1.6s infinite;
+  animation: tour-tap 1.6s 3;
 }
 .tour-glove i {
   position: absolute;
@@ -239,24 +238,10 @@
   height: 14px;
   border: 2px solid var(--wu-accent);
   border-radius: 50%;
-  animation: tour-ripple 1.6s infinite;
+  animation: tour-ripple 1.6s 3;
 }
 .tour-glove i:nth-child(2) {
   animation-delay: 0.2s;
-}
-.tour-confetti {
-  position: fixed;
-  inset: 0;
-  z-index: 5;
-  pointer-events: none;
-  overflow: hidden;
-}
-.tour-confetti i {
-  position: absolute;
-  top: -20px;
-  width: 7px;
-  height: 12px;
-  animation: tour-fall 2.5s ease-in infinite;
 }
 @keyframes tour-enter {
   from {
@@ -279,11 +264,6 @@
   100% {
     opacity: 1;
     translate: 0 0;
-  }
-}
-@keyframes tour-pulse {
-  50% {
-    border-color: var(--wu-accent);
   }
 }
 @keyframes tour-tap {
@@ -309,11 +289,6 @@
   100% {
     opacity: 0;
     scale: 2.8;
-  }
-}
-@keyframes tour-fall {
-  to {
-    transform: translateY(110vh) rotate(540deg);
   }
 }
 @media (max-width: 900px) {
@@ -361,21 +336,6 @@
   .tour-glove i {
     animation: none !important;
     transition: none !important;
-  }
-  .tour-confetti {
-    display: none;
-  }
-  .tour-card,
-  .tour-character {
-    animation: tour-fade 120ms linear !important;
-  }
-}
-@keyframes tour-fade {
-  from {
-    opacity: 0;
-  }
-  to {
-    opacity: 1;
   }
 }
 

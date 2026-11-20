@@ -27,7 +27,11 @@ const joined = (items: ReactNode[]) =>
   parts(items).map((part, index) => (
     <Fragment key={index}>
       {index > 0 ? " · " : ""}
-      {part}
+      {typeof part === "string" && part.startsWith("#") ? (
+        <span translate="no">{part}</span>
+      ) : (
+        part
+      )}
     </Fragment>
   ));
 
@@ -106,6 +110,7 @@ export default function AccountCard(props: Props | StructuralProps) {
                   </span>
                   <span
                     className="player-card-name-text"
+                    translate="no"
                     dir="auto"
                     title={typeof name === "string" ? name : undefined}
                   >
