@@ -362,7 +362,7 @@ async def test_inflight_old_base_read_cannot_refill_cache_after_minimum_cas():
         minimum=current['lowest_fwa_town_hall'];reads.append(minimum)
         if len(reads)==1:
             started.set();await release.wait()
-        return ([{'key':f'th{minimum}','town_hall':minimum}],{f'th{minimum}':{}})
+        return ([{'key':f'th{minimum}','town_hall':minimum,'variant':'merged'}],{f'th{minimum}':{}})
     with patch('cwl_web.app._require',return_value={'user_id':'123'}),patch('cwl_web.server_membership.server_member_status',AsyncMock(return_value=True)),patch.object(bank,'mongo',mongo),patch.object(bank,'read_base_bank',base_read),patch.object(shared,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(shared,'mongo',mongo),patch.object(api,'required',load),patch.object(api.registry,'save',AsyncMock(side_effect=persist)) as save,patch.object(shared,'queue_action',AsyncMock(return_value=web.json_response({'status':'pending'}))),patch.object(change_history,'record_committed',AsyncMock()):
         pending=asyncio.create_task(bank.read(bank_request))
         await started.wait()
@@ -371,7 +371,7 @@ async def test_inflight_old_base_read_cannot_refill_cache_after_minimum_cas():
         result=json.loads((await pending).text)
         again=json.loads((await bank.read(bank_request)).text)
     assert reads==[12,19]
-    assert result==again=={'bases':[{'key':'th19','town_hall':19}]}
+    assert result==again=={'bases':[{'key':'th19','town_hall':19,'variant':'merged','variant_label':'Merged'}]}
     assert req.app['base_bank_cache'][1]==result['bases']
     save.assert_awaited_once()
 

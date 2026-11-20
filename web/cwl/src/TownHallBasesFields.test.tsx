@@ -137,7 +137,7 @@ afterEach(async () => {
 });
 const section = (name: string) =>
   [...host.querySelectorAll<HTMLFieldSetElement>(".manage-field-group")].find(
-    (node) => node.querySelector("legend")?.textContent?.startsWith(name),
+    (node) => node.querySelector("legend")?.firstChild?.textContent === name,
   )!;
 const input = (name: string) =>
   [...host.querySelectorAll("label")].find((node) => node.textContent === name)
@@ -174,6 +174,38 @@ it("renders four visible legends without paging and keeps status tied to saved l
   );
   expect(section("Non-merged").textContent).toContain("Shown to members");
 });
+it.each([true, false])(
+  "renders the server's single Base group below TH16 (base edit permission %s)",
+  async (editable) => {
+    const doc = documentFor(!editable, editable);
+    doc.label = "Town Hall 12";
+    doc.level = 12;
+    doc.fields = doc.fields
+      .filter((field) => !field.key.startsWith("bases.non_merged."))
+      .map((field) => ({
+        ...field,
+        group: field.group === "Merged" ? "Base" : field.group,
+      }));
+    doc.section_readonly = {
+      "Town Hall": editable,
+      "Base images": !editable,
+      Base: !editable,
+    };
+    doc.base_status = { Base: false };
+    await act(async () => root.render(<Sample document={doc} />));
+    expect(
+      [...host.querySelectorAll(".manage-field-group > legend")].map(
+        (node) => node.firstChild?.textContent,
+      ),
+    ).toEqual(["Town Hall", "Base images", "Base"]);
+    expect(host.textContent).not.toMatch(/Merged|Non-merged|this variant/);
+    expect(section("Base").textContent).toContain("Hidden from members");
+    expect(section("Base").textContent).toContain(
+      "Add a base link to show this base to members.",
+    );
+    expect(!!section("Base").querySelector("input")).toBe(editable);
+  },
+);
 it("base-only users see Town Hall text, not disabled admin inputs or raw IDs", async () => {
   await act(async () =>
     root.render(<Sample document={documentFor(false, true)} />),

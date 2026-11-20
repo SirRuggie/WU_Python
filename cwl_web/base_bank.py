@@ -4,7 +4,7 @@ import asyncio
 import time
 from aiohttp import web
 from utils.base_bank import read_base_bank
-from utils.town_halls import TownHallsMissing, MISSING_MESSAGE, parse_variant_value
+from utils.town_halls import TownHallsMissing, MISSING_MESSAGE, parse_variant_value, variant_label, MERGED_DEFENSES_FROM
 from .server_management import mongo
 
 GENERATION = web.AppKey('base_bank_cache_generation', int)
@@ -42,6 +42,10 @@ async def read(request):
                     generation = request.app.get(GENERATION, 0)
                     async with mongo(request) as client:
                         rows, details = await read_base_bank(client)
+                    rows = [dict(row, variant_label=variant_label(row['town_hall'], row['variant'].replace('-', '_')))
+                            for row in rows
+                            if row['town_hall'] >= MERGED_DEFENSES_FROM or row['variant'] == 'merged']
+                    details = {row['key']: details[row['key']] for row in rows}
                     if request.app.get(GENERATION, 0) != generation:
                         continue
                     cache = (time.monotonic() + 30, rows, details)

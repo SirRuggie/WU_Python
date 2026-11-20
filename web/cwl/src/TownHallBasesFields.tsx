@@ -16,7 +16,9 @@ export default function TownHallBasesFields({
   draft: Record<string, ManagementValue>;
   renderField: (field: ManagementField) => ReactNode;
 }) {
-  const groups = ["Town Hall", "Base images", "Merged", "Non-merged"];
+  const groups = [
+    ...new Set(document.fields.map((field) => field.group)),
+  ].filter((group): group is string => !!group);
   const values = Object.fromEntries(
     document.fields.map((field) => [field.key, field.value]),
   );
@@ -94,7 +96,7 @@ export default function TownHallBasesFields({
       {groups.map((group) => {
         const fields = document.fields.filter((field) => field.group === group);
         const readonly = !!document.section_readonly?.[group];
-        const variant = group === "Merged" || group === "Non-merged";
+        const variant = Object.hasOwn(document.base_status || {}, group);
         const shown = !!document.base_status?.[group];
         return (
           <fieldset
@@ -113,7 +115,9 @@ export default function TownHallBasesFields({
             </legend>
             {variant && !shown && (
               <p className="small">
-                Add a base link to show this variant to members.
+                {group === "Base"
+                  ? "Add a base link to show this base to members."
+                  : "Add a base link to show this variant to members."}
               </p>
             )}
             {group === "Town Hall" ? (

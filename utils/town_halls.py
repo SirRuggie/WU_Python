@@ -180,10 +180,18 @@ def menu_options(doc):
     return result
 
 
-def set_base_field(doc, level, path, value):
-    """Pure draft update; shared image slots cannot become per-variant images."""
+def validate_base_path(level, path):
+    """Check writable base paths without rejecting readable stored documents."""
+    _level_number(level)
     if path not in BASE_PATHS:
         raise ValueError("Select a valid base field.")
+    if level < MERGED_DEFENSES_FROM and path.startswith("non_merged."):
+        raise ValueError("Non-merged bases start at Town Hall 16.")
+
+
+def set_base_field(doc, level, path, value):
+    """Pure draft update; shared image slots cannot become per-variant images."""
+    validate_base_path(level, path)
     result, key = _edit(doc, level)
     if level < result["lowest_fwa_town_hall"]:
         raise ValueError("Bases are for FWA Town Hall levels only.")
@@ -334,6 +342,8 @@ def _base_write_parts(current, level, values, originals, *, restore=None):
         raise TownHallsMissing("Town Hall bases not migrated")
     if str(level) not in current["levels"] or level < current["lowest_fwa_town_hall"]:
         raise ValueError("Bases are for FWA Town Hall levels only.")
+    for path in values:
+        validate_base_path(level, path)
     target = opposite = None
     if restore is not None:
         if not isinstance(restore, tuple) or len(restore) != 3:

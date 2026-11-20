@@ -20,6 +20,58 @@ def fixture():
     return doc
 
 
+@pytest.mark.parametrize('weight,base', [(False, True), (True, False), (True, True)])
+@pytest.mark.parametrize('linked', [False, True])
+def test_below_th16_editor_uses_one_base_group_and_list_visibility_without_mutation(weight, base, linked):
+    doc = fixture()
+    if linked:
+        doc['levels']['12']['bases'] = {'merged': {'link': LINK}}
+    before = deepcopy(doc)
+    result = api.document(doc, '12', can_weight=weight, can_bases=base)
+    assert {field['group'] for field in result['fields']} == {'Town Hall', 'Base images', 'Base'}
+    assert [field['key'] for field in result['fields'] if field['group'] == 'Base'] == [
+        'bases.merged.link', 'bases.merged.instructions', 'bases.merged.upgrade_notes']
+    assert result['base_status'] == {'Base': linked}
+    assert result['section_readonly'] == {'Town Hall': not weight, 'Base images': not base, 'Base': not base}
+    assert not any('non_merged' in field['key'] for field in result['fields'])
+    rows = api.document(doc, can_weight=weight, can_bases=base)['documents']
+    assert next(row for row in rows if row['id'] == '12')['bases_meta'] == ('Shown to members' if linked else 'Hidden from members')
+    assert next(row for row in rows if row['id'] == '19')['bases_meta'] == 'Merged'
+    assert doc == before
+
+
+def test_th19_list_keeps_both_variant_labels():
+    doc = fixture()
+    doc['levels']['19']['bases']['non_merged'] = {'link': LINK}
+    rows = api.document(doc)['documents']
+    assert next(row for row in rows if row['id'] == '19')['bases_meta'] == 'Merged · Non-merged'
+
+
+def test_below_th16_nonmerged_http_write_returns_400_without_storage_history_or_queue():
+    from cwl_web import change_history
+    request = SimpleNamespace(app={}, match_info={'item': '12'}, json=AsyncMock(return_value={
+        'revision': 7, 'values': {'bases.non_merged.link': LINK},
+        'originals': {'bases.non_merged.link': {'exists': False}}}))
+    with patch.object(shared, 'require_manage', AsyncMock(return_value={'user_id': '123'})), patch.object(shared, 'mongo', mongo), patch.object(api, 'required', AsyncMock(return_value=fixture())), patch.object(bases, 'permissions', AsyncMock(return_value=(False, True))), patch.object(api.registry, 'save', AsyncMock()) as save, patch.object(api.registry, 'save_base_fields', AsyncMock()) as base_save, patch.object(change_history, 'record_committed', AsyncMock()) as history, patch.object(shared, 'queue_action', AsyncMock()) as queue:
+        with pytest.raises(web.HTTPBadRequest) as error:
+            asyncio.run(api.save(request))
+    assert error.value.text == 'Non-merged bases start at Town Hall 16.'
+    for write in (save, base_save, history, queue):
+        write.assert_not_awaited()
+
+
+def test_admin_without_base_permission_keeps_403_for_hidden_base_path():
+    request = SimpleNamespace(app={}, match_info={'item': '12'}, json=AsyncMock(return_value={
+        'revision': 7, 'values': {'bases.non_merged.link': LINK},
+        'originals': {'bases.non_merged.link': {'exists': False}}}))
+    with patch.object(shared, 'require_manage', AsyncMock(return_value={'user_id': '123'})), patch.object(shared, 'mongo', mongo), patch.object(api, 'required', AsyncMock(return_value=fixture())), patch.object(bases, 'permissions', AsyncMock(return_value=(True, False))), patch.object(api.registry, 'validate_base_path') as path_check, patch.object(api.registry, 'save', AsyncMock()) as save, patch.object(api.registry, 'save_base_fields', AsyncMock()) as base_save:
+        with pytest.raises(web.HTTPForbidden):
+            asyncio.run(api.save(request))
+    path_check.assert_not_called()
+    save.assert_not_awaited()
+    base_save.assert_not_awaited()
+
+
 @asynccontextmanager
 async def mongo(_):
     yield object()

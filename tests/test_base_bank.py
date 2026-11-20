@@ -70,6 +70,12 @@ class BaseBankHTTP(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(response.status, 200)
         body = await response.json()
         self.assertEqual(set(body), {"bases"})
+        by_key = {row['key']: row for row in body['bases']}
+        self.assertEqual(by_key['th12']['variant_label'], '')
+        self.assertNotIn('th12_new', by_key)
+        self.assertEqual(by_key['th19']['variant_label'], 'Merged')
+        self.assertEqual(by_key['th19_new']['variant_label'], 'Non-merged')
+        self.assertEqual((await self.call("GET", "/bases?level=th12_new", self.member)).status, 404)
         self.assertNotIn("base_information", repr(body))
         self.assertNotIn("updated_by", repr(body))
         await self.call("GET", "/bases", self.member)

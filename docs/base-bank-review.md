@@ -10,7 +10,11 @@ independently of a previous CWL signup visit; explicit choices win over late rea
 The authenticated GET endpoint `/api/cwl/bases` now reads the Town Hall registry
 through its single storage owner and caches the member projection for30seconds.
 Only levels at or above Lowest FWA Town Hall and variants with a saved base link
-appear. Labels are “Merged” and “Non-merged”; both variants use their level's shared
+appear. Below TH16 the dashboard shows only the existing merged-slot base, with
+no variant label: its accessible name is “TH12” and image alt is “TH12 war base”.
+The API supplies the label from the shared `town_halls.variant_label` rule;
+keys and variant values remain unchanged. Existing stored data is not rewritten.
+At TH16 and above labels are “Merged” and “Non-merged”; both variants use their level's shared
 war image. `?level=th19` and old `th19_new` values retain their API shape and return
 only that linked variant's public instructions/upgrade notes. Those details keep
 the shared DiscordText renderer. Registry metadata, active images and staff
