@@ -1,9 +1,6 @@
 import LoadError from "./LoadError";
 import SectionTabs, { SectionTabPanel } from "./SectionTabs";
-import { dashboardPath } from "./dashboardHistory";
-import SignupReminderOverview, {
-  targetCwlMonth,
-} from "./reminders/SignupReminderOverview";
+import { targetCwlMonth } from "./reminders/reminderFormat";
 import ReminderDeliveryHistory from "./reminders/ReminderDeliveryHistory";
 import ReminderMessagesTab from "./reminders/ReminderMessagesTab";
 import ReminderSaveBar from "./reminders/ReminderSaveBar";
@@ -18,15 +15,40 @@ import {
 import ConfirmDialog from "./ConfirmDialog";
 import { useReminderLookup } from "./useReminderLookups";
 import { useCallback, useEffect, useRef, useState } from "react";
-import { api, ApiError, type Pool } from "./api";
+import { api, ApiError } from "./api";
 import type { AnnouncementChannel } from "./announcements";
 import {
   campaignPatch,
   type Campaign,
   type CampaignState,
-  type Variant,
 } from "./reminderCampaign";
 import "./ReminderWorkspace.css";
+
+/** Treat malformed successful option responses as unavailable, never as deleted names. */
+function checkedReminderLookup<T extends { id: string; name: string }>(lookup: {
+  items: T[];
+  error: string;
+  loading: boolean;
+  retry: () => void;
+}) {
+  const valid =
+    Array.isArray(lookup.items) &&
+    lookup.items.every(
+      (item) =>
+        item !== null &&
+        typeof item === "object" &&
+        typeof item.id === "string" &&
+        typeof item.name === "string",
+    );
+  return valid
+    ? lookup
+    : {
+        ...lookup,
+        items: [] as T[],
+        error:
+          lookup.error || (lookup.loading ? "" : "Could not load options."),
+      };
+}
 
 export default function ReminderWorkspace({
   seasonId,
@@ -41,25 +63,35 @@ export default function ReminderWorkspace({
   const [state, setState] = useState<CampaignState | null>(null);
   const [draft, setDraft] = useState<Campaign | null>(null);
   const [preview, setPreview] = useState<CampaignState | null>(null);
-  const channelLookup = useReminderLookup<AnnouncementChannel>(
-    "/announcement-channels",
-    "channels",
+  const channelLookup = checkedReminderLookup(
+    useReminderLookup<AnnouncementChannel>(
+      "/announcement-channels",
+      "channels",
+    ),
   );
-  const roleLookup = useReminderLookup<{ id: string; name: string }>(
-    "/announcement-roles",
-    "roles",
+  const roleLookup = checkedReminderLookup(
+    useReminderLookup<{ id: string; name: string }>(
+      "/announcement-roles",
+      "roles",
+    ),
   );
-  const channels = channelLookup.items,
-    roles = roleLookup.items;
-  const channelError = channelLookup.error;
   const acting = useRef(false);
   const loadRequest = useRef(0);
-  const [tab, setTab] = useState<
-    "overview" | "messages" | "schedule" | "history"
-  >("overview");
-  const [messageId, setMessageId] = useState("signup");
-  const [pool, setPool] = useState<Pool>("main");
-  const [roleText, setRoleText] = useState("");
+  const [tab, setTab] = useState<"messages" | "schedule" | "history">(
+    "messages",
+  );
+  const [invalidFields, setInvalidFields] = useState<Set<string>>(new Set());
+  const [loadEpoch, setLoadEpoch] = useState(0);
+  const [saveError, setSaveError] = useState("");
+  const setFieldInvalid = useCallback((id: string, invalid: boolean) => {
+    setInvalidFields((current) => {
+      if (current.has(id) === invalid) return current;
+      const next = new Set(current);
+      if (invalid) next.add(id);
+      else next.delete(id);
+      return next;
+    });
+  }, []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
@@ -72,6 +104,9 @@ export default function ReminderWorkspace({
       setState(data);
       setDraft(data.campaign ? clone(data.campaign) : null);
       setPreview(null);
+      setInvalidFields(new Set());
+      setLoadEpoch((value) => value + 1);
+      setSaveError("");
     } catch (cause) {
       if (
         request === loadRequest.current &&
@@ -92,6 +127,10 @@ export default function ReminderWorkspace({
     setDraft(null);
     setPreview(null);
     setError("");
+    setInvalidFields(new Set());
+    setLoadEpoch((value) => value + 1);
+    setSaveError("");
+    setTab("messages");
     setBusy(true);
     api<CampaignState>(base)
       .then((data) => {
@@ -117,17 +156,12 @@ export default function ReminderWorkspace({
   }, [base]);
   const patch =
     state?.campaign && draft ? campaignPatch(state.campaign, draft) : {};
-  const dirty = Object.keys(patch).length > 0;
+  const dirty = Object.keys(patch).length > 0 || invalidFields.size > 0;
   const protectedBusy = busy && !!state;
   useEffect(() => {
     onDirty(dirty || protectedBusy);
     return () => onDirty(false);
   }, [dirty, protectedBusy, onDirty]);
-  useEffect(() => {
-    setRoleText(
-      draft?.messages[messageId]?.variants[pool]?.role_ids.join(", ") || "",
-    );
-  }, [messageId, pool, state]);
   useEffect(() => {
     if (!dirty) return;
     const warn = (event: BeforeUnloadEvent) => {
@@ -195,35 +229,33 @@ export default function ReminderWorkspace({
     }
   };
   const edit = (next: Campaign) => {
+    setSaveError("");
     setDraft(next);
     setError("");
     setPreview(null);
     setNotice("");
   };
-  const changeVariant = (change: Partial<Variant>) => {
-    if (!draft) return;
-    const next = clone(draft);
-    Object.assign(next.messages[messageId].variants[pool], change);
-    edit(next);
+  const saveAct = (work: () => Promise<void>) =>
+    act(async () => {
+      setSaveError("");
+      try {
+        await work();
+      } catch (cause) {
+        setSaveError(errorText(cause));
+        throw cause;
+      }
+    });
+  const refresh = () => {
+    if (!dirty) void act(load);
+    else
+      setConfirmation({
+        text: "Discard unsaved reminder edits and reload the saved reminders?",
+        action: () => void act(load),
+      });
   };
   const body = { generation: state?.generation, patch, repeat_monthly: true };
   const disabled = busy || archived;
   const schedule = preview?.schedule || state?.schedule || [];
-  const destination = (id: string) => {
-    if (!id) return "No channel selected";
-    return (
-      channels.find((channel) => channel.id === id)?.name || "Unknown channel"
-    );
-  };
-  const recipient = (ids: string[]) => {
-    if (!ids.length) return "No role mentions";
-    const labels = ids
-      .slice(0, 2)
-      .map(
-        (id) => roles.find((role) => role.id === id)?.name || "Deleted role",
-      );
-    return `${labels.join(", ")}${ids.length > 2 ? ` +${ids.length - 2} more` : ""}`;
-  };
   return (
     <section className="reminders-workspace">
       <LoadError
@@ -255,7 +287,6 @@ export default function ReminderWorkspace({
                 state={state}
                 draft={draft}
                 dirty={dirty}
-                busy={busy}
                 disabled={disabled}
                 act={act}
                 load={load}
@@ -271,147 +302,115 @@ export default function ReminderWorkspace({
                 id="reminder-sections"
                 className="tabs workflow-tabs section-tabs--flow"
                 label="Reminder sections"
-                items={(
-                  ["overview", "messages", "schedule", "history"] as const
-                ).map((value) => {
-                  return {
-                    id: value,
-                    label: (
-                      <>
-                        {value === "overview"
-                          ? "Overview"
-                          : value === "messages"
-                            ? "Messages"
-                            : value === "schedule"
-                              ? "Schedule"
-                              : "Delivery history"}
-                      </>
-                    ),
-                  };
-                })}
+                items={[
+                  { id: "messages", label: "Messages" },
+                  { id: "schedule", label: "Schedule" },
+                  { id: "history", label: "History" },
+                ]}
                 value={tab}
-                onChange={(value) => {
-                  setTab(value);
-                }}
+                onChange={setTab}
+                allPanelsMounted
                 revealSelection
               />
-              <SectionTabPanel id="reminder-sections" value={tab}>
-                {tab === "overview" && (
-                  <>
-                    <SignupReminderOverview
-                      activated={state.activated}
-                      campaign={draft}
-                      cycle={state.cycle}
-                      schedule={schedule}
-                      destination={destination}
-                      recipient={recipient}
-                      onEdit={(id, audience) => {
-                        setMessageId(id);
-                        setPool(audience);
-                        setTab("messages");
-                      }}
-                      onTiming={() => setTab("schedule")}
-                    />
-                    {(channelError || roleLookup.error) && (
-                      <p className="reminder-lookup-warning" role="status">
-                        Channel or role names are unavailable. Open a message to
-                        retry the lookup.
-                      </p>
-                    )}
-                    <p className="reminder-overview-note">
-                      Roster posts are on{" "}
-                      <a
-                        href={dashboardPath({
-                          view: "publication",
-                          step: "announce",
-                          season: seasonId,
-                        })}
-                      >
-                        Announcements ›
-                      </a>
-                    </p>
-                    <p className="reminder-overview-note">
-                      Delivery is confirmed in Delivery history. Dashboard
-                      signups are {state.signup_open ? "open" : "closed"}{" "}
-                      separately.
-                    </p>
-                  </>
-                )}
-                {tab === "messages" && (
-                  <ReminderMessagesTab
-                    draft={draft}
-                    messageId={messageId}
-                    setMessageId={setMessageId}
-                    pool={pool}
-                    setPool={setPool}
-                    disabled={disabled}
-                    channels={channels}
-                    roles={roles}
-                    channelLookup={channelLookup}
-                    roleLookup={roleLookup}
-                    roleText={roleText}
-                    setRoleText={setRoleText}
-                    edit={edit}
-                    changeVariant={changeVariant}
-                    previewDeadline={preview?.deadline || state.deadline}
-                  />
-                )}
-                {tab === "schedule" && (
-                  <ReminderScheduleTab
-                    draft={draft}
-                    cycle={state.cycle}
-                    signupOpen={state.signup_open}
-                    disabled={disabled}
-                    edit={edit}
-                  />
-                )}
-                {tab === "history" && (
-                  <div className="card">
-                    <h3>Shared delivery history</h3>
-                    <p>
-                      Refresh to check delivery. This page does not send
-                      messages.
-                    </p>
-                    <ReminderDeliveryHistory history={state.history} />
-                  </div>
-                )}
-                {tab !== "history" && (tab !== "overview" || dirty) && (
-                  <ReminderSaveBar
-                    base={base}
-                    state={state}
-                    patch={patch}
-                    body={body}
-                    dirty={dirty}
-                    preview={preview}
-                    error={error}
-                    busy={busy}
-                    disabled={disabled}
-                    act={act}
-                    load={load}
-                    setPreview={setPreview}
-                    setNotice={setNotice}
-                    setConfirmation={setConfirmation}
-                  />
-                )}
-                {tab === "schedule" || preview ? (
+              <SectionTabPanel
+                id="reminder-sections"
+                value="messages"
+                hidden={tab !== "messages"}
+              >
+                <ReminderMessagesTab
+                  key={base}
+                  draft={draft}
+                  saved={state.campaign!}
+                  schedule={schedule}
+                  activated={state.activated}
+                  seasonId={seasonId}
+                  active={tab === "messages"}
+                  busy={busy}
+                  disabled={disabled}
+                  channelLookup={channelLookup}
+                  roleLookup={roleLookup}
+                  edit={edit}
+                  previewDeadline={preview?.deadline || state.deadline}
+                  onRefresh={refresh}
+                />
+              </SectionTabPanel>
+              <SectionTabPanel
+                id="reminder-sections"
+                value="schedule"
+                hidden={tab !== "schedule"}
+              >
+                <ReminderScheduleTab
+                  key={`${base}:${loadEpoch}`}
+                  draft={draft}
+                  cycle={state.cycle}
+                  signupOpen={state.signup_open}
+                  disabled={disabled}
+                  edit={edit}
+                  schedule={schedule}
+                  onInvalidChange={setFieldInvalid}
+                />
+                {!preview && (
                   <ReminderSchedulePanel
                     draft={draft}
-                    preview={preview}
+                    preview={null}
+                    timeZone={draft.timezone}
                     schedule={schedule}
                     sentOccurrences={state.sent_occurrences}
                     skipped={state.skipped}
                   />
-                ) : null}
+                )}
                 <details className="reminder-disclosure reminder-context">
                   <summary>
                     About this schedule · {targetCwlMonth(state.cycle)} CWL
                   </summary>
                   <p>
-                    Messages and times repeat monthly. Existing signup links
-                    stay unchanged. Previously sent messages are not resent.
+                    Saved settings repeat every month. Specific dates are
+                    converted to monthly rules for future months. Existing
+                    signup links stay unchanged. Previously sent messages are
+                    not resent.
                   </p>
                 </details>
               </SectionTabPanel>
+              <SectionTabPanel
+                id="reminder-sections"
+                value="history"
+                hidden={tab !== "history"}
+              >
+                <h2>History</h2>
+                <ReminderDeliveryHistory history={state.history} />
+              </SectionTabPanel>
+              {tab !== "history" && (
+                <>
+                  {preview && (
+                    <ReminderSchedulePanel
+                      draft={draft}
+                      preview={preview}
+                      timeZone={tab === "schedule" ? draft.timezone : undefined}
+                      schedule={schedule}
+                      sentOccurrences={state.sent_occurrences}
+                      skipped={state.skipped}
+                    />
+                  )}
+                  {(dirty || saveError) && (
+                    <ReminderSaveBar
+                      base={base}
+                      state={state}
+                      patch={patch}
+                      body={body}
+                      dirty={dirty}
+                      preview={preview}
+                      error={saveError}
+                      busy={busy}
+                      disabled={disabled || invalidFields.size > 0}
+                      act={saveAct}
+                      load={load}
+                      setPreview={setPreview}
+                      setNotice={setNotice}
+                      setConfirmation={setConfirmation}
+                    />
+                  )}
+                </>
+              )}
             </>
           )}
         </>

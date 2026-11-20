@@ -1,337 +1,404 @@
-import { countLabel } from "../countLabel";
-import { identifierInputProps } from "../inputProps";
-import ChannelCombobox from "../ChannelCombobox";
-import LoadError from "../LoadError";
-import DiscordPreview, { type PreviewPart } from "../DiscordMessagePreview";
-import SearchPicker from "../SearchPicker";
-import SectionTabs, { SectionTabPanel } from "../SectionTabs";
-import { roleOption } from "../RolePicker";
-import type { AnnouncementChannel } from "../announcements";
-import type { Campaign, Variant } from "../reminderCampaign";
+import { useEffect, useId, useRef, useState } from "react";
 import type { Pool } from "../api";
-import MessagePreview from "./MessagePreview";
-import { shortReminderTime } from "./SignupReminderOverview";
-import { clone } from "./reminderWorkspaceHelpers";
+import type { AnnouncementChannel } from "../announcements";
+import type { Campaign, Occurrence } from "../reminderCampaign";
+import { dashboardPath } from "../dashboardHistory";
+import {
+  backOutOfPanelEntry,
+  installPanelBackHandler,
+  isTopActionPanel,
+  panelHistoryState,
+  registerActionPanel,
+} from "../actionPanelHistory";
+import ActionPanel from "../ActionPanel";
+import SectionTabs from "../SectionTabs";
+import ListToolbar from "../rosterUi/ListToolbar";
+import FiltersTrigger from "../rosterUi/FiltersTrigger";
+import SortTrigger from "../rosterUi/SortTrigger";
+import { RefreshButton } from "../RefreshControl";
+import useCompactPreview from "../useCompactPreview";
+import ReminderMessageRow from "./ReminderMessageRow";
+import ReminderMessageEditor from "./ReminderMessageEditor";
+import type { ReminderLookup } from "./reminderErrors";
+import {
+  initialEditorPool,
+  reminderRows,
+  visibleReminderRows,
+  type ReminderListFilters,
+  type ReminderListSort,
+  type ReminderPoolScope,
+} from "./reminderList";
 
-type Lookup<T> = {
-  items: T[];
-  error: string;
-  loading: boolean;
+type Lookup<T extends { id: string }> = ReminderLookup<T> & {
   retry: () => void;
 };
 
 export default function ReminderMessagesTab({
   draft,
-  messageId,
-  setMessageId,
-  pool,
-  setPool,
+  saved,
+  schedule,
+  activated,
+  seasonId,
+  active,
+  busy,
   disabled,
-  channels,
-  roles,
   channelLookup,
   roleLookup,
-  roleText,
-  setRoleText,
   edit,
-  changeVariant,
   previewDeadline,
+  onRefresh,
 }: {
   draft: Campaign;
-  messageId: string;
-  setMessageId: (id: string) => void;
-  pool: Pool;
-  setPool: (pool: Pool) => void;
+  saved: Campaign;
+  schedule: Occurrence[];
+  activated: boolean;
+  seasonId: string;
+  active: boolean;
+  busy: boolean;
   disabled: boolean;
-  channels: AnnouncementChannel[];
-  roles: { id: string; name: string }[];
   channelLookup: Lookup<AnnouncementChannel>;
   roleLookup: Lookup<{ id: string; name: string }>;
-  roleText: string;
-  setRoleText: (text: string) => void;
   edit: (next: Campaign) => void;
-  changeVariant: (change: Partial<Variant>) => void;
-  previewDeadline: string | undefined;
+  previewDeadline?: string;
+  onRefresh: () => void;
 }) {
-  const channelError = channelLookup.error;
-  const selected = draft.messages[messageId];
-  const variant = selected?.variants[pool];
+  const [scope, setScope] = useState<ReminderPoolScope>("all");
+  const [filters, setFilters] = useState<ReminderListFilters>({
+    hasError: false,
+    off: false,
+  });
+  const [sort, setSort] = useState<ReminderListSort>("send_time");
+  const [panel, setPanel] = useState<"filters" | "sort" | null>(null);
+  const [trigger, setTrigger] = useState<HTMLElement | null>(null);
+  const [selected, setSelected] = useState<string | null>(null);
+  const [pool, setPool] = useState<Pool>("main");
+  const [editorOpen, setEditorOpen] = useState(false);
+  const compact = useCompactPreview(1099);
+  const lookups = { channels: channelLookup, roles: roleLookup };
+  const rows = reminderRows(draft, scope, lookups, schedule, activated);
+  const visible = visibleReminderRows(rows, filters, sort);
+  const selectedId =
+    selected && draft.messages[selected]
+      ? selected
+      : !compact
+        ? visible[0]?.id
+        : undefined;
+  const errorCount = rows.filter((row) => row.hasError).length;
+  const filterCount = Number(filters.hasError) + Number(filters.off);
+  const busyRef = useRef(busy);
+  busyRef.current = busy;
+  const marker = `reminder-editor:${useId()}`;
+  const rowButtons = useRef(new Map<string, HTMLButtonElement>());
+  const backButton = useRef<HTMLButtonElement>(null);
+  const selectRow = (id: string) => {
+    setSelected(id);
+    setPool(initialEditorPool(draft, id, scope, lookups));
+    setEditorOpen(true);
+  };
+  const selectionRef = useRef(selectedId);
+  selectionRef.current = selectedId;
+  const closeEditor = () => {
+    if (busyRef.current) return;
+    setEditorOpen(false);
+    window.requestAnimationFrame(() => {
+      if (selectedId) rowButtons.current.get(selectedId)?.focus();
+    });
+  };
+  useEffect(() => {
+    if (!compact || !active || !editorOpen) return;
+    const unregister = registerActionPanel(marker);
+    const panelState = panelHistoryState(history.state, marker);
+    history.pushState(panelState, "", location.href);
+    backButton.current?.focus({ preventScroll: true });
+    const remove = installPanelBackHandler({
+      windowPort: window,
+      historyPort: history,
+      marker,
+      panelState,
+      isBusy: () => busyRef.current,
+      isTop: () => isTopActionPanel(marker),
+      close: () => {
+        setEditorOpen(false);
+        window.requestAnimationFrame(() => {
+          if (selectionRef.current)
+            rowButtons.current.get(selectionRef.current)?.focus();
+        });
+      },
+    });
+    return () => {
+      remove();
+      backOutOfPanelEntry({ windowPort: window, historyPort: history, marker });
+      unregister();
+    };
+  }, [compact, active, editorOpen, marker]);
+  const currentIndex = visible.findIndex((row) => row.id === selectedId);
+  const move = (offset: number) => {
+    const row = visible[currentIndex + offset];
+    if (row) selectRow(row.id);
+  };
   return (
-    <>
-      <div className="reminder-editor-intro">
-        <SectionTabs
-          id="reminder-audience"
-          className="tabs workflow-tabs section-tabs--flow"
-          label="Message audience"
-          items={(["main", "lazy"] as const).map((value) => {
-            return {
-              id: value,
-              label: <>{value === "main" ? "Main" : "Lazy"}</>,
-            };
-          })}
-          value={pool}
-          onChange={(value) => {
-            setPool(value);
-          }}
-          revealSelection
+    <div
+      className={`reminder-message-layout${compact && editorOpen ? " is-editing" : ""}`}
+    >
+      <div className="reminder-list-pane" hidden={compact && editorOpen}>
+        <ListToolbar
+          className="reminder-list-toolbar"
+          sortBeforeFilters={false}
+          scope={
+            <SectionTabs
+              mode="segmented"
+              label="Message pool"
+              value={scope}
+              disabled={busy}
+              items={[
+                {
+                  id: "all",
+                  label: (
+                    <>
+                      All
+                      <span className="roster-pool-label-extra"> messages</span>
+                    </>
+                  ),
+                },
+                {
+                  id: "main",
+                  label: (
+                    <>
+                      Main<span className="roster-pool-label-extra"> CWL</span>
+                    </>
+                  ),
+                },
+                {
+                  id: "lazy",
+                  label: (
+                    <>
+                      Lazy<span className="roster-pool-label-extra"> CWL</span>
+                    </>
+                  ),
+                },
+              ]}
+              onChange={(value) => {
+                setScope(value);
+                if (value !== "all") setPool(value);
+              }}
+            />
+          }
+          filters={
+            <FiltersTrigger
+              count={filterCount}
+              open={panel === "filters"}
+              disabled={busy}
+              onClick={(event) => {
+                setTrigger(event.currentTarget);
+                setPanel("filters");
+              }}
+            />
+          }
+          sort={
+            <SortTrigger
+              label={sort === "name" ? "Name" : "Send time"}
+              disabled={busy}
+              onClick={(event) => {
+                setTrigger(event.currentTarget);
+                setPanel("sort");
+              }}
+            />
+          }
+          actions={
+            <RefreshButton
+              busy={busy}
+              onRefresh={onRefresh}
+              label="Refresh reminders"
+            />
+          }
         />
+        {(channelLookup.error ||
+          roleLookup.error ||
+          channelLookup.loading ||
+          roleLookup.loading) && (
+          <p className="reminder-names-unavailable">Names unavailable</p>
+        )}
+        <p className="reminder-timezone">
+          Times in {Intl.DateTimeFormat().resolvedOptions().timeZone}
+        </p>
+        {errorCount > 0 && (
+          <p className="reminder-error-line" role="status">
+            {errorCount === 1
+              ? "1 message has an error"
+              : `${errorCount} messages have an error`}
+          </p>
+        )}
+        <p className="reminder-list-count">
+          {filterCount
+            ? `${visible.length} of ${rows.length} messages · ${[filters.hasError && "Has error", filters.off && "Off"].filter(Boolean).join(" · ")}`
+            : `${rows.length} messages`}
+        </p>
+        <div className="reminder-message-list">
+          {visible.map((row) => (
+            <ReminderMessageRow
+              key={row.id}
+              campaign={draft}
+              id={row.id}
+              scope={scope}
+              next={row.next}
+              activated={activated}
+              channels={channelLookup.items}
+              lookups={lookups}
+              selected={row.id === selectedId}
+              busy={busy}
+              unsaved={
+                JSON.stringify(draft.messages[row.id]) !==
+                JSON.stringify(saved.messages[row.id])
+              }
+              onOpen={() => selectRow(row.id)}
+              rowRef={(node) => {
+                if (node) rowButtons.current.set(row.id, node);
+                else rowButtons.current.delete(row.id);
+              }}
+            />
+          ))}
+        </div>
+        {!rows.length ? (
+          <p>No messages set up for this month.</p>
+        ) : !visible.length ? (
+          <div className="reminder-list-empty">
+            <p>No messages match these filters.</p>
+            <button
+              type="button"
+              onClick={() => setFilters({ hasError: false, off: false })}
+            >
+              Clear filters
+            </button>
+          </div>
+        ) : null}
+        <p className="reminder-announcements">
+          Roster posts are on{" "}
+          <a
+            href={dashboardPath({
+              view: "publication",
+              step: "announce",
+              season: seasonId,
+            })}
+          >
+            Announcements ›
+          </a>
+        </p>
       </div>
-      <SectionTabPanel id="reminder-audience" value={pool}>
-        <div className="reminder-fields">
-          <SearchPicker
-            label="Message to edit"
-            value={messageId}
-            options={Object.entries(draft.messages)
-              .filter(([id]) => id !== "roster")
-              .map(([id, item]) => ({
-                value: id,
-                label: item.label || id,
-              }))}
-            placeholder="Select a message"
-            searchPlaceholder="Search messages"
-            emptyText="No messages match."
-            onChange={setMessageId}
+      {selectedId && (!compact || editorOpen) && (
+        <div className="reminder-editor-pane">
+          {compact && (
+            <nav
+              className="reminder-editor-navigation"
+              aria-label="Message navigation"
+            >
+              <button
+                ref={backButton}
+                type="button"
+                onClick={closeEditor}
+                disabled={busy}
+              >
+                Back to messages
+              </button>
+              <button
+                type="button"
+                disabled={busy || currentIndex <= 0}
+                onClick={() => move(-1)}
+              >
+                Previous
+              </button>
+              <button
+                type="button"
+                disabled={
+                  busy || currentIndex < 0 || currentIndex >= visible.length - 1
+                }
+                onClick={() => move(1)}
+              >
+                Next
+              </button>
+            </nav>
+          )}
+          <ReminderMessageEditor
+            draft={draft}
+            messageId={selectedId}
+            pool={
+              selected
+                ? pool
+                : initialEditorPool(draft, selectedId, scope, lookups)
+            }
+            setPool={(value) => {
+              setSelected(selectedId);
+              setPool(value);
+            }}
+            showPoolSwitch={scope === "all"}
+            disabled={disabled}
+            compact={compact}
+            channelLookup={channelLookup}
+            roleLookup={roleLookup}
+            edit={edit}
+            previewDeadline={previewDeadline}
           />
         </div>
-        {selected && variant && (
-          <div className="reminder-columns">
-            <div className="card">
-              <fieldset disabled={disabled}>
-                <legend>
-                  Edit {pool === "main" ? "Main" : "Lazy"} ·{" "}
-                  {selected.label || messageId}
-                </legend>
-                <label className="check-label">
+      )}
+      {panel && (
+        <ActionPanel
+          title={panel === "filters" ? "Filter messages" : "Sort messages"}
+          trigger={trigger}
+          onClose={() => setPanel(null)}
+          busy={busy}
+          footer={
+            <button type="button" onClick={() => setPanel(null)}>
+              Done
+            </button>
+          }
+        >
+          {panel === "filters" ? (
+            <>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={filters.hasError}
+                  onChange={(event) =>
+                    setFilters({ ...filters, hasError: event.target.checked })
+                  }
+                />
+                Has error
+              </label>
+              <label className="check-label">
+                <input
+                  type="checkbox"
+                  checked={filters.off}
+                  onChange={(event) =>
+                    setFilters({ ...filters, off: event.target.checked })
+                  }
+                />
+                Off
+              </label>
+              <button
+                type="button"
+                onClick={() => setFilters({ hasError: false, off: false })}
+              >
+                Clear
+              </button>
+            </>
+          ) : (
+            <fieldset>
+              <legend>Sort messages</legend>
+              {(["send_time", "name"] as const).map((value) => (
+                <label className="check-label" key={value}>
                   <input
-                    type="checkbox"
-                    checked={selected.enabled}
-                    onChange={(event) => {
-                      const next = clone(draft);
-                      next.messages[messageId].enabled = event.target.checked;
-                      edit(next);
-                    }}
+                    type="radio"
+                    name="reminder-sort"
+                    value={value}
+                    checked={sort === value}
+                    onChange={() => setSort(value)}
                   />
-                  Enable this message
+                  {value === "name" ? "Name" : "Send time"}
                 </label>
-                <label className="check-label">
-                  <input
-                    type="checkbox"
-                    checked={variant.enabled !== false}
-                    onChange={(event) =>
-                      changeVariant({ enabled: event.target.checked })
-                    }
-                  />
-                  Enable {pool === "main" ? "Main" : "Lazy"} version
-                </label>
-                {(channelError || roleLookup.error) && (
-                  <p role="alert">
-                    Delivery settings need attention. Open Delivery settings
-                    below to retry the failed lookup.
-                  </p>
-                )}
-                <details className="reminder-disclosure">
-                  <summary>
-                    Delivery settings ·{" "}
-                    {countLabel(variant.role_ids.length, "role")} to notify
-                  </summary>
-                  <ChannelCombobox
-                    label="Destination channel"
-                    channels={channels}
-                    value={variant.destination_channel_id}
-                    disabled={
-                      disabled || channelLookup.loading || !!channelError
-                    }
-                    onChange={(value) =>
-                      changeVariant({ destination_channel_id: value })
-                    }
-                  />
-                  {channelLookup.loading && (
-                    <p role="status">Loading channels…</p>
-                  )}
-                  <LoadError
-                    message={
-                      channelError
-                        ? `Channels unavailable: ${channelError}`
-                        : ""
-                    }
-                    onRetry={channelLookup.retry}
-                  />
-                  <SearchPicker
-                    label="Add a role"
-                    value=""
-                    options={roles.map((role) => ({
-                      ...roleOption(role),
-                      disabledNote: variant.role_ids.includes(role.id)
-                        ? "Already added"
-                        : undefined,
-                    }))}
-                    disabled={roleLookup.loading || !!roleLookup.error}
-                    placeholder="Add a role"
-                    searchPlaceholder="Search server roles"
-                    emptyText="No roles match."
-                    onChange={(id) => {
-                      if (!id) return;
-                      const next = [...new Set([...variant.role_ids, id])];
-                      setRoleText(next.join(", "));
-                      changeVariant({ role_ids: next });
-                    }}
-                  />
-                  {roleLookup.loading && <p role="status">Loading roles…</p>}
-                  <LoadError
-                    message={
-                      roleLookup.error
-                        ? `Roles unavailable: ${roleLookup.error}`
-                        : ""
-                    }
-                    onRetry={roleLookup.retry}
-                  />
-                  <div
-                    className="reminder-selected-roles"
-                    aria-label="Roles to notify"
-                  >
-                    {variant.role_ids.length ? (
-                      variant.role_ids.map((id) => (
-                        <button
-                          type="button"
-                          key={id}
-                          aria-label={
-                            roles.find((role) => role.id === id)?.name
-                              ? `Remove ${roles.find((role) => role.id === id)!.name}`
-                              : "Remove deleted role"
-                          }
-                          onClick={() => {
-                            const next = variant.role_ids.filter(
-                              (value) => value !== id,
-                            );
-                            setRoleText(next.join(", "));
-                            changeVariant({ role_ids: next });
-                          }}
-                        >
-                          {roles.find((role) => role.id === id)?.name ||
-                            "Deleted role"}{" "}
-                          ×
-                        </button>
-                      ))
-                    ) : (
-                      <p className="small">
-                        No roles selected for notification.
-                      </p>
-                    )}
-                  </div>
-                  <details>
-                    <summary>Role IDs</summary>
-                    <label>
-                      Role IDs to mention
-                      <input
-                        {...identifierInputProps}
-                        value={roleText}
-                        onChange={(event) => {
-                          setRoleText(event.target.value);
-                          changeVariant({
-                            role_ids: [
-                              ...new Set(
-                                event.target.value
-                                  .split(/[\s,]+/)
-                                  .filter(Boolean),
-                              ),
-                            ],
-                          });
-                        }}
-                        placeholder="Separate Discord role IDs with commas"
-                      />
-                      <small>
-                        These roles are notified when this message is sent.
-                      </small>
-                    </label>
-                  </details>
-                </details>
-                <label>
-                  Title
-                  <input
-                    maxLength={4000}
-                    value={variant.title}
-                    onChange={(event) =>
-                      changeVariant({ title: event.target.value })
-                    }
-                  />
-                </label>
-                <label>
-                  Message
-                  <textarea
-                    rows={9}
-                    maxLength={4000}
-                    value={variant.body}
-                    onChange={(event) =>
-                      changeVariant({ body: event.target.value })
-                    }
-                  />
-                  <small>
-                    Discord formatting is supported. Use {"{signup_deadline}"}{" "}
-                    for the shared closing date.
-                  </small>
-                </label>
-                <details className="reminder-disclosure">
-                  <summary>Message image</summary>
-                  <label>
-                    Image URL
-                    <input
-                      type="url"
-                      value={variant.media_url || ""}
-                      onChange={(event) =>
-                        changeVariant({
-                          media_url: event.target.value,
-                        })
-                      }
-                    />
-                  </label>
-                </details>
-              </fieldset>
-            </div>
-            <MessagePreview key={messageId + pool}>
-              <DiscordPreview
-                parts={[
-                  {
-                    type: "container",
-                    children: [
-                      { type: "text", text: "## " + variant.title },
-                      {
-                        type: "text",
-                        text: variant.body.replaceAll(
-                          "{signup_deadline}",
-                          shortReminderTime(previewDeadline),
-                        ),
-                      },
-                      ...(variant.media_url
-                        ? [
-                            {
-                              type: "media",
-                              items: [
-                                {
-                                  url: variant.media_url,
-                                  description: "Announcement image",
-                                },
-                              ],
-                            } as PreviewPart,
-                          ]
-                        : []),
-                      {
-                        type: "row",
-                        children: variant.buttons.map((button) => ({
-                          type: "button",
-                          label: button.label,
-                          emoji: button.emoji,
-                          url: button.url,
-                        })),
-                      },
-                    ],
-                  },
-                ]}
-                caption="Discord preview. Signup buttons cannot be changed here."
-              />
-            </MessagePreview>
-          </div>
-        )}
-      </SectionTabPanel>
-    </>
+              ))}
+            </fieldset>
+          )}
+        </ActionPanel>
+      )}
+    </div>
   );
 }
