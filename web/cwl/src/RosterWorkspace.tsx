@@ -15,8 +15,8 @@ import ClanSettings from "./ClanSettings";
 import type { ClanRules } from "./clanSettingsModel";
 import { placementMessage } from "./publicationAwareness";
 import { createComparisonMemory } from "./comparisonMemory";
-import SortTrigger from "./rosterUi/SortTrigger";
-import { rosterSortOptions } from "./rosterSortOptions";
+import SortTrigger, { sortTriggerLabel } from "./rosterUi/SortTrigger";
+import { rosterSortOptions, rosterSortShortLabels } from "./rosterSortOptions";
 import ActionMenu from "./rosterUi/ActionMenu";
 import { ChevronDown } from "lucide-react";
 import { closeRosterActionMenus } from "./rosterUi/actionMenuState";
@@ -144,6 +144,9 @@ export default function RosterWorkspace({
   const [filterOpen, setFilterOpen] = useState(false);
   const [sortOpen, setSortOpen] = useState(false);
   const sortTrigger = useRef<HTMLButtonElement>(null);
+  const [sortPanelTrigger, setSortPanelTrigger] = useState<HTMLElement | null>(
+    null,
+  );
   const [undoToast, setUndoToast] = useState<RosterUndoState | null>(null);
   const undoReceipt = useRef<{
     id: number;
@@ -210,6 +213,10 @@ export default function RosterWorkspace({
   const [groupNamesError, setGroupNamesError] = useState(false);
   const [groupNamesRetry, setGroupNamesRetry] = useState(0);
   const groupByDiscord = releasePreferences.grouped;
+  const sortLabel =
+    rosterSortOptions.find(
+      ([value]) => value === releasePreferences.sort,
+    )?.[1] || "Unplaced first";
   const [groupMembers, setGroupMembers] = useState<
     Record<string, MemberOption>
   >({});
@@ -1463,19 +1470,18 @@ export default function RosterWorkspace({
                   <SortTrigger
                     ref={sortTrigger}
                     disabled={uiLocked || !!editingTag}
-                    label={
-                      rosterSortOptions.find(
-                        ([value]) => value === releasePreferences.sort,
-                      )?.[1] || "Unplaced first"
-                    }
+                    label={sortLabel}
                     grouped={groupByDiscord}
                     aria-expanded={sortOpen}
-                    onClick={() => setSortOpen(true)}
+                    onClick={(event) => {
+                      setSortPanelTrigger(event.currentTarget);
+                      setSortOpen(true);
+                    }}
                   />
                   {sortOpen && (
                     <ActionPanel
                       title="Sort accounts"
-                      trigger={sortTrigger.current}
+                      trigger={sortPanelTrigger || sortTrigger.current}
                       className="roster-ui"
                       onClose={() => setSortOpen(false)}
                     >
@@ -1593,6 +1599,25 @@ export default function RosterWorkspace({
                   <span className="roster-list-count">
                     <span className="roster-list-count-text">
                       {`${filtered.length} matching · ${selectedTags.length} selected`}
+                      <span className="roster-count-sort">
+                        {" · "}
+                        <button
+                          type="button"
+                          aria-label={sortTriggerLabel(
+                            sortLabel,
+                            groupByDiscord,
+                          )}
+                          aria-expanded={sortOpen}
+                          disabled={uiLocked || !!editingTag}
+                          onClick={(event) => {
+                            setSortPanelTrigger(event.currentTarget);
+                            setSortOpen(true);
+                          }}
+                        >
+                          {rosterSortShortLabels[releasePreferences.sort]}
+                          {groupByDiscord ? " · Grouped" : ""}
+                        </button>
+                      </span>
                     </span>
                     {roster.metadata_updating && (
                       <span className="roster-list-updating" role="status">

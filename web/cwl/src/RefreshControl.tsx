@@ -81,6 +81,8 @@ export type RefreshControlProps = {
   disabled?: boolean;
   /** The same read's LoadError owns Try again while its error is visible. */
   showRefresh?: boolean;
+  /** Preserve a caller’s existing action name for a specific read. */
+  refreshLabel?: string;
 };
 
 export default function RefreshControl({
@@ -92,6 +94,7 @@ export default function RefreshControl({
   onPauseChange,
   disabled = false,
   showRefresh = true,
+  refreshLabel = "Refresh",
 }: RefreshControlProps) {
   const previous = useRef(busy);
   const announce = previous.current && !busy && showRefresh;
@@ -125,7 +128,12 @@ export default function RefreshControl({
         <span className="refresh-interval">{interval}</span>
       </span>
       {showRefresh && (
-        <RefreshButton busy={busy} disabled={disabled} onRefresh={onRefresh} />
+        <RefreshButton
+          busy={busy}
+          disabled={disabled}
+          onRefresh={onRefresh}
+          label={refreshLabel}
+        />
       )}
       {automatic && (
         <button

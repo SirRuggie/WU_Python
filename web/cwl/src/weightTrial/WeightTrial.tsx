@@ -1,11 +1,13 @@
 import { countLabel } from "../countLabel";
-import { RefreshButton } from "../RefreshControl";
+import RefreshControl from "../RefreshControl";
+import ActionPanel from "../ActionPanel";
+import SectionTabs from "../SectionTabs";
+import { Search, ChevronsDown } from "lucide-react";
 import LoadError from "../LoadError";
-import { formatDateTime, formatTime } from "../format";
+import { formatDateTime, formatDate, formatNumber } from "../format";
 import HelpButton from "../HelpButton";
 import CwlPageHeader from "../CwlPageHeader";
 import RosterMenu from "../rosterUi/Menu";
-import DiscordIdentity from "../DiscordIdentity";
 import { fetchReadWithRetry } from "../readRetry";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
@@ -81,10 +83,15 @@ export default function WeightTrial({
   const [showMissingLoot, setShowMissingLoot] = useState(false);
   const [filter, setFilter] = useState<"all" | "missing" | "check">("all");
   const [savedState, setSavedState] = useState({ count: 0, busy: false });
-  const savedSummary = useCallback(
-    (count: number, busy: boolean) => setSavedState({ count, busy }),
-    [],
+  const savedStateRef = useRef({ count: 0, busy: false });
+  const [savedSearchOpen, setSavedSearchOpen] = useState(
+    !!targetPlayer && !targetClan,
   );
+  const savedSearchTrigger = useRef<HTMLButtonElement>(null);
+  const savedSummary = useCallback((count: number, busy: boolean) => {
+    savedStateRef.current = { count, busy };
+    setSavedState({ count, busy });
+  }, []);
   const [outside, setOutside] = useState<number | null>(null);
   const [pendingAction, setPendingAction] = useState<null | (() => void)>(null);
   const editFocus = useRef<HTMLElement | null>(null);
@@ -131,6 +138,7 @@ export default function WeightTrial({
     setLoading(false);
     setDirectoryLoading(false);
     setAccessDenied(true);
+    setSavedSearchOpen(false);
     setRoster(null);
     setValues({});
     setClans([]);
@@ -169,13 +177,23 @@ export default function WeightTrial({
       : []),
   ].sort((a, b) => a.position - b.position);
   const guard = (action: () => void) => {
-    if (anyBusy || saving.current) return;
-    if (dirty) setPendingAction(() => action);
+    if (anyBusy || savedStateRef.current.busy || saving.current) return;
+    if (dirty || savedStateRef.current.count > 0)
+      setPendingAction(() => action);
     else action();
   };
   useEffect(() => {
     if (targetClan) setSelected(targetClan);
   }, [targetClan]);
+  useEffect(() => {
+    if (targetPlayer && !targetClan) setSavedSearchOpen(true);
+  }, [targetPlayer, targetClan]);
+  const closeSavedSearch = () => {
+    if (anyBusy || savedStateRef.current.busy || saving.current) return false;
+    const needsConfirm = dirty || savedStateRef.current.count > 0;
+    guard(() => setSavedSearchOpen(false));
+    return !needsConfirm;
+  };
   useEffect(() => {
     if (targetPlayer && roster) {
       const input = inputs.current[`${targetPlayer}-loot`];
@@ -422,7 +440,8 @@ export default function WeightTrial({
       onFocusCapture={(event) => {
         if (
           event.target instanceof HTMLInputElement &&
-          event.currentTarget.contains(event.target)
+          (event.currentTarget.contains(event.target) ||
+            !!event.target.closest(".weight-saved-panel"))
         )
           editFocus.current = event.target;
       }}
@@ -457,6 +476,7 @@ export default function WeightTrial({
             title="How weights are used"
             className="weight-help-panel"
           >
+            <p>Type each player's loot. Full weight = loot × storages.</p>
             <p>Clan weights and roster Details share the same saved weight.</p>
             <p>
               Weights follow each player across clans. Save explicitly in either
@@ -467,6 +487,30 @@ export default function WeightTrial({
               Member counts use the last check. Open a clan and refresh members
               to check again.
             </p>
+            {roster && (
+              <>
+                <h3>This clan</h3>
+                <ul>
+                  <li>
+                    {countLabel(
+                      roster.current_members_count ??
+                        roster.members.filter(
+                          (row) => row.current_member !== false,
+                        ).length,
+                      "current member",
+                    )}{" "}
+                    · {countLabel(members.length, "weight row")}
+                  </li>
+                  {roster.last_saved && (
+                    <li>
+                      Last saved {formatDateTime(roster.last_saved.at)} by{" "}
+                      {roster.last_saved.name}
+                    </li>
+                  )}
+                  {roster.last_saved?.imported && <li>Spreadsheet import</li>}
+                </ul>
+              </>
+            )}
           </HelpButton>
         }
       >
@@ -498,8 +542,28 @@ export default function WeightTrial({
             }))}
           />
         )}
+        {!accessDenied && (
+          <button
+            ref={savedSearchTrigger}
+            type="button"
+            className="refresh-icon-button weight-saved-search-trigger"
+            aria-label="Find any player"
+            title="Find any player"
+            onClick={() => setSavedSearchOpen(true)}
+          >
+            <Search size={18} aria-hidden="true" />
+          </button>
+        )}
+        {selected && !error && !accessDenied && (
+          <RefreshControl
+            updatedAt={roster?.checked_at}
+            busy={loading}
+            disabled={anyBusy}
+            onRefresh={refresh}
+            refreshLabel="Refresh members"
+          />
+        )}
       </CwlPageHeader>
-      <p>Type each player's loot. Full weight = loot × storages.</p>
       {!!outside && (
         <p>
           {outside} CWL signups outside FWA clans need a weight ·{" "}
@@ -516,15 +580,25 @@ export default function WeightTrial({
           </a>
         </p>
       )}
-      {!accessDenied && (
-        <SavedPlayers
-          externalBusy={busy}
-          resetToken={savedReset}
-          target={targetPlayer && !targetClan ? targetPlayer : undefined}
-          onState={savedSummary}
-          guard={guard}
-          onDenied={denyAccess}
-        />
+      {!accessDenied && savedSearchOpen && (
+        <ActionPanel
+          title="Find any player"
+          trigger={savedSearchTrigger.current}
+          onClose={closeSavedSearch}
+          busy={anyBusy}
+          className="weight-saved-panel roster-ui"
+          expandOnSearchFocus
+        >
+          <SavedPlayers
+            externalBusy={busy}
+            resetToken={savedReset}
+            target={targetPlayer && !targetClan ? targetPlayer : undefined}
+            onState={savedSummary}
+            guard={guard}
+            onDenied={denyAccess}
+            showHeading={false}
+          />
+        </ActionPanel>
       )}
       {directoryError && (
         <p role="alert" className="notice error">
@@ -542,53 +616,23 @@ export default function WeightTrial({
       {!accessDenied && (
         <div className="weight-trial-layout">
           <section className="weight-trial-members" aria-label="Member weights">
-            <div className="weight-trial-toolbar">
-              <div>
-                {roster && (
-                  <small>
-                    {roster.current_members_count ??
-                      roster.members.filter(
-                        (row) => row.current_member !== false,
-                      ).length}{" "}
-                    current members · {members.length} weight rows · Checked{" "}
-                    {formatTime(new Date(roster.checked_at))}
-                  </small>
+            {roster && (
+              <p className="weight-trial-meta small" role="status">
+                {roster.last_saved ? (
+                  <>
+                    Saved{" "}
+                    <time dateTime={roster.last_saved.at}>
+                      {formatDate(roster.last_saved.at, {
+                        format: { month: "short", day: "numeric" },
+                      })}
+                    </time>{" "}
+                    by {roster.last_saved.name}
+                  </>
+                ) : (
+                  "Weights not saved yet"
                 )}
-                {roster && (
-                  <p className="small" role="status">
-                    {roster.last_saved ? (
-                      <>
-                        Weights last saved on{" "}
-                        <time dateTime={roster.last_saved.at}>
-                          {formatDateTime(new Date(roster.last_saved.at))}
-                        </time>
-                        {" by "}
-                        <DiscordIdentity
-                          userId={roster.last_saved.discord_id}
-                          displayName={roster.last_saved.name}
-                          resolvedMember={null}
-                          variant="compact"
-                          contact={false}
-                        />
-                        {roster.last_saved.imported
-                          ? " · Spreadsheet import"
-                          : ""}
-                      </>
-                    ) : (
-                      "Weights not saved yet"
-                    )}
-                  </p>
-                )}
-              </div>
-              {selected && !error && (
-                <RefreshButton
-                  busy={loading}
-                  disabled={anyBusy}
-                  onRefresh={refresh}
-                  label="Refresh members"
-                />
-              )}
-            </div>
+              </p>
+            )}
             {error && (
               <div ref={errorPanel} tabIndex={-1}>
                 <LoadError
@@ -608,10 +652,6 @@ export default function WeightTrial({
             {loading && <p role="status">Loading current members…</p>}
             {roster && (
               <div className="weight-trial-editor">
-                <p className="weight-trial-order" role="status">
-                  {orderLabel(viewRoster!)}
-                  {warSource?.opponent ? ` · vs ${warSource.opponent}` : ""}
-                </p>
                 {targetPlayer &&
                   !warOrder?.[targetPlayer] &&
                   lineups.some((war) => war.order[targetPlayer]) && (
@@ -620,69 +660,73 @@ export default function WeightTrial({
                       in War lineup.
                     </p>
                   )}
-                {lineups.length > 1 && (
-                  <label className="weight-trial-war-picker">
-                    War lineup
-                    <select
-                      disabled={anyBusy || loading}
+                <div className="weight-trial-filters">
+                  <SectionTabs
+                    mode="segmented"
+                    label="Weight rows"
+                    value={filter}
+                    onChange={(next) => {
+                      setFilter(next);
+                      setShowMissingLoot(false);
+                    }}
+                    items={[
+                      { id: "all", label: "All" },
+                      {
+                        id: "missing",
+                        label: `Missing ${formatNumber(missing.length)}`,
+                      },
+                      {
+                        id: "check",
+                        label: `Check ${formatNumber(checks.length)}`,
+                      },
+                    ]}
+                  />
+                  <button
+                    type="button"
+                    className="weight-next-missing refresh-icon-button"
+                    aria-label="Next missing"
+                    title="Next missing"
+                    disabled={!emptyMissing.length}
+                    onClick={nextMissing}
+                  >
+                    <ChevronsDown size={18} aria-hidden="true" />
+                  </button>
+                </div>
+                <div className="weight-trial-war-row">
+                  {lineups.length > 1 && (
+                    <RosterMenu
+                      label="War"
+                      aria-label={`War: ${lineup === lineups[0] ? "Current war" : "Previous war"}`}
                       value={lineup?.end_time || ""}
-                      onChange={(event) => {
-                        const value = event.target.value;
+                      disabled={anyBusy || loading}
+                      panelClassName="weight-war-menu-panel"
+                      onValueChange={(value) => {
                         guard(() => {
                           setSelectedWar(value);
                           if (roster) setValues(draftsForRoster(roster, value));
                           setFilter("all");
                         });
                       }}
-                    >
-                      {lineups.map((war, index) => (
-                        <option key={war.end_time} value={war.end_time || ""}>
-                          {index === 0 ? "Most recent" : "Previous"} ·{" "}
-                          {war.end_time
-                            ? war.end_time.slice(0, 4) +
-                              "-" +
-                              war.end_time.slice(4, 6) +
-                              "-" +
-                              war.end_time.slice(6, 8)
-                            : "Date unavailable"}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                )}
+                      options={lineups.map((war, index) => ({
+                        value: war.end_time || "",
+                        label:
+                          index === 0
+                            ? "Current war"
+                            : `Previous · ${war.end_time ? formatDate(`${war.end_time.slice(0, 4)}-${war.end_time.slice(4, 6)}-${war.end_time.slice(6, 8)}T00:00:00Z`, { timeZone: "UTC", format: { month: "short", day: "numeric" } }) : "Date unavailable"}`,
+                      }))}
+                    />
+                  )}
+                  <span className="weight-trial-order small" role="status">
+                    {orderLabel(viewRoster!)}
+                    {warSource?.opponent ? ` · vs ${warSource.opponent}` : ""}
+                  </span>
+                </div>
                 <div className="weight-trial-columns" aria-hidden="true">
                   <span>#</span>
                   <span>Player</span>
                   <span>Storages</span>
                   <span>Loot</span>
                   <span>Full weight</span>
-                </div>
-                <div className="weight-trial-filters">
-                  <p>
-                    {missing.length
-                      ? `${missing.length} missing`
-                      : "All weighed ✓"}{" "}
-                    · {checks.length} to check
-                  </p>
-                  {(["all", "missing", "check"] as const).map((option) => (
-                    <button
-                      key={option}
-                      aria-pressed={filter === option}
-                      onClick={() => {
-                        setFilter(option);
-                        setShowMissingLoot(false);
-                      }}
-                    >
-                      {option === "all"
-                        ? "All"
-                        : option === "missing"
-                          ? `Missing (${missing.length})`
-                          : `Check (${checks.length})`}
-                    </button>
-                  ))}
-                  <button disabled={!emptyMissing.length} onClick={nextMissing}>
-                    Next missing ›
-                  </button>
                 </div>
                 {entries.map((entry) => {
                   const row = entry.row;

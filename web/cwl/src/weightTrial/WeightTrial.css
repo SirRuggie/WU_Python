@@ -1,13 +1,6 @@
 .weight-trial-members {
   min-width: 0;
 }
-.weight-trial-toolbar {
-  display: flex;
-  gap: var(--wu-space-3);
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: var(--wu-space-4);
-}
 .weight-trial-columns,
 .weight-trial-row {
   display: grid;
@@ -77,10 +70,6 @@
   margin: var(--wu-space-1) var(--wu-space-2) var(--wu-space-1) 0;
 }
 @media (max-width: 650px) {
-  .weight-trial-toolbar {
-    align-items: start;
-    flex-wrap: wrap;
-  }
   .weight-trial-save {
     padding: var(--wu-space-3) 0;
   }
@@ -155,17 +144,6 @@
   color: var(--wu-text-muted);
   border-bottom: 1px dashed var(--wu-border);
   font-size: var(--wu-text-sm);
-}
-.weight-trial-filters {
-  margin-block: var(--wu-space-3);
-}
-.weight-trial-filters button {
-  min-height: 44px;
-  margin: 0 var(--wu-space-1) var(--wu-space-1) 0;
-}
-.weight-trial-filters button[aria-pressed="true"] {
-  border-color: var(--wu-accent);
-  color: var(--wu-accent);
 }
 .weight-trial-save .weight-keyboard-hint {
   display: none;
@@ -278,18 +256,6 @@
   margin: 0;
 }
 
-.weight-trial-war-picker {
-  display: flex;
-  align-items: center;
-  gap: var(--wu-space-3);
-  flex-wrap: wrap;
-  margin: var(--wu-space-3) 0;
-}
-.weight-trial-war-picker select {
-  min-height: 44px;
-  max-width: 100%;
-}
-
 /* Shared season picker, with a wider progress list for clan weights. */
 .weight-trial .cwl-page-header.weight-trial-header > .roster-menu {
   flex: 0 1 300px;
@@ -312,14 +278,100 @@
 }
 @media (max-width: 650px) {
   .weight-trial .cwl-page-header.weight-trial-header {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) 44px max-content;
     height: auto;
-    flex-direction: column;
-    align-items: stretch;
+    align-items: center;
+    column-gap: var(--wu-space-2);
   }
   .weight-trial .cwl-page-header.weight-trial-header > .roster-menu {
+    grid-column: 1 / -1;
+    grid-row: 2;
     width: 100%;
     max-width: none;
     flex: none;
     min-width: 0;
+  }
+}
+
+/* Frequent controls lead the editor; occasional search stays in its panel. */
+.weight-trial-meta {
+  margin-block: 0 var(--wu-space-2);
+  color: var(--wu-text-muted);
+}
+.weight-trial-filters {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  margin-block: var(--wu-space-2);
+}
+.weight-trial-filters > .section-tabs {
+  flex: 0 1 auto;
+  min-width: 0;
+  margin: 0;
+}
+.weight-trial-filters .section-tabs > button {
+  flex: 1 1 auto;
+  min-width: 44px;
+  min-height: 44px;
+  white-space: nowrap;
+}
+.weight-trial-filters > .weight-next-missing {
+  flex: none;
+}
+.weight-trial-war-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--wu-space-2) var(--wu-space-3);
+  margin-block: var(--wu-space-2);
+  min-width: 0;
+}
+.weight-trial-war-row > .roster-menu {
+  flex: 0 1 auto;
+  width: max-content;
+  max-width: 100%;
+}
+.weight-trial-war-row .weight-trial-order {
+  color: var(--wu-text-muted);
+  overflow-wrap: anywhere;
+}
+.weight-saved-panel .weight-saved-search {
+  margin-block: 0;
+}
+.weight-saved-panel .weight-saved-search form {
+  align-items: end;
+}
+.weight-saved-panel .weight-saved-search input {
+  min-height: 44px;
+}
+.weight-saved-panel .weight-saved-search label {
+  min-width: 0;
+}
+@media (max-width: 650px) {
+  .weight-trial .weight-trial-header > .cwl-page-header-title {
+    grid-column: 1;
+    padding-block: 0;
+  }
+  .weight-trial-header > .weight-saved-search-trigger {
+    grid-column: 2;
+    grid-row: 1;
+  }
+  .weight-trial-header > .refresh-control {
+    grid-column: 3;
+    grid-row: 1;
+  }
+  .weight-trial-header .refresh-control-status {
+    font-size: var(--wu-text-xs);
+  }
+  .weight-trial-header .refresh-status-prefix {
+    display: none;
+  }
+  .weight-trial-filters > .section-tabs {
+    flex: 1 1 auto;
+  }
+  .weight-trial-filters .section-tabs > button {
+    padding-inline: var(--wu-space-2);
+    font-size: var(--wu-text-xs);
   }
 }

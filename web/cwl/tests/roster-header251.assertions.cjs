@@ -27,6 +27,7 @@ async function checkRosterHeader251(
       width: innerWidth,
       documentWidth: document.documentElement.scrollWidth,
       banner: !!document.querySelector(".fixture-banner"),
+      grouped: !!document.querySelector(".roster-member-heading"),
       title: rect(".roster-header-title-row"),
       steps: rect(".roster-header .cwl-step-strip"),
       summary: rect(".roster-header-overview"),
@@ -37,6 +38,18 @@ async function checkRosterHeader251(
       clans: rect(".roster-clan-chips"),
       count: rect(".roster-list-heading"),
       firstAccount: rect(".roster-player-card"),
+      season: (() => {
+        const e = document.querySelector(
+          ".roster-header-season .roster-menu-current",
+        );
+        return e
+          ? {
+              height: e.getBoundingClientRect().height,
+              lineHeight: parseFloat(getComputedStyle(e).lineHeight),
+              text: e.textContent,
+            }
+          : null;
+      })(),
     };
   });
   assert(
@@ -99,9 +112,10 @@ async function checkRosterHeader251(
       false,
       "Density fixture must not show development banner",
     );
+    const maximumY = metrics.grouped ? 580 : 560;
     assert(
-      metrics.firstAccount.y <= 560,
-      `First account y=${metrics.firstAccount.y} exceeds560`,
+      metrics.firstAccount.y <= maximumY,
+      `First account y=${metrics.firstAccount.y} exceeds${maximumY}`,
     );
   }
   const tabs = page.locator('.roster-workspace-navigation [role="tablist"]');
@@ -134,6 +148,26 @@ async function checkRosterHeader251(
   );
   assert((await add.getAttribute("class")).includes("is-primary"));
   if (metrics.width <= 650) {
+    assert(
+      metrics.season && metrics.season.height <= metrics.season.lineHeight + 1,
+      "Season value must remain one line",
+    );
+    const lazy = pool.getByRole("button", { name: "Lazy CWL", exact: true });
+    assert(
+      await lazy.evaluate((e) => e.scrollWidth <= e.clientWidth + 1),
+      "Lazy label must not clip",
+    );
+    const countSort = page.locator(".roster-count-sort > button");
+    assert(
+      await countSort.isVisible(),
+      "Current sort label is visible in phone count line",
+    );
+    assert.equal(
+      await countSort.getAttribute("aria-label"),
+      await toolbar
+        .getByRole("button", { name: /^Sort:/ })
+        .getAttribute("aria-label"),
+    );
     const controlBoxes = await Promise.all([
       pool.boundingBox(),
       toolbar.getByRole("button", { name: /^Filters/ }).boundingBox(),

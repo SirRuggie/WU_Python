@@ -1976,3 +1976,46 @@ no release or live delivery proof. See `background-jobs.md` for scope and limits
 Later: expose job health through an explicitly designed public health surface;
 no endpoint, Mongo heartbeat, cross-process transport or moderation-health reuse
 is included in this batch.
+
+## Phone layout — Build roster and Clan weights (255, 2026-11-20)
+
+Ruggie approved D1–D6 through Shaka1228. Frontend only; no backend, endpoint,
+schema/data or permission change. D1 shows a short current-sort action in the
+phone matching/selected line and preserves the existing Sort panel/state/focus
+contract. Season values stay on one line; pool buttons share available toolbar
+width with 44px minimums.
+
+D2 moves Find any player into a title-row search icon and guarded ActionPanel,
+including target-only link prefill, unsaved Discard/Keep editing, busy-save close
+blocking and the combined page guard. D3 adds no row search. D4 uses segmented
+All/Missing/Check plus the Next missing icon. D5 uses the shared War menu through
+the same unsaved guard and selected-war/draft/filter setters. D6 puts the intro
+and verbose clan/import details in help, keeps one muted Saved date/name line,
+and puts the checked time in title-row RefreshControl. Errors, notices, outside-
+family guidance and previous-war/loading notes remain visible. Save/revision
+paths and sticky save behavior are unchanged.
+
+Status: scoped implementation and focused verification in progress; not READY.
+Before evidence is frozen from clean e79: ten canonical scenes, including six
+corrected weight-fixture scenes where actual revision0 rows show Missing2. The
+old six weight originals remain historical: their revision1 nulls represented
+saved N/A and correctly showed Missing0 despite incorrect initial metadata.
+Four roster originals are reused. All original bytes and closure records remain.
+The accepted finite after review has fifteen scenes at320/360/1440, with one
+consolidated fix/confirmation at most. Baseline first account is507.1875px
+ungrouped and600.1875px grouped at360; first weight row is973.15625px.
+Actual after geometry and final checks/limits will be recorded before READY.
+No production/physical phone/AT or live Discord/provider claim is made here.
+Existing Later items and previous decisions are unchanged.
+
+255 first after review retained all 15 original cells: desktop rosters and all
+Help scenes passed; phone roster toolbar/density failed, and two guard assertions
+failed without pre/post value diagnostics (cause unresolved). The one consolidated
+correction uses an explicit flexible pool basis/320gap budget, compact count-line
+controls and existing phone Discord group header without hiding its name/DM/count.
+No product guard changes follow from the unproven guard failures. The single
+confirmation records the same tagged row’s numeric draft before and after Keep
+editing, following normal focus settling; it must still fail on any changed draft.
+Final density and guard acceptance await that confirmation. All initial source,
+images, statuses and logs remain historical evidence, including the 70 focused and
+2,872 full checks on the preceding freeze.
