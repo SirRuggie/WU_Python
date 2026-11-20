@@ -42,6 +42,69 @@ const row = (patch: Partial<ActivityAccount> = {}): ActivityAccount => ({
   last_attacked_war_end: "2026-10-10T00:00:00Z",
   ...patch,
 });
+it.each(["not_attacking", "inactive", "replacements", "all"])(
+  "defaults %s to current members while explicit all still includes recent leavers",
+  (view) => {
+    const current = row({ player_name: "Alpha", marked_for_replacement: true });
+    const left = row({
+      player_tag: "#PQQ",
+      player_name: "Bravo",
+      marked_for_replacement: true,
+      left_clan: true,
+      last_clan_tag: "#P2Y",
+    });
+    const saved = `activity_view=${view}&slot_weight=179000&slot_clan=%23P2Y`;
+    const filters = parseActivityFilters(saved);
+    expect(filters.left).toBe("current");
+    expect(visibleActivityAccounts([current, left], filters)).toEqual([
+      current,
+    ]);
+    const all = parseActivityFilters(saved + "&left=all");
+    expect(all.left).toBe("all");
+    expect(visibleActivityAccounts([current, left], all)).toEqual([
+      current,
+      left,
+    ]);
+    expect(new URLSearchParams(activityFilterQuery(all)).get("left")).toBe(
+      "all",
+    );
+    expect(new URLSearchParams(activityFilterQuery(filters)).has("left")).toBe(
+      false,
+    );
+    expect(parseActivityFilters(activityFilterQuery(filters))).toEqual(filters);
+    expect(
+      appliedActivityFilters(filters).some((chip) => chip.key === "left"),
+    ).toBe(false);
+    expect(
+      appliedActivityFilters(all).find((chip) => chip.key === "left")?.clear,
+    ).toEqual({ left: "current" });
+  },
+);
+it.each([
+  ["left", "left"],
+  ["1", "left"],
+  ["current", "current"],
+  ["all", "all"],
+  ["unknown", "current"],
+])("preserves the Membership URL contract left=%s", (input, expected) => {
+  const filters = parseActivityFilters(`?activity_view=all&left=${input}`);
+  expect(filters.left).toBe(expected);
+  expect(parseActivityFilters(activityFilterQuery(filters)).left).toBe(
+    expected,
+  );
+});
+it("Clear restores current membership and clears Clan/TH while retaining Find slots query and grouping", () => {
+  const filters = parseActivityFilters(
+    "?activity_view=replacements&clans=%23P2Y&th=18&left=all&group=clan&slot_weight=179000&slot_expanded=w179000:12",
+  );
+  const cleared = clearActivityFilters(filters);
+  expect(cleared.left).toBe("current");
+  expect(cleared.clans).toEqual([]);
+  expect(cleared.townHalls).toEqual([]);
+  expect(cleared.group).toBe("clan");
+  expect(cleared.slotWeights).toEqual(filters.slotWeights);
+  expect(cleared.slotExpanded).toEqual(filters.slotExpanded);
+});
 it("opens Not attacking with an explicit known-war filter and preserves replacements aliases", () => {
   const f = parseActivityFilters();
   expect(f.view).toBe("not_attacking");
@@ -196,7 +259,7 @@ it("combines every filter and lists each predicate that can change bulk membersh
   expect(clearActivityFilters(f).view).toBe("all");
   expect(
     visibleActivityAccounts([matching, row()], clearActivityFilters(f)),
-  ).toHaveLength(2);
+  ).toHaveLength(1);
 });
 it("view shortcuts expose their predicates and clear incompatible tab state", () => {
   let f = activityViewPreset(parseActivityFilters("?view=all"), "inactive");

@@ -287,9 +287,9 @@ export function parseActivityFilters(
     left:
       p.get("left") === "left" || p.get("left") === "1"
         ? "left"
-        : p.get("left") === "current"
-          ? "current"
-          : "all",
+        : p.get("left") === "all"
+          ? "all"
+          : "current",
     noActivity: p.get("no_activity") === "1",
     member: discordId(p.get("member")),
     group: activityGroups.includes(p.get("group") as ActivityGroup)
@@ -347,7 +347,7 @@ export function activityFilterQuery(f: ActivityFilters) {
     p.set("th", [...f.townHalls].sort((a, b) => a - b).join(","));
   if (f.minWeight !== null) p.set("min_weight", String(f.minWeight));
   if (f.maxWeight !== null) p.set("max_weight", String(f.maxWeight));
-  if (f.left !== "all") p.set("left", f.left);
+  if (f.left !== "current") p.set("left", f.left);
   if (f.noActivity) p.set("no_activity", "1");
   if (f.member) p.set("member", f.member);
   if (f.group !== "none") p.set("group", f.group);
@@ -657,10 +657,14 @@ export function appliedActivityFilters(
         .join(", "),
       { clans: [] },
     );
-  if (f.left !== "all")
-    add("left", f.left === "left" ? "Left clan" : "Current clan", {
-      left: "all",
-    });
+  if (f.left !== "current")
+    add(
+      "left",
+      f.left === "left" ? "Left clan" : "Current and recent leavers",
+      {
+        left: "current",
+      },
+    );
   if (f.noActivity)
     add("no_activity", "No activity yet", { noActivity: false });
   return result;

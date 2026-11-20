@@ -57,6 +57,67 @@ const readCount = () =>
 const postCount = () =>
   transport.mock.calls.filter(([path]) => path === "/strikes/tracking/retry")
     .length;
+it("restores a saved query without Membership as current while preserving the view-memory fields", async () => {
+  const memory = new Map<string, unknown>([
+    ["status", "all"],
+    ["scroll", 123],
+    ["selectedAccount", null],
+  ]);
+  const current = {
+    ...account,
+    player_tag: "#P2Y",
+    player_name: "Current fixture",
+  };
+  const left = {
+    ...account,
+    player_tag: "#PQQ",
+    player_name: "Recent leaver fixture",
+    left_clan: true,
+    last_clan_tag: "#Q2Y",
+    current_clan_tag: null,
+  };
+  transport.mockImplementation(async (path: string) =>
+    path.startsWith("/strikes/accounts")
+      ? {
+          accounts: [current, left],
+          clans: [{ tag: "#Q2Y", name: "Local Alpha" }],
+        }
+      : { entries: [], accounts: [], clans: [], total: 0 },
+  );
+  const savedQuery = "activity_view=all&sort=name";
+  await act(async () =>
+    root.render(
+      <StrikesWorkspace
+        permissions={[]}
+        isOwner
+        userId="1"
+        activityState={savedQuery}
+        memory={memory}
+      />,
+    ),
+  );
+  expect(host.textContent).toContain("Current fixture");
+  expect(host.textContent).not.toContain("Recent leaver fixture");
+  await act(async () =>
+    root.render(
+      <StrikesWorkspace
+        permissions={[]}
+        isOwner
+        userId="1"
+        activityState={`${savedQuery}&left=all`}
+        memory={memory}
+      />,
+    ),
+  );
+  expect(host.textContent).toContain("Current fixture");
+  expect(host.textContent).toContain("Recent leaver fixture");
+  expect(memory.get("status")).toBe("all");
+  expect(memory.get("scroll")).toBe(123);
+  expect(memory.get("selectedAccount")).toBeNull();
+  expect(
+    transport.mock.calls.every((call) => !call[1] || call[1] === "GET"),
+  ).toBe(true);
+});
 const clickText = async (text: string, scope: ParentNode = host) => {
   const button = [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
     (node) => node.textContent?.trim() === text,

@@ -270,37 +270,15 @@
   min-width: 0;
   min-height: 44px;
 }
-.members-search-line .members-filter-tools {
-  flex: 0 0 auto;
-  display: block;
+.members-filter-panel,
+.members-sort-options {
+  display: grid;
+  gap: var(--wu-space-3);
+  min-width: 0;
 }
-.members-search-line .members-more-filters {
-  position: static;
-}
-.members-search-line .members-more-filters[open] {
-  padding: 0;
-  border: 0;
-}
-.members-search-line .members-more-filters > summary {
+.members-sort-options > button {
   min-height: 44px;
-  padding: var(--wu-space-1) var(--wu-space-2);
-  box-sizing: border-box;
-  border: 1px solid var(--roster-border);
-  border-radius: var(--wu-radius-sm);
-  white-space: nowrap;
-}
-.members-filter-panel {
-  position: absolute;
-  z-index: 6;
-  top: calc(100% + 4px);
-  right: 0;
-  width: min(300px, calc(100vw - 32px));
-  box-sizing: border-box;
-  border: 1px solid var(--roster-border);
-  border-radius: var(--wu-radius-md);
-  padding: var(--wu-space-5);
-  background: var(--surface, var(--wu-surface-raised));
-  box-shadow: 0 8px 24px #0008; /* keep: shadow */
+  text-align: left;
 }
 .members-range {
   margin: 0;

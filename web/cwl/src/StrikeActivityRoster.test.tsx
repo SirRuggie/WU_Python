@@ -510,11 +510,11 @@ it("keeps Not attacking when applying another filter", async () => {
   expect(active.textContent).toContain("1");
   expect(host.textContent).toContain("Showing 1 of 2");
 });
-it("clears only the panel's own filters and keeps the toolbar's clan and Town Hall", async () => {
+it("clears the panel filters including Clan, Town Hall and non-default Membership", async () => {
   history.replaceState(
     {},
     "",
-    "/strikes?activity_view=all&clans=%23PQQ&th=18&raids=2",
+    "/strikes?activity_view=all&clans=%23PQQ&th=18&raids=2&left=all",
   );
   HTMLDialogElement.prototype.showModal = function () {
     this.open = true;
@@ -531,12 +531,27 @@ it("clears only the panel's own filters and keeps the toolbar's clan and Town Ha
         .find((b) => b.textContent === label)!
         .click(),
     );
-  await press("Filters", host);
+  const trigger = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Filters · 4",
+  )!;
+  expect(trigger).toBeTruthy();
+  expect(host.querySelector(".strike-activity-selectors")).toBeNull();
+  await act(async () => trigger.click());
+  expect(
+    document.querySelector<HTMLSelectElement>('dialog [aria-label="Clan"]')!
+      .value,
+  ).toBe("#PQQ");
+  expect(
+    document.querySelector<HTMLSelectElement>(
+      'dialog [aria-label="Town Hall"]',
+    )!.value,
+  ).toBe("18");
   await press("Clear filters", document.querySelector("dialog")!);
   await press("Apply filters", document.querySelector("dialog")!);
   const params = new URLSearchParams(location.search);
-  expect(params.get("clans")).toBe("#PQQ");
-  expect(params.get("th")).toBe("18");
+  expect(params.has("clans")).toBe(false);
+  expect(params.has("th")).toBe(false);
+  expect(params.has("left")).toBe(false);
   expect(params.has("raids")).toBe(false);
 });
 it("clears extra filters without changing the selected All tab", async () => {

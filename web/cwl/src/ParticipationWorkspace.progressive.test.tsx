@@ -128,6 +128,12 @@ const search = (value: string) =>
   );
 beforeEach(async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
   localStorage.clear();
   sessionStorage.clear();
   fixture.unmounted.length = 0;
@@ -209,9 +215,19 @@ it("pins the active editor during external URL filter changes, including the inc
 it("resets50 for sort, clan, outcome, pool and season and never restores an old large limit", async () => {
   await act(async () => named("Load more").click());
   expect(visible()).toHaveLength(100);
-  await change(
-    host.querySelector<HTMLSelectElement>('select[name="sort"]')!,
-    "stars-desc",
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="Sort: Name A–Z"]')!
+      .click(),
+  );
+  await act(async () =>
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        ".participation-sort-options button",
+      ),
+    ]
+      .find((button) => button.textContent === "Stars high to low")!
+      .click(),
   );
   expect(visible()).toHaveLength(50);
   await act(async () => named("Load more").click());

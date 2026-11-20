@@ -12,6 +12,8 @@ import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
 import StrikeActivityRows from "./StrikeActivityRows";
 import FindSlots from "./FindSlots";
 import SortTrigger from "./rosterUi/SortTrigger";
+import ListToolbar from "./rosterUi/ListToolbar";
+import FiltersTrigger from "./rosterUi/FiltersTrigger";
 import StrikeGroupHeading from "./StrikeGroupHeading";
 import StrikeSortPanel from "./StrikeSortPanel";
 import useCompactPreview from "./useCompactPreview";
@@ -446,14 +448,28 @@ export default function StrikeActivityRoster({
     selected.includes(row.player_tag),
   );
   const clearedFilters = clearActivityFilters(filters);
-  const hasExtraFilters = appliedActivityFilters(
+  const appliedFilters = appliedActivityFilters(
     filters,
     data.clans,
     memberLabel,
-  ).some(
+  );
+  const effectiveFilters = appliedFilters.filter(
     (filter) =>
       JSON.stringify(normalizeActivityView({ ...filters, ...filter.clear })) !==
       JSON.stringify(filters),
+  );
+  const hasExtraFilters = effectiveFilters.length > 0;
+  const panelFilterCount = effectiveFilters.reduce(
+    (total, filter) =>
+      total +
+      (filter.key === "query"
+        ? 0
+        : filter.key === "clans"
+          ? filters.clans.length
+          : filter.key === "th"
+            ? filters.townHalls.length
+            : 1),
+    0,
   );
   useEffect(() => {
     const row = chipsRef.current?.querySelector<HTMLElement>(
@@ -489,38 +505,6 @@ export default function StrikeActivityRoster({
     replacements: "Replacements",
     all: "All",
   } as const;
-  const clanOf = (row: ActivityAccount) =>
-    (row.left_clan ? row.last_clan_tag : row.current_clan_tag) || "";
-  const clanOptions = (
-    historyOnly
-      ? []
-      : [
-          ...data.clans,
-          ...(filters.clans.length === 1 &&
-          !data.clans.some((clan) => clan.tag === filters.clans[0])
-            ? [{ tag: filters.clans[0], name: filters.clans[0] }]
-            : []),
-        ]
-  )
-    .map((clan) => ({
-      tag: clan.tag,
-      name: clan.name,
-      count: data.accounts.filter((row) => clanOf(row) === clan.tag).length,
-    }))
-    .sort((a, b) => a.name.localeCompare(b.name));
-  const hallOptions = [
-    ...new Set([
-      ...data.accounts
-        .map((row) => row.town_hall)
-        .filter((hall): hall is number => !!hall),
-      ...(filters.townHalls.length === 1 ? filters.townHalls : []),
-    ]),
-  ]
-    .sort((a, b) => b - a)
-    .map((hall) => ({
-      hall,
-      count: data.accounts.filter((row) => row.town_hall === hall).length,
-    }));
   const findSlots = filters.view === "replacements" &&
     !historyOnly &&
     !(loading && !data.accounts.length) && (
@@ -588,140 +572,87 @@ export default function StrikeActivityRoster({
       </div>
       {findSlots}
       {detailSlot}
-      <div className="strike-activity-selectors">
-        <label>
-          Membership
-          <select
-            aria-label="Membership"
+      <ListToolbar
+        rootRef={toolbarRef}
+        className="strike-activity-toolbar"
+        sortBeforeFilters
+        search={
+          <>
+            {!onRefreshControl && (
+              <RefreshControl
+                updatedAt={refreshUpdatedAt}
+                busy={loading}
+                disabled={bulkBusy}
+                onRefresh={read}
+                showRefresh={!error}
+              />
+            )}
+            <button
+              ref={searchButton}
+              type="button"
+              className="strike-activity-search-button"
+              aria-label="Find account or member"
+              aria-expanded={searching}
+              onClick={() => {
+                searchFocus.current = "field";
+                setSearchOpen(true);
+                searchInput.current?.focus();
+              }}
+            >
+              <Search size={18} aria-hidden="true" />
+            </button>
+          </>
+        }
+        sort={
+          <div className="roster-ui strike-activity-sort">
+            <SortTrigger
+              disabled={bulkBusy}
+              aria-expanded={!!sortTrigger}
+              label={activitySortLabels[filters.sort]}
+              grouped={
+                filters.group === "none"
+                  ? false
+                  : activityGroupLabels[filters.group]
+              }
+              onClick={(event) => setSortTrigger(event.currentTarget)}
+            />
+          </div>
+        }
+        filters={
+          <FiltersTrigger
+            className="strike-activity-filters-button"
+            count={panelFilterCount}
+            open={!!filterTrigger}
             disabled={bulkBusy}
-            value={filters.left}
-            onChange={(event) =>
-              change({
-                left: event.target.value as ActivityFilters["left"],
-                clans: [],
-                page: 0,
-              })
-            }
-          >
-            <option value="all">Current and recent leavers</option>
-            <option value="current">Current members</option>
-            <option value="left">Left</option>
-          </select>
-        </label>
-        <select
-          aria-label="Clan"
-          value={filters.clans.length > 1 ? "many" : (filters.clans[0] ?? "")}
-          disabled={bulkBusy || historyOnly}
-          onChange={(event) =>
-            change({ clans: event.target.value ? [event.target.value] : [] })
-          }
-        >
-          <option value="">All clans</option>
-          {filters.clans.length > 1 && (
-            <option value="many" disabled>
-              {filters.clans.length} clans
-            </option>
-          )}
-          {clanOptions.map((clan) => (
-            <option key={clan.tag} value={clan.tag}>
-              {clan.name} · {clan.count}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="Town Hall"
-          value={
-            filters.townHalls.length > 1
-              ? "many"
-              : String(filters.townHalls[0] ?? "")
-          }
-          disabled={bulkBusy}
-          onChange={(event) =>
-            change({
-              townHalls: event.target.value ? [Number(event.target.value)] : [],
-            })
-          }
-        >
-          <option value="">Any TH</option>
-          {filters.townHalls.length > 1 && (
-            <option value="many" disabled>
-              {filters.townHalls.length} Town Halls
-            </option>
-          )}
-          {hallOptions.map((option) => (
-            <option key={option.hall} value={option.hall}>
-              TH{option.hall} · {option.count}
-            </option>
-          ))}
-        </select>
-      </div>
-      <div ref={toolbarRef} className="strike-activity-toolbar">
-        {!onRefreshControl && (
-          <RefreshControl
-            updatedAt={refreshUpdatedAt}
-            busy={loading}
-            disabled={bulkBusy}
-            onRefresh={read}
-            showRefresh={!error}
+            onClick={(event) => setFilterTrigger(event.currentTarget)}
           />
-        )}
-        <button
-          ref={searchButton}
-          type="button"
-          className="strike-activity-search-button"
-          aria-label="Find account or member"
-          aria-expanded={searching}
-          onClick={() => {
-            searchFocus.current = "field";
-            setSearchOpen(true);
-            searchInput.current?.focus();
-          }}
-        >
-          <Search size={18} aria-hidden="true" />
-        </button>
-        <div className="roster-ui strike-activity-sort">
-          <SortTrigger
-            disabled={bulkBusy}
-            label={activitySortLabels[filters.sort]}
-            grouped={
-              filters.group === "none"
-                ? false
-                : activityGroupLabels[filters.group]
-            }
-            onClick={(event) => setSortTrigger(event.currentTarget)}
+        }
+        actions={
+          <ActionMenu
+            name="Activity"
+            items={[
+              ...(overviewActions || []),
+              {
+                id: "copy-list",
+                label: "Copy list",
+                separatorBefore: !!overviewActions?.length,
+                disabled: !visible.length,
+                onAction: () => void copyList(),
+              },
+              ...(canManage && !selecting
+                ? [
+                    {
+                      id: "select-accounts",
+                      label: "Select accounts",
+                      disabled: bulkBusy,
+                      onAction: () => setSelecting(true),
+                    },
+                  ]
+                : []),
+            ]}
           />
-        </div>
-        <button
-          className="strike-activity-filters-button"
-          disabled={bulkBusy}
-          onClick={(event) => setFilterTrigger(event.currentTarget)}
-        >
-          Filters
-        </button>
-        <ActionMenu
-          name="Activity"
-          items={[
-            ...(overviewActions || []),
-            {
-              id: "copy-list",
-              label: "Copy list",
-              separatorBefore: !!overviewActions?.length,
-              disabled: !visible.length,
-              onAction: () => void copyList(),
-            },
-            ...(canManage && !selecting
-              ? [
-                  {
-                    id: "select-accounts",
-                    label: "Select accounts",
-                    disabled: bulkBusy,
-                    onAction: () => setSelecting(true),
-                  },
-                ]
-              : []),
-          ]}
-        />
-      </div>
+        }
+      />
       {searching && (
         <div className="strike-activity-search">
           <input
@@ -760,6 +691,7 @@ export default function StrikeActivityRoster({
         <StrikeActivityFiltersPanel
           filters={filters}
           accounts={data.accounts}
+          clans={data.clans}
           trigger={filterTrigger}
           onClose={() => setFilterTrigger(null)}
           onApply={(next) => {
@@ -775,32 +707,30 @@ export default function StrikeActivityRoster({
               {activityRuleText(filters, memberLabel)}
             </p>
             <div className="strike-activity-applied">
-              {appliedActivityFilters(filters, data.clans, memberLabel).map(
-                (filter) => {
-                  const next = normalizeActivityView({
-                    ...filters,
-                    ...filter.clear,
-                  });
-                  // A rule the tab always applies is the rule line above, not a chip.
-                  if (
-                    Object.keys(filter.clear).every(
-                      (key) =>
-                        next[key as keyof ActivityFilters] ===
-                        filters[key as keyof ActivityFilters],
-                    )
+              {appliedFilters.map((filter) => {
+                const next = normalizeActivityView({
+                  ...filters,
+                  ...filter.clear,
+                });
+                // A rule the tab always applies is the rule line above, not a chip.
+                if (
+                  Object.keys(filter.clear).every(
+                    (key) =>
+                      next[key as keyof ActivityFilters] ===
+                      filters[key as keyof ActivityFilters],
                   )
-                    return null;
-                  return (
-                    <button
-                      key={filter.key}
-                      aria-label={`Remove ${filter.label}`}
-                      onClick={() => change(filter.clear)}
-                    >
-                      {filter.label} ×
-                    </button>
-                  );
-                },
-              )}
+                )
+                  return null;
+                return (
+                  <button
+                    key={filter.key}
+                    aria-label={`Remove ${filter.label}`}
+                    onClick={() => change(filter.clear)}
+                  >
+                    {filter.label} ×
+                  </button>
+                );
+              })}
             </div>
             <p
               className="strike-activity-summary"

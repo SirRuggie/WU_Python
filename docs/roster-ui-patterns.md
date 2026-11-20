@@ -324,23 +324,26 @@ computed free-space numbers.
   - Outside family matches only `outside_family_and_hosts`, with the same count, active chip and Clear all behavior as other statuses.
   - Footer: `Reset` + `Show N accounts`. One line explaining OR within a section, AND across sections.
 - **Active filter chips:** removable (`Assigned ✕`) + `Clear all`, above the list.
-- **Tabs, chips and navigation items (B-6, 2026-11-11):** three patterns only; see "Dashboard choice patterns" below.
+- **Tabs, chips, navigation items and list toolbars (B-6, amended 2026-11-20):** four patterns only; see "Dashboard choice patterns" below.
 - **Switch (`rosterUi/Switch`):** for a setting that is on or off and saves at once (World clocks, war reminders). A native checkbox with `role="switch"`, 44px hit area, On/Off text, optional visible label. The caller saves optimistically, rolls back and shows the error beside it on failure. Never use it for a value that waits for a Save button; use a checkbox there. A problem state is red (`problem`), never green. Thumb moves 150ms ease-out; none under reduced motion.
 - **Status pill:** `Draft · not published` / `Published` / `Unpublished changes`, the same height as the buttons beside it.
 - **Undo toast:** `Assigned 5 to W. U. Lazy.127 · Undo`; shows "Undo no longer available" when a later edit invalidates it. aria-live.
 
 ## Dashboard choice patterns (B-6, decided 2026-11-11)
 
-Every group of choices on the dashboard uses one of three patterns. Prompt 191
-introduced A and B; B-6 finished the last groups and added C.
+Every group of choices on the dashboard uses one of four patterns. Prompt 191
+introduced A and B; B-6 added C. Prompt258 adds D under Ruggie's R1 amendment
+(2026-11-20).
 
-| Pattern             | Use                                                                                                                        | Component                                                            | Selected look                                |
-| ------------------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------- | -------------------------------------------- |
-| A. Section tabs     | Switch views inside one page (Strikes, Tasks, Tickets, Moderation, Clan settings, roster views)                            | `SectionTabs`, or `section-tabs section-tabs--flow` on a custom rail | Gold text, gold underline                    |
-| B. Filter chips     | Filter one list (clan type, Town Hall, search kinds)                                                                       | `FilterChips`, `variant="pill"` for pills                            | Gold outline, gold text                      |
-| C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look | `nav-list` class (`navList.css`)                                     | Gold edge, 3px gold left bar, gold bold text |
+| Pattern             | Use                                                                                                                                                                                  | Component                                                                               | Selected look                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| A. Section tabs     | Switch views inside one page (Strikes, Tasks, Tickets, Moderation, Clan settings, roster views)                                                                                      | `SectionTabs`, or `section-tabs section-tabs--flow` on a custom rail                    | Gold text, gold underline                                           |
+| B. Filter chips     | Filter one list (clan type, Town Hall, search kinds)                                                                                                                                 | `FilterChips`, `variant="pill"` for pills                                               | Gold outline, gold text                                             |
+| C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look                                                           | `nav-list` class (`navList.css`)                                                        | Gold edge, 3px gold left bar, gold bold text                        |
+| D. List toolbar     | Optional segmented list scope (All/Main/Lazy, Main/Lazy, All/Main/FWA), Filters and optional Sort in one row; Build roster, Results, Strikes, Members, Declaration check and Tickets | `rosterUi/ListToolbar`, `FiltersTrigger`, `SectionTabs mode="segmented"`, `SortTrigger` | Existing segmented scope treatment; normal Filters and Sort buttons |
 
-- No solid-gold selected state and no segmented control. Unselected navigation items keep the normal button look.
+- No solid-gold selected state. Segmented control only as the scope control in pattern D. Unselected navigation items keep the normal button look.
+- Pattern D keeps full-width search above the controls where the page uses a search field. Results keeps Main/Lazy as underline tabs because the pool changes whole content. Strikes keeps its phone View select and existing search-icon row. Optional slots do not introduce a sort where none exists.
 - Every tab and chip rail scrolls inside its own strip and fades the edge that hides items (`useChoiceRail`, `has-horizontal-fades`). The page never scrolls sideways at 320, 360 and 390px.
 - Targets are at least 44px high.
 - Groups keep `aria-pressed` buttons in a named group. Only Clan settings uses the full ARIA tab pattern with arrow keys. Do not add `role="tab"` without that keyboard behavior (see `dashboard-interaction-standard.md`).

@@ -2019,3 +2019,43 @@ editing, following normal focus settling; it must still fail on any changed draf
 Final density and guard acceptance await that confirmation. All initial source,
 images, statuses and logs remain historical evidence, including the 70 focused and
 2,872 full checks on the preceding freeze.
+
+## List toolbar rollout — B-6 amendment (258, 2026-11-20)
+
+Ruggie accepted R1–R4 through Shaka1239/1240 (`next and approve`); 257 is unused
+and superseded by prompt258. Build only is authorized. Merge and release require
+a later current-head Shaka approval and Ruggie's `release 258` words.
+
+- R1 amends B-6 with pattern D: segmented list scope, Filters and optional Sort in
+  the shared `ListToolbar`, reused by Build roster, Results, Strikes, Members,
+  Declaration check and Tickets. Results pool tabs still switch whole content;
+  its Hosting clan control stays. Build roster's existing row remains the visual
+  and behavior reference.
+- R2 reopens Prompt226 D3/D4: Membership, Clan and Town Hall move into the first
+  Strikes Filters group. Options, counts, legacy multi-value labels, Find slots
+  placement/results and search/history contracts remain. Clear and Reset include
+  Clan and Town Hall.
+- R3 makes Current members the Membership default. Absent `left` means current;
+  explicit `left=all` includes current and recent leavers; `left=left`/`left=1`
+  retain leavers. Old shared links and restored saved queries without `left`
+  therefore change to current members only.
+- R4 applies that default to every view, Replacements included. The 48-hour Left
+  clan rows appear only after selecting Current and recent leavers or Left.
+
+Members retains status pills and active chips; its roles/bots/selected-only
+filters use ActionPanel and Name/Time zone uses SortTrigger. Declaration keeps
+Main/Lazy ready counts, checking progress and unsaved ping-channel confirmation;
+Not ready only and the Lazy not-on-roster control live in Filters. Tickets uses
+All/Main/FWA scope with the existing `type` URL key; Open remains the status
+default, Filters includes status/flag/dates/UTC hint, and the summary names status.
+No new request body, backend, permission, schema or data write is included.
+
+Status: scoped frontend implementation and isolated verification in progress;
+not READY. The clean50e source snapshot is retained for before/after review.
+Required review uses local declaration125/members fixtures, all six affected
+surfaces at360x800/1440x1000 and open Filters panels at360x800, plus320/390 reflow.
+Browser evidence is in-app only (Shaka fallback if needed), with no headless258,
+real-phone, full assistive-technology or live Discord/provider proof inferred.
+
+Later: sort on Declaration check; sort on Tickets (backend); toolbar row on
+Missing weights and Return reminders. Existing Later work remains unchanged.

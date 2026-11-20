@@ -283,17 +283,28 @@
   padding: 0;
 }
 .strike-activity-view-select,
-.strike-activity-selectors select {
+.strike-filter-scope select {
   width: 100%;
   min-width: 0;
   background-color: var(--wu-surface);
   color: var(--wu-text);
 }
-.strike-activity-selectors {
+.strike-filter-scope {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--wu-space-2);
   min-width: 0;
+  border: 0;
+  margin: 0;
+  padding: 0;
+}
+.strike-filter-scope legend {
+  margin-bottom: var(--wu-space-2);
+  font-size: var(--wu-text-sm);
+  color: var(--wu-text-muted);
+}
+.strike-filter-scope select {
+  min-height: 44px;
 }
 
 .strike-activity-applied {
@@ -441,16 +452,11 @@
     gap: var(--wu-space-1) var(--wu-space-3);
   }
   .strike-activity-roster
-    > :not(.strike-activity-chips):not(.strike-activity-selectors):not(
-      .strike-activity-toolbar
-    ):not(.strike-activity-applied):not(.strike-activity-summary) {
+    > :not(.strike-activity-chips):not(.strike-activity-toolbar):not(
+      .strike-activity-applied
+    ):not(.strike-activity-summary) {
     grid-column: 1 / -1;
   }
-  .strike-activity-selectors {
-    grid-template-columns: repeat(2, minmax(0, 200px));
-    justify-content: start;
-  }
-
   .strike-activity-toolbar {
     top: 0;
     grid-column: 1 / -1;
@@ -1012,7 +1018,7 @@
   justify-self: start;
   min-height: 44px;
 }
-.strike-activity-selectors > label {
+.strike-filter-scope > label {
   display: grid;
   align-items: start;
   gap: var(--wu-space-1);
@@ -1037,7 +1043,7 @@
   .strike-slot-results {
     max-height: 55dvh;
   }
-  .strike-activity-selectors {
+  .strike-filter-scope {
     grid-template-columns: minmax(0, 1fr);
   }
 }

@@ -9,6 +9,10 @@ import BonusHelpPanel from "./BonusHelpPanel";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
 import ActionMenu from "./rosterUi/ActionMenu";
+import ActionPanel from "./ActionPanel";
+import ListToolbar from "./rosterUi/ListToolbar";
+import FiltersTrigger from "./rosterUi/FiltersTrigger";
+import SortTrigger from "./rosterUi/SortTrigger";
 import RosterMenu from "./rosterUi/Menu";
 import "./ParticipationWorkspace.css";
 import CwlPoolTabs, { useCwlPool } from "./CwlPoolTabs";
@@ -94,6 +98,8 @@ export default function ParticipationWorkspace({
   const [syncError, setSyncError] = useState("");
   const [recordEpoch, setRecordEpoch] = useState(0);
   const [search, setSearch] = useState("");
+  const [listPanel, setListPanel] = useState<"filters" | "sort" | null>(null);
+  const [listTrigger, setListTrigger] = useState<HTMLElement | null>(null);
   const [storedPool, setStoredPool] = useCwlPool();
   const [urlPool, setUrlPool] = useState<Pool | undefined>(
     initial.current.pool,
@@ -748,51 +754,100 @@ export default function ParticipationWorkspace({
                   placeholder="Name or #TAG…"
                 />
               </label>
-              <label>
-                Sort
-                <select
-                  name="sort"
-                  autoComplete="off"
-                  value={sort}
-                  disabled={controlsLocked}
-                  onChange={(event) => {
-                    const next = event.target.value as ResultsSort;
-                    setSort(next);
-                    emit({ sort: next });
-                  }}
-                >
-                  <option value="name">Name A–Z</option>
-                  <option value="attacks-desc">Attacks high to low</option>
-                  <option value="stars-desc">Stars high to low</option>
-                </select>
-              </label>
             </div>
-            {ruleShown && (
-              <FilterChips
-                label="Outcome"
-                className="participation-outcomes filter-chips--flow"
-                variant="pill"
-                value={activeOutcome}
-                disabled={controlsLocked}
-                options={(["all", ...outcomeOrder] as const)
-                  .filter(
-                    (value) =>
-                      !["did_not_join", "filler", "not_assigned"].includes(
-                        value,
-                      ) ||
-                      counts[value] > 0 ||
-                      activeOutcome === value,
-                  )
-                  .map((value) => ({
-                    value,
-                    label: value === "all" ? "All" : outcomeLabels[value],
-                    count: counts[value],
-                  }))}
-                onChange={(next) => {
-                  setOutcome(next);
-                  emit({ outcome: next });
-                }}
-              />
+            <ListToolbar
+              className="participation-list-toolbar"
+              filters={
+                <FiltersTrigger
+                  count={Number(activeOutcome !== "all")}
+                  open={listPanel === "filters"}
+                  disabled={controlsLocked || !ruleShown}
+                  onClick={(event) => {
+                    setListTrigger(event.currentTarget);
+                    setListPanel("filters");
+                  }}
+                />
+              }
+              sort={
+                <SortTrigger
+                  label={
+                    sort === "attacks-desc"
+                      ? "Attacks high to low"
+                      : sort === "stars-desc"
+                        ? "Stars high to low"
+                        : "Name A–Z"
+                  }
+                  disabled={controlsLocked}
+                  aria-expanded={listPanel === "sort"}
+                  onClick={(event) => {
+                    setListTrigger(event.currentTarget);
+                    setListPanel("sort");
+                  }}
+                />
+              }
+            />
+            {listPanel === "filters" && ruleShown && (
+              <ActionPanel
+                title="Filter results"
+                trigger={listTrigger}
+                onClose={() => setListPanel(null)}
+              >
+                <FilterChips
+                  label="Outcome"
+                  className="participation-outcomes filter-chips--flow"
+                  variant="pill"
+                  value={activeOutcome}
+                  disabled={controlsLocked}
+                  options={(["all", ...outcomeOrder] as const)
+                    .filter(
+                      (value) =>
+                        !["did_not_join", "filler", "not_assigned"].includes(
+                          value,
+                        ) ||
+                        counts[value] > 0 ||
+                        activeOutcome === value,
+                    )
+                    .map((value) => ({
+                      value,
+                      label: value === "all" ? "All" : outcomeLabels[value],
+                      count: counts[value],
+                    }))}
+                  onChange={(next) => {
+                    setOutcome(next);
+                    emit({ outcome: next });
+                  }}
+                />
+              </ActionPanel>
+            )}
+            {listPanel === "sort" && (
+              <ActionPanel
+                title="Sort results"
+                trigger={listTrigger}
+                onClose={() => setListPanel(null)}
+              >
+                <div className="participation-sort-options">
+                  {(
+                    [
+                      ["name", "Name A–Z"],
+                      ["attacks-desc", "Attacks high to low"],
+                      ["stars-desc", "Stars high to low"],
+                    ] as const
+                  ).map(([value, label]) => (
+                    <Button
+                      key={value}
+                      disabled={controlsLocked}
+                      aria-pressed={sort === value}
+                      onClick={() => {
+                        setSort(value);
+                        emit({ sort: value });
+                        setListPanel(null);
+                      }}
+                    >
+                      {label}
+                    </Button>
+                  ))}
+                </div>
+              </ActionPanel>
             )}
             <div className="participation-list-heading">
               <strong>Players</strong>
@@ -801,6 +856,9 @@ export default function ParticipationWorkspace({
                   ? countText(poolAccounts.length, "player")
                   : `${visible.length} of ${countText(poolAccounts.length, "player")}`}{" "}
                 · {poolLabel}
+                {activeOutcome !== "all"
+                  ? ` · ${outcomeLabels[activeOutcome]}`
+                  : ""}
               </span>
             </div>
             {data.accounts.length ? (

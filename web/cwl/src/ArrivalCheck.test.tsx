@@ -83,6 +83,12 @@ beforeEach(() => {
     refresh: vi.fn(),
   };
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
   localStorage.clear();
   vi.spyOn(window, "matchMedia").mockImplementation(
     () =>
@@ -154,9 +160,18 @@ it("filters extra-member clans without changing the pool-wide ping count", async
     .querySelector("[data-ping-count]")
     ?.getAttribute("data-ping-count");
   expect(count).toBe("2");
-  const filter = host.querySelector<HTMLInputElement>(
-    ".declaration-extras-filter input",
-  )!;
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.startsWith("Filters"))!
+      .click(),
+  );
+  const filter = [...document.querySelectorAll("dialog label")]
+    .find((label) =>
+      label.textContent?.includes(
+        "Clans with players who are not on the roster",
+      ),
+    )!
+    .querySelector<HTMLInputElement>("input")!;
   await act(async () => filter.click());
   expect(toggles()).toHaveLength(1);
   expect(toggles()[0].textContent).toContain("Amber");
@@ -184,6 +199,28 @@ const render = async (onFinalize?: () => void) =>
 const toggles = () => [
   ...host.querySelectorAll<HTMLButtonElement>(".declaration-clan-toggle"),
 ];
+it("filters ready clans without changing pool-wide ready counts and exposes a counted ActionPanel", async () => {
+  await render();
+  expect(toggles()).toHaveLength(2);
+  const pools = host.querySelector('[aria-label="CWL pool"]')!;
+  const beforeCounts = pools.textContent;
+  expect(pools.getAttribute("role")).toBe("group");
+  const trigger = [...host.querySelectorAll<HTMLButtonElement>("button")].find(
+    (button) => button.textContent === "Filters",
+  )!;
+  await act(async () => trigger.click());
+  const checkbox = [...document.querySelectorAll("dialog label")]
+    .find((label) => label.textContent === "Not ready only")!
+    .querySelector<HTMLInputElement>("input")!;
+  await act(async () => checkbox.click());
+  expect(toggles()).toHaveLength(1);
+  expect(toggles()[0].textContent).toContain("Blaze");
+  expect(pools.textContent).toBe(beforeCounts);
+  expect(trigger.textContent).toBe("Filters · 1");
+  expect(document.querySelector("dialog")?.textContent).not.toContain(
+    "Clans with players who are not on the roster",
+  );
+});
 it("starts collapsed, counts overfilled ready clans, opens one phone clan and preserves late players", async () => {
   await render();
   expect(host.querySelectorAll(".declaration-player")).toHaveLength(0);
@@ -863,9 +900,18 @@ it("includes unpublished-only clans in both extras filters and the separate top-
   const ping = host
     .querySelector("[data-ping-count]")
     ?.getAttribute("data-ping-count");
-  const filter = host.querySelector<HTMLInputElement>(
-    ".declaration-extras-filter input",
-  )!;
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.startsWith("Filters"))!
+      .click(),
+  );
+  const filter = [...document.querySelectorAll("dialog label")]
+    .find((label) =>
+      label.textContent?.includes(
+        "Clans with players who are not on the roster",
+      ),
+    )!
+    .querySelector<HTMLInputElement>("input")!;
   await act(async () => filter.click());
   expect(toggles()).toHaveLength(1);
   expect(toggles()[0].textContent).toContain("Amber");

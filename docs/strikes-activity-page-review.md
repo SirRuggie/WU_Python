@@ -64,7 +64,6 @@ fail its targeted regression and source must be restored afterward. Final eviden
 is under `.local/p54b-evidence`, with full validation reported only after all gates
 pass. No production release is implied by these fixtures.
 
-
 ## Quarantine review (prompt 56)
 
 Find war always shows a quarantined incident, including saved partial rows. Open
@@ -74,7 +73,6 @@ a reason and confirmation are required, a pending request cannot duplicate, and
 guild-scoped with the existing read grant. Resolving releases the streak hold and
 preserves the audit receipt; it never creates the missing strike. Draft navigation
 uses the same Keep editing/Discard guard as the other editors.
-
 
 ## Prompt 58 corrections
 
@@ -139,7 +137,6 @@ selected accounts, including the next page, are listed. Five isolated real-Mongo
 checks and 76 focused backend regressions pass. The network-isolated full backend
 result is recorded in the final handoff and evidence directory.
 
-
 ### Prompt60 simplification
 
 Daily clan refresh replaces permanent completion and page-wide flags. No-plan FWA
@@ -156,7 +153,6 @@ cooldown; requests never queue behind it. A warm cache stays usable during an
 outage. Empty names cache shows a warning. Select all is disabled above fifty
 accounts with a visible filter instruction; Vitest checks all twenty-six names
 and the Left clan chip. Scheduler tests pin the clock away from month boundaries.
-
 
 Final prompt60 evidence: 5,489 full backend tests and 221 subtests passed, with 26
 optional skips under the network guard; 76 focused tests include the added
@@ -176,8 +172,11 @@ first account. Search opens as its own row under the toolbar; the toolbar stays.
 Find slots stays mounted in one place at every width, so crossing 760 px keeps
 typed weights and results. A search run inside the open panel replaces the history
 entry; Back closes the panel and reopening shows the last weights and results.
-Clear filters in the Filters panel resets only what the panel shows; clan and
-Town Hall stay as the toolbar selects set them.
+Prompt258 (Ruggie 2026-11-20) supersedes the former Clan/Town Hall toolbar
+placement and panel-only Clear scope below: Membership, Clan and Town Hall are
+the first Filters group. Clear and Reset now reset Clan and Town Hall and return
+Membership to Current members. Find slots placement, search and history behavior
+remain as recorded here.
 
 Measured before (read only, 360x800): first account at 469 px (fixture) and 542 px
 (live), 16 controls above it, Filters content 3010 px (live).
@@ -187,11 +186,12 @@ first account row at 420.8 px, Filters content 532 px.
 Follow-up: Discord member search matches name, username or ID; fancy letters fold to plain.
 
 Decisions (Part A, frontend):
+
 1. Phones (760 px and narrower) get one View select with counts; wider screens keep the pills.
 2. Search is an icon; the field replaces the toolbar row, closes with x, and stays open while a query is set.
-3. Clan is a single native select (A-Z, with counts); old links with 2+ clans show "N clans".
-4. Town Hall is a single native select (highest first, with counts); old links show "N Town Halls".
-5. Filters order: Priority chips, Strikes, Raid weekends, Member, Weight, Membership, two checkboxes.
+3. **Superseded by prompt258:** Clan moves into Filters as a single native select (A-Z, with counts); old links with 2+ clans still show "N clans".
+4. **Superseded by prompt258:** Town Hall moves into Filters as a single native select (highest first, with counts); old links still show "N Town Halls".
+5. Prompt258 Filters order: Membership, Clan and Town Hall first; then Priority chips, Strikes, Raid weekends, Member, Weight and two checkboxes. Membership defaults to Current members in every view, Replacements included (Ruggie 2026-11-20). Old shared links and saved queries without `left` now show current members only; `left=all` explicitly includes current and recent leavers, while `left=left` and `left=1` retain leavers. The generic view-memory map has no separate Membership default; restored serialized queries pass through the same parser.
 6. Find slots is a gold button that opens a panel; the panel keeps the last weights and results.
 7. The tracking pill is a text link `N clans need review ›`, or muted `All clans on track`; counts show "…" while loading.
 8. Tracking status: Idle (clan not warring) is its own state; need review = behind + error + private + unverified; scanned late (last check older than 2 x the 10 min scan) is shown separately.

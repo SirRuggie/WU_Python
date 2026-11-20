@@ -57,7 +57,7 @@ it("styles the Tracking status as a gold text link, not a bordered chip", () => 
 it("gives the native selects an explicit background and text colour from tokens", () => {
   const css = block(
     roster,
-    ".strike-activity-view-select,\n.strike-activity-selectors select",
+    ".strike-activity-view-select,\n.strike-filter-scope select",
   );
   expect(css).toMatch(/background-color:\s*var\(--wu-surface\)/);
   expect(css).toMatch(/color:\s*var\(--wu-text\)/);
