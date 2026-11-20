@@ -6,6 +6,14 @@ It does not imply that the proposed CWL layout has been implemented or deployed.
 Update it when a pattern is tested, adopted, changed or rejected. Keep behavior
 and accessibility requirements from the interaction standard authoritative.
 
+## Logo
+
+The official logo master is `assets/branding/logo/WU_Official.png`. Dashboard sizes
+are self-hosted as `web/cwl/public/brand/wu-crest-*` and `public/icons/wu-crest-*`;
+the bot fallback keeps `assets/branding/logo/WU_Logo.png`. New art = new file names
+for cached web URLs. Keep the approved aspect boxes, transparent crest variants
+and opaque OG image; static art stays in the repository, with no R2 upload.
+
 ## Purpose
 
 Make roster work feel like managing a clear list of players rather than navigating

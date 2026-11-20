@@ -1852,7 +1852,7 @@ textarea:focus-visible {
 .channel-combobox {
   min-width: 0;
 }
-/* Self-hosted helmet identity keeps the sidebar's reserved image box. */
+/* Self-hosted WU crest keeps the sidebar's reserved image box. */
 img.site-logo {
   width: calc(39px * 1007 / 1221);
   height: 39px;

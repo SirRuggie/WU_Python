@@ -1957,8 +1957,8 @@ function App() {
             </button>
             <img
               className="topbar-logo"
-              src="/brand/wu-helmet-39.png"
-              srcSet="/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x"
+              src="/brand/wu-crest-39.png"
+              srcSet="/brand/wu-crest-39.png 1x, /brand/wu-crest-78.png 2x, /brand/wu-crest-117.png 3x"
               alt=""
               aria-hidden="true"
               width={26}
@@ -2726,11 +2726,11 @@ function Brand({ large = false }: { large?: boolean }) {
   const image = (
     <img
       className="emblem site-logo"
-      src={large ? "/brand/wu-helmet-120.png" : "/brand/wu-helmet-39.png"}
+      src={large ? "/brand/wu-crest-120.png" : "/brand/wu-crest-39.png"}
       srcSet={
         large
-          ? "/brand/wu-helmet-120.png 1x, /brand/wu-helmet-240.png 2x, /brand/wu-helmet-360.png 3x"
-          : "/brand/wu-helmet-39.png 1x, /brand/wu-helmet-78.png 2x, /brand/wu-helmet-117.png 3x"
+          ? "/brand/wu-crest-120.png 1x, /brand/wu-crest-240.png 2x, /brand/wu-crest-360.png 3x"
+          : "/brand/wu-crest-39.png 1x, /brand/wu-crest-78.png 2x, /brand/wu-crest-117.png 3x"
       }
       alt="Warriors United logo"
       width={large ? 99 : 32}
@@ -2744,16 +2744,16 @@ function Brand({ large = false }: { large?: boolean }) {
           <source
             media="(min-width: 900px)"
             type="image/webp"
-            srcSet="/brand/wu-helmet-160.webp 1x, /brand/wu-helmet-320.webp 2x, /brand/wu-helmet-480.webp 3x"
+            srcSet="/brand/wu-crest-160.webp 1x, /brand/wu-crest-320.webp 2x, /brand/wu-crest-480.webp 3x"
           />
           <source
             type="image/webp"
-            srcSet="/brand/wu-helmet-120.webp 1x, /brand/wu-helmet-240.webp 2x, /brand/wu-helmet-360.webp 3x"
+            srcSet="/brand/wu-crest-120.webp 1x, /brand/wu-crest-240.webp 2x, /brand/wu-crest-360.webp 3x"
           />
           <source
             media="(min-width: 900px)"
             type="image/png"
-            srcSet="/brand/wu-helmet-160.png 1x, /brand/wu-helmet-320.png 2x, /brand/wu-helmet-480.png 3x"
+            srcSet="/brand/wu-crest-160.png 1x, /brand/wu-crest-320.png 2x, /brand/wu-crest-480.png 3x"
           />
           {image}
         </picture>
