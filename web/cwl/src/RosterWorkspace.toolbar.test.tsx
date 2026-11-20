@@ -83,6 +83,18 @@ it("keeps one header Refresh that actually rereads the roster", async () => {
     expect(tabs.getAttribute("role")).toBe("tablist");
     expect(tabs.querySelectorAll('[role="tab"]')).toHaveLength(4);
     const toolbar = host.querySelector(".roster-filters-toolbar")!;
+    expect(toolbar.classList.contains("list-toolbar")).toBe(true);
+    const filtersTrigger = [
+      ...toolbar.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((button) => button.textContent === "Filters")!;
+    expect(filtersTrigger.getAttribute("aria-expanded")).toBe("false");
+    expect([...toolbar.children].map((node) => node.className)).toEqual([
+      expect.stringContaining("roster-ui-input"),
+      expect.stringContaining("roster-list-pool-tabs"),
+      expect.stringContaining("roster-ui-button"),
+      expect.stringContaining("roster-sort-trigger"),
+      "roster-toolbar-signup",
+    ]);
     const pool = toolbar.querySelector('[aria-label="CWL account pool"]')!;
     expect(pool.getAttribute("role")).toBe("group");
     expect(

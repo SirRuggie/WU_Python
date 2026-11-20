@@ -142,10 +142,16 @@ const names = () =>
   ].map((item) => item.querySelector(".player-card-name-text")?.textContent);
 const chip = (label: string) =>
   [
-    ...host.querySelectorAll<HTMLButtonElement>(
+    ...document.querySelectorAll<HTMLButtonElement>(
       ".participation-outcomes button",
     ),
   ].find((button) => button.textContent?.startsWith(label))!;
+const openFilters = () =>
+  act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.startsWith("Filters"))!
+      .click(),
+  );
 
 it("hides the step bar until one hosting clan is selected", async () => {
   await mount();
@@ -223,8 +229,10 @@ it("a status read failure on the All clans view shows Try again where the Lazy c
 
 it("outcome chips count and filter, and the count line uses the selected pool", async () => {
   await mount();
+  expect(host.querySelector(".participation-outcomes")).toBeNull();
+  await openFilters();
   expect(
-    [...host.querySelectorAll(".participation-outcomes button")].map(
+    [...document.querySelectorAll(".participation-outcomes button")].map(
       (button) => button.textContent,
     ),
   ).toEqual([
@@ -242,7 +250,12 @@ it("outcome chips count and filter, and the count line uses the selected pool", 
   expect(chip("Below rule").getAttribute("aria-pressed")).toBe("true");
   expect(
     host.querySelector(".participation-list-heading span")?.textContent,
-  ).toBe("1 of 3 players · Lazy CWL");
+  ).toBe("1 of 3 players · Lazy CWL · Below rule");
+  expect(
+    [...host.querySelectorAll("button")].find((button) =>
+      button.textContent?.startsWith("Filters"),
+    )?.textContent,
+  ).toBe("Filters · 1");
   expect(urlState).toHaveBeenLastCalledWith("pool=lazy&outcome=below", true);
   expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
     true,
@@ -251,16 +264,26 @@ it("outcome chips count and filter, and the count line uses the selected pool", 
 
 it("Sort has three options", async () => {
   await mount();
-  const sort = host.querySelector<HTMLSelectElement>('select[name="sort"]')!;
-  expect([...sort.options].map((option) => option.textContent)).toEqual([
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>('[aria-label="Sort: Name A–Z"]')!
+      .click(),
+  );
+  const options = [
+    ...document.querySelectorAll<HTMLButtonElement>(
+      ".participation-sort-options button",
+    ),
+  ];
+  expect(options.map((option) => option.textContent)).toEqual([
     "Name A–Z",
     "Attacks high to low",
     "Stars high to low",
   ]);
-  await act(async () => {
-    sort.value = "stars-desc";
-    sort.dispatchEvent(new Event("change", { bubbles: true }));
-  });
+  await act(async () =>
+    options
+      .find((button) => button.textContent === "Stars high to low")!
+      .click(),
+  );
   expect(names()).toEqual(["Alpha", "Bravo", "Charlie"]);
   expect(urlState).toHaveBeenLastCalledWith("pool=lazy&sort=stars-desc", true);
 });
@@ -274,8 +297,9 @@ it("URL keys restore pool, clan, outcome and sort, also after Back", async () =>
     host.querySelector<HTMLSelectElement>('select[name="clan"]')!.value,
   ).toBe("#2YQ");
   expect(
-    host.querySelector<HTMLSelectElement>('select[name="sort"]')!.value,
-  ).toBe("attacks-desc");
+    host.querySelector('[aria-label="Sort: Attacks high to low"]'),
+  ).toBeTruthy();
+  await openFilters();
   expect(chip("Meets rule").getAttribute("aria-pressed")).toBe("true");
   expect(names()).toEqual(["Alpha"]);
   expect(urlState).not.toHaveBeenCalled();

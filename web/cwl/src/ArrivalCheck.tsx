@@ -3,7 +3,10 @@ import { countLabel } from "./countLabel";
 import RefreshControl, { type RefreshControlProps } from "./RefreshControl";
 import EmptyState from "./EmptyState";
 import LoadError from "./LoadError";
-import FilterChips from "./FilterChips";
+import SectionTabs from "./SectionTabs";
+import ActionPanel from "./ActionPanel";
+import ListToolbar from "./rosterUi/ListToolbar";
+import FiltersTrigger from "./rosterUi/FiltersTrigger";
 import useConfirmDialog from "./useConfirmDialog";
 import CwlNextLink from "./CwlNextLink";
 import useFillerMarkQueue from "./useFillerMarkQueue";
@@ -75,6 +78,11 @@ export default function ArrivalCheck({
   const [expanded, setExpanded] = useState<string[]>([]);
   const [activeClan, setActiveClan] = useState("");
   const [onlyExtras, setOnlyExtras] = useState(false);
+  const [onlyNotReady, setOnlyNotReady] = useState(false);
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersTrigger, setFiltersTrigger] = useState<HTMLElement | null>(
+    null,
+  );
   const root = useRef<HTMLElement>(null);
   const directTag = useRef(new URLSearchParams(location.search).get("account"));
   const published =
@@ -304,14 +312,15 @@ export default function ArrivalCheck({
   const poolGroups = groups.filter((g) => g.pool === pool);
   const visible = poolGroups.filter(
     (g) =>
-      pool !== "lazy" ||
-      !onlyExtras ||
-      !!extras.data?.clans.find(
-        (c) =>
-          c.tag === g.tag &&
-          c.status === "current" &&
-          (c.count || 0) + (c.unpublished_count || 0) > 0,
-      ),
+      (!onlyNotReady || g.checkingCount > 0 || !g.readiness.ready) &&
+      (pool !== "lazy" ||
+        !onlyExtras ||
+        !!extras.data?.clans.find(
+          (c) =>
+            c.tag === g.tag &&
+            c.status === "current" &&
+            (c.count || 0) + (c.unpublished_count || 0) > 0,
+        )),
   );
   const needle = search.trim().toLowerCase();
   function openClan(key: string) {
@@ -537,16 +546,6 @@ export default function ArrivalCheck({
                       : "No location checks yet"}
                 </span>
               </p>
-              {pool === "lazy" && (
-                <label className="declaration-extras-filter">
-                  <input
-                    type="checkbox"
-                    checked={onlyExtras}
-                    onChange={(e) => setOnlyExtras(e.target.checked)}
-                  />
-                  Clans with players who are not on the roster
-                </label>
-              )}
               {data.arrival.publication_outdated && (
                 <p className="declaration-help">
                   Checking published version {data.arrival.version} · the draft
@@ -559,66 +558,7 @@ export default function ArrivalCheck({
                   <Button onClick={pingAttention.reveal}>View error</Button>
                 </p>
               )}
-              <div className="declaration-toolbar">
-                <FilterChips
-                  className="declaration-pools filter-chips--flow"
-                  label="CWL pool"
-                  options={(["main", "lazy"] as const).map((p) => {
-                    return {
-                      value: p,
-                      label: (
-                        <>
-                          {p === "main" ? "Main" : "Lazy"}
-                          {checking || data.arrival.updating ? (
-                            <>
-                              {" · "}Checking…{" "}
-                              {
-                                hosts.filter(
-                                  (g) =>
-                                    g.pool === p &&
-                                    !locationStatus(g) &&
-                                    g.readiness.ready,
-                                ).length
-                              }{" "}
-                              of {hosts.filter((g) => g.pool === p).length}
-                            </>
-                          ) : hosts.some(
-                              (g) => g.pool === p && !!locationStatus(g),
-                            ) ? null : (
-                            <>
-                              {" · "}
-                              {
-                                hosts.filter(
-                                  (g) => g.pool === p && g.readiness.ready,
-                                ).length
-                              }
-                              /{hosts.filter((g) => g.pool === p).length} ready
-                            </>
-                          )}
-                        </>
-                      ),
-                    };
-                  })}
-                  value={pool}
-                  onChange={async (p) => {
-                    if (pingWorking.current) return;
-                    if (
-                      pingDirty.current &&
-                      !(await confirm(
-                        "Discard the unsaved ping channel change?",
-                        "Discard channel change",
-                      ))
-                    )
-                      return;
-                    pingDirty.current = false;
-                    onDirty(fillerQueue.working);
-                    setPool(p);
-                    setActiveClan("");
-                  }}
-                  variant="pill"
-                  role="group"
-                  revealSelection
-                />
+              <div className="declaration-search">
                 <Input
                   label="Find a player or clan"
                   type="search"
@@ -627,6 +567,115 @@ export default function ArrivalCheck({
                   onChange={(e) => setSearch(e.target.value)}
                 />
               </div>
+              <ListToolbar
+                className="declaration-toolbar"
+                scope={
+                  <SectionTabs
+                    mode="segmented"
+                    className="declaration-pools filter-chips--flow"
+                    label="CWL pool"
+                    items={(["main", "lazy"] as const).map((p) => {
+                      return {
+                        id: p,
+                        label: (
+                          <>
+                            {p === "main" ? "Main" : "Lazy"}
+                            {checking || data.arrival.updating ? (
+                              <>
+                                {" · "}Checking…{" "}
+                                {
+                                  hosts.filter(
+                                    (g) =>
+                                      g.pool === p &&
+                                      !locationStatus(g) &&
+                                      g.readiness.ready,
+                                  ).length
+                                }{" "}
+                                of {hosts.filter((g) => g.pool === p).length}
+                              </>
+                            ) : hosts.some(
+                                (g) => g.pool === p && !!locationStatus(g),
+                              ) ? null : (
+                              <>
+                                {" · "}
+                                {
+                                  hosts.filter(
+                                    (g) => g.pool === p && g.readiness.ready,
+                                  ).length
+                                }
+                                /{hosts.filter((g) => g.pool === p).length}{" "}
+                                ready
+                              </>
+                            )}
+                          </>
+                        ),
+                      };
+                    })}
+                    value={pool}
+                    onChange={async (p) => {
+                      if (pingWorking.current) return;
+                      if (
+                        pingDirty.current &&
+                        !(await confirm(
+                          "Discard the unsaved ping channel change?",
+                          "Discard channel change",
+                        ))
+                      )
+                        return;
+                      pingDirty.current = false;
+                      onDirty(fillerQueue.working);
+                      setPool(p);
+                      setActiveClan("");
+                    }}
+                    revealSelection
+                  />
+                }
+                filters={
+                  <FiltersTrigger
+                    count={
+                      Number(onlyNotReady) +
+                      Number(pool === "lazy" && onlyExtras)
+                    }
+                    open={filtersOpen}
+                    onClick={(event) => {
+                      setFiltersTrigger(event.currentTarget);
+                      setFiltersOpen(true);
+                    }}
+                  />
+                }
+              />
+              {filtersOpen && (
+                <ActionPanel
+                  title="Filter Declaration check"
+                  trigger={filtersTrigger}
+                  onClose={() => setFiltersOpen(false)}
+                >
+                  <div className="declaration-filter-fields">
+                    <label>
+                      <input
+                        type="checkbox"
+                        checked={onlyNotReady}
+                        onChange={(event) =>
+                          setOnlyNotReady(event.target.checked)
+                        }
+                      />
+                      Not ready only
+                    </label>
+                    {pool === "lazy" && (
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={onlyExtras}
+                          onChange={(event) =>
+                            setOnlyExtras(event.target.checked)
+                          }
+                        />
+                        Clans with players who are not on the roster
+                      </label>
+                    )}
+                  </div>
+                </ActionPanel>
+              )}
             </div>
             {visible.map((group) => (
               <DeclarationClan
@@ -692,6 +741,13 @@ export default function ArrivalCheck({
                       extras.data?.clans.some((c) => c.status !== "current")) &&
                       "Some checks are unavailable. "}
                     <Button onClick={() => setOnlyExtras(false)}>
+                      Clear filter
+                    </Button>
+                  </>
+                ) : onlyNotReady ? (
+                  <>
+                    No clans match Not ready only.{" "}
+                    <Button onClick={() => setOnlyNotReady(false)}>
                       Clear filter
                     </Button>
                   </>

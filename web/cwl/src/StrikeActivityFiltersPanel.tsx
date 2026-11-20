@@ -14,17 +14,53 @@ import {
 export default function StrikeActivityFiltersPanel({
   filters,
   accounts,
+  clans,
   trigger,
   onClose,
   onApply,
 }: {
   filters: ActivityFilters;
   accounts: ActivityAccount[];
+  clans: { tag: string; name: string }[];
   trigger: HTMLElement;
   onClose: () => void;
   onApply: (next: ActivityFilters) => void;
 }) {
   const [draft, setDraft] = useState(filters);
+  const historyOnly = draft.left === "left";
+  const clanOptions = (
+    historyOnly
+      ? []
+      : [
+          ...clans,
+          ...(draft.clans.length === 1 &&
+          !clans.some((clan) => clan.tag === draft.clans[0])
+            ? [{ tag: draft.clans[0], name: draft.clans[0] }]
+            : []),
+        ]
+  )
+    .map((clan) => ({
+      ...clan,
+      count: accounts.filter(
+        (row) =>
+          (row.left_clan ? row.last_clan_tag : row.current_clan_tag) ===
+          clan.tag,
+      ).length,
+    }))
+    .sort((a, b) => a.name.localeCompare(b.name));
+  const hallOptions = [
+    ...new Set([
+      ...accounts
+        .map((row) => row.town_hall)
+        .filter((hall): hall is number => !!hall),
+      ...(draft.townHalls.length === 1 ? draft.townHalls : []),
+    ]),
+  ]
+    .sort((a, b) => b - a)
+    .map((hall) => ({
+      hall,
+      count: accounts.filter((row) => row.town_hall === hall).length,
+    }));
   const members = useMemo(() => strikeMemberOptions(accounts), [accounts]);
   const patch = (next: Partial<ActivityFilters>) =>
     setDraft((current) =>
@@ -78,16 +114,7 @@ export default function StrikeActivityFiltersPanel({
           <button disabled={invalidWeight} onClick={() => onApply(draft)}>
             Apply filters
           </button>
-          <button
-            onClick={() =>
-              // Clans and Town Halls belong to the toolbar selects, not this panel.
-              setDraft({
-                ...clearActivityFilters(draft),
-                clans: draft.clans,
-                townHalls: draft.townHalls,
-              })
-            }
-          >
+          <button onClick={() => setDraft(clearActivityFilters(draft))}>
             Clear filters
           </button>
         </>
@@ -99,6 +126,79 @@ export default function StrikeActivityFiltersPanel({
         </p>
       )}
       <div className="strike-activity-more">
+        <fieldset className="strike-filter-scope">
+          <legend>Accounts</legend>
+          <label>
+            Membership
+            <select
+              aria-label="Membership"
+              value={draft.left}
+              onChange={(event) =>
+                patch({
+                  left: event.target.value as ActivityFilters["left"],
+                  clans: [],
+                })
+              }
+            >
+              <option value="all">Current and recent leavers</option>
+              <option value="current">Current members</option>
+              <option value="left">Left</option>
+            </select>
+          </label>
+          <label>
+            Clan
+            <select
+              aria-label="Clan"
+              value={draft.clans.length > 1 ? "many" : (draft.clans[0] ?? "")}
+              disabled={historyOnly}
+              onChange={(event) =>
+                patch({ clans: event.target.value ? [event.target.value] : [] })
+              }
+            >
+              <option value="">All clans</option>
+              {draft.clans.length > 1 && (
+                <option value="many" disabled>
+                  {draft.clans.length} clans
+                </option>
+              )}
+              {clanOptions.map((clan) => (
+                <option key={clan.tag} value={clan.tag}>
+                  {clan.name} · {clan.count}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label>
+            Town Hall
+            <select
+              aria-label="Town Hall"
+              value={
+                draft.townHalls.length > 1
+                  ? "many"
+                  : String(draft.townHalls[0] ?? "")
+              }
+              onChange={(event) =>
+                patch({
+                  townHalls: event.target.value
+                    ? [Number(event.target.value)]
+                    : [],
+                })
+              }
+            >
+              <option value="">Any TH</option>
+              {draft.townHalls.length > 1 && (
+                <option value="many" disabled>
+                  {draft.townHalls.length} Town Halls
+                </option>
+              )}
+              {hallOptions.map((option) => (
+                <option key={option.hall} value={option.hall}>
+                  TH{option.hall} · {option.count}
+                </option>
+              ))}
+            </select>
+          </label>
+        </fieldset>
         <fieldset className="strike-filter-priority">
           <legend>Priority</legend>
           <div>

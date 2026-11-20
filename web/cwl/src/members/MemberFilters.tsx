@@ -1,10 +1,15 @@
 import { searchInputProps } from "../inputProps";
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import FilterChips from "../FilterChips";
 import RoleSelect from "../RoleSelect";
 import type { RoleChoice } from "../CommandExtras";
 import { membersText as t } from "./strings";
 import type { MemberFilters as Filters, MemberStatus } from "./model";
+import ActionPanel from "../ActionPanel";
+import ListToolbar from "../rosterUi/ListToolbar";
+import FiltersTrigger from "../rosterUi/FiltersTrigger";
+import SortTrigger from "../rosterUi/SortTrigger";
+import { Button } from "../rosterUi/primitives";
 import "./Members.css";
 export default function MemberFilters({
   value,
@@ -23,7 +28,11 @@ export default function MemberFilters({
   onSort: (value: "name" | "time_zone") => void;
   onChange: (next: Filters) => void;
 }) {
+  const [panel, setPanel] = useState<"filters" | "sort" | null>(null);
+  const [trigger, setTrigger] = useState<HTMLElement | null>(null);
   const update = (patch: Partial<Filters>) => onChange({ ...value, ...patch });
+  const filterCount =
+    value.roles.length + Number(value.bots) + Number(value.selectedOnly);
   const labels: Record<MemberStatus, string> = {
     all: t.all,
     needs_flag: t.needsFlag,
@@ -49,55 +58,95 @@ export default function MemberFilters({
             onChange={(e) => update({ query: e.target.value })}
           />
         </label>
-        <div className="members-filter-tools">
-          <details
-            className="members-more-filters"
-            onKeyDown={(event) => {
-              if (event.key === "Escape") {
-                event.preventDefault();
-                event.currentTarget.open = false;
-                event.currentTarget
-                  .querySelector<HTMLElement>("summary")
-                  ?.focus();
-              }
-            }}
-          >
-            <summary>{t.moreFilters}</summary>
-            <div className="members-filter-panel">
-              <RoleSelect
-                label={t.roleFilter}
-                roles={[{ id: "none", name: t.noRole }, ...roles]}
-                value=""
-                onChange={(role) => {
-                  if (role && !value.roles.includes(role))
-                    update({ roles: [...value.roles, role] });
-                }}
-              />
-              <label>
-                {t.sortLabel}
-                <select
-                  value={sort}
-                  onChange={(event) =>
-                    onSort(event.target.value as "name" | "time_zone")
-                  }
-                >
-                  <option value="name">{t.sortName}</option>
-                  <option value="time_zone">{t.sortZone}</option>
-                </select>
-              </label>
-              <label className="members-checkbox">
-                <input
-                  type="checkbox"
-                  checked={value.bots}
-                  onChange={(e) => update({ bots: e.target.checked })}
-                />
-                {t.bots}
-              </label>
-            </div>
-          </details>
-        </div>
-        {actions}
       </div>
+      <ListToolbar
+        className="members-filter-tools"
+        filters={
+          <FiltersTrigger
+            count={filterCount}
+            open={panel === "filters"}
+            onClick={(event) => {
+              setTrigger(event.currentTarget);
+              setPanel("filters");
+            }}
+          />
+        }
+        sort={
+          <SortTrigger
+            label={sort === "name" ? "Name" : "Time zone"}
+            aria-expanded={panel === "sort"}
+            onClick={(event) => {
+              setTrigger(event.currentTarget);
+              setPanel("sort");
+            }}
+          />
+        }
+        actions={actions}
+      />
+      {panel === "filters" && (
+        <ActionPanel
+          title="Filter members"
+          trigger={trigger}
+          onClose={() => setPanel(null)}
+        >
+          <div className="members-filter-panel">
+            <RoleSelect
+              label={t.roleFilter}
+              roles={[{ id: "none", name: t.noRole }, ...roles]}
+              value=""
+              onChange={(role) => {
+                if (role && !value.roles.includes(role))
+                  update({ roles: [...value.roles, role] });
+              }}
+            />
+            <label className="members-checkbox">
+              <input
+                type="checkbox"
+                checked={value.bots}
+                onChange={(e) => update({ bots: e.target.checked })}
+              />
+              {t.bots}
+            </label>
+            <label className="members-checkbox">
+              <input
+                type="checkbox"
+                checked={value.selectedOnly}
+                onChange={(event) =>
+                  update({ selectedOnly: event.target.checked })
+                }
+              />
+              {t.selectedOnly}
+            </label>
+          </div>
+        </ActionPanel>
+      )}
+      {panel === "sort" && (
+        <ActionPanel
+          title="Sort members"
+          trigger={trigger}
+          onClose={() => setPanel(null)}
+        >
+          <div className="members-sort-options">
+            {(
+              [
+                ["name", "Name"],
+                ["time_zone", "Time zone"],
+              ] as const
+            ).map(([value, label]) => (
+              <Button
+                key={value}
+                aria-pressed={sort === value}
+                onClick={() => {
+                  onSort(value);
+                  setPanel(null);
+                }}
+              >
+                {label}
+              </Button>
+            ))}
+          </div>
+        </ActionPanel>
+      )}
       <FilterChips
         variant="pill"
         label={t.statusLabel}

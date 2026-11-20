@@ -1,7 +1,7 @@
 import { countLabel } from "./countLabel";
 import RosterFilterOptions from "./RosterFilterOptions";
 import { useEffect, useState, type ReactNode } from "react";
-import { Filter, Search, SlidersHorizontal } from "lucide-react";
+import { Filter, Search } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import type { RosterSnapshot } from "./roster";
 import { parseWeightK } from "./roster";
@@ -13,6 +13,8 @@ import {
   type RosterReleaseStatus,
 } from "./rosterReleaseModel";
 import { Button, Chip, Input } from "./rosterUi/primitives";
+import ListToolbar from "./rosterUi/ListToolbar";
+import FiltersTrigger from "./rosterUi/FiltersTrigger";
 import "./RosterFilters.css";
 
 type Props = {
@@ -157,30 +159,34 @@ export default function RosterFilters({
 
   return (
     <div className="roster-filters roster-ui">
-      <div className="roster-filters-toolbar">
-        <Input
-          label="Search accounts"
-          type="search"
-          icon={Search}
-          value={value.search}
-          disabled={disabled}
-          spellCheck={false}
-          autoComplete="off"
-          placeholder="Name, player tag or Discord ID"
-          onChange={(event) =>
-            onChange({ ...value, search: event.target.value })
-          }
-        />
-        {poolControl}
-        <Button
-          icon={SlidersHorizontal}
-          disabled={disabled}
-          onClick={(event) => openPanel(event.currentTarget)}
-        >
-          Filters{count ? ` (${count})` : ""}
-        </Button>
-        {children}
-      </div>
+      <ListToolbar
+        className="roster-filters-toolbar"
+        search={
+          <Input
+            label="Search accounts"
+            type="search"
+            icon={Search}
+            value={value.search}
+            disabled={disabled}
+            spellCheck={false}
+            autoComplete="off"
+            placeholder="Name, player tag or Discord ID"
+            onChange={(event) =>
+              onChange({ ...value, search: event.target.value })
+            }
+          />
+        }
+        scope={poolControl}
+        filters={
+          <FiltersTrigger
+            count={count}
+            open={open}
+            disabled={disabled}
+            onClick={(event) => openPanel(event.currentTarget)}
+          />
+        }
+        actions={children}
+      />
       {(count > 0 || !!value.search.trim()) && (
         <div
           className="roster-filters-active"

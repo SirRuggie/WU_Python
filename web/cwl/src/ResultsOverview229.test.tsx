@@ -194,11 +194,14 @@ describe("season overview", () => {
     ])
       expect(text).not.toContain(removed);
   });
-  it("puts the player search and Sort on one row", async () => {
+  it("puts the full-width search above the shared Filters and Sort row", async () => {
     await mount();
     const row = host.querySelector(".participation-toolbar")!;
     expect(row.querySelector('input[name="search"]')).not.toBeNull();
-    expect(row.querySelector('select[name="sort"]')).not.toBeNull();
+    const toolbar = host.querySelector(".participation-list-toolbar")!;
+    expect(toolbar.querySelector(".roster-sort-trigger")).not.toBeNull();
+    expect(toolbar.textContent).toContain("Filters");
+    expect(row.nextElementSibling).toBe(toolbar);
     expect(row.querySelector('select[name="clan"]')).toBeNull();
     expect(row.textContent).toContain("Find a player");
     expect(row.textContent).not.toContain("Find a player or clan");

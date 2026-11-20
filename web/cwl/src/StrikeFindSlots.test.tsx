@@ -440,13 +440,23 @@ it("uses the explicit Left history endpoint, excludes normal clan counts, and re
       .mock.calls.some(([path]) => path === "/strikes/accounts?activity=true"),
   ).toBe(true);
   expect(host.textContent).not.toContain("History leaver");
-  const membership = host.querySelector<HTMLSelectElement>(
-    'select[aria-label="Membership"]',
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.startsWith("Filters"))!
+      .click(),
+  );
+  const membership = document.querySelector<HTMLSelectElement>(
+    'dialog select[aria-label="Membership"]',
   )!;
   await act(async () => {
     membership.value = "left";
     membership.dispatchEvent(new Event("change", { bubbles: true }));
   });
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>("dialog button")]
+      .find((button) => button.textContent === "Apply filters")!
+      .click(),
+  );
   expect(
     vi
       .mocked(api)
@@ -456,9 +466,15 @@ it("uses the explicit Left history endpoint, excludes normal clan counts, and re
   ).toBe(true);
   expect(host.textContent).toContain("History leaver");
   expect(host.textContent).toContain("Last clan");
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((button) => button.textContent?.startsWith("Filters"))!
+      .click(),
+  );
   expect(
-    host.querySelector<HTMLSelectElement>('select[aria-label="Clan"]')!
-      .disabled,
+    document.querySelector<HTMLSelectElement>(
+      'dialog select[aria-label="Clan"]',
+    )!.disabled,
   ).toBe(true);
 });
 it("keeps the same slot section mounted around an inline detail slot", async () => {
@@ -675,7 +691,7 @@ it.each([false, true])(
       return payload as never;
     });
     const state = (history: boolean) =>
-      `activity_view=all${history ? "&left=left" : ""}`;
+      `activity_view=all${history ? "&left=left" : "&left=all"}`;
     await act(async () =>
       root.render(
         <StrikeActivityRoster

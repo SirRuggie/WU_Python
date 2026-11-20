@@ -57,15 +57,23 @@
 }
 .participation-toolbar {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(160px, auto);
   gap: var(--wu-space-2);
   margin: var(--wu-space-3) 0;
 }
 .participation-toolbar label {
   min-width: 0;
 }
-.participation-toolbar select {
-  width: 100%;
+.participation-list-toolbar {
+  align-items: center;
+  margin-bottom: var(--wu-space-2);
+}
+.participation-sort-options {
+  display: grid;
+  gap: var(--wu-space-2);
+}
+.participation-sort-options > button {
+  min-height: 44px;
+  text-align: left;
 }
 .participation-list-heading {
   display: flex;

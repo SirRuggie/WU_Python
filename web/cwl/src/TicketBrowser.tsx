@@ -1,6 +1,6 @@
 import { searchInputProps } from "./inputProps";
 import EmptyState from "./EmptyState";
-import { formatDateTime } from "./format";
+import { formatDateTime, formatNumber } from "./format";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
 import RefreshControl, { useRefreshTime } from "./RefreshControl";
@@ -10,8 +10,11 @@ import TicketConversation from "./TicketConversation";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import "./TicketBrowser.css";
-import { countLabel } from "./countLabel";
 import { parsePageParam, replacePageParam } from "./pageUrlState";
+import ActionPanel from "./ActionPanel";
+import SectionTabs from "./SectionTabs";
+import ListToolbar from "./rosterUi/ListToolbar";
+import FiltersTrigger from "./rosterUi/FiltersTrigger";
 export type Ticket = {
   id: string;
   number: number;
@@ -31,6 +34,10 @@ const when = (value: string | null) =>
     ? formatDateTime(new Date(value), { timeZone: "UTC" })
     : "Date unavailable";
 export default function TicketBrowser() {
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filtersTrigger, setFiltersTrigger] = useState<HTMLElement | null>(
+    null,
+  );
   const [status, setStatus] = useState(() =>
       parsePageParam("tickets", "status", window.location.search),
     ),
@@ -109,6 +116,8 @@ export default function TicketBrowser() {
   }, [selected, status, kind, flag, query, from, to, page, reload]);
   const updatedAt = useRefreshTime(busy, true, error);
   const extraFilters = Number(flag !== "all") + Number(!!from) + Number(!!to);
+  const filterCount = Number(status !== "open") + extraFilters;
+  const statusLabel = `${status === "all" ? "All" : statusName(status)} tickets`;
   const clearFilters = () => {
     setSearch("");
     setQuery("");
@@ -161,93 +170,112 @@ export default function TicketBrowser() {
             onChange={(e) => setSearch(e.target.value)}
           />
         </label>
-        <label>
-          Status
-          <select
-            value={status}
-            onChange={(e) => {
-              setStatus(e.target.value);
-              replacePageParam("tickets", "status", e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="open">Open tickets</option>
-            <option value="all">All tickets</option>
-            <option value="approved">Approved</option>
-            <option value="denied">Denied</option>
-            <option value="closed">Closed tickets</option>
-          </select>
-        </label>
-        <label>
-          Type
-          <select
-            value={kind}
-            onChange={(e) => {
-              setKind(e.target.value);
-              replacePageParam("tickets", "type", e.target.value);
-              setPage(1);
-            }}
-          >
-            <option value="all">Main and FWA</option>
-            <option value="main">Main</option>
-            <option value="fwa">FWA</option>
-          </select>
-        </label>
       </div>
-      <details className="ticket-date-filter">
-        <summary>
-          More filters{extraFilters ? ` · ${extraFilters} active` : ""}
-        </summary>
-        <div>
-          <label>
-            Applicant flag
-            <select
-              value={flag}
-              onChange={(e) => {
-                setFlag(e.target.value);
-                setPage(1);
-              }}
-            >
-              <option value="all">All flags</option>
-              <option value="blacklisted">Blacklisted</option>
-              <option value="denied_before">Previously denied</option>
-              <option value="not_loyal">Not loyal to WU</option>
-              <option value="ghosted">Ghosted</option>
-              <option value="flew_the_coop">Flew the Coop</option>
-            </select>
-          </label>
-          <label>
-            From
-            <input
-              type="date"
-              value={from}
-              onChange={(e) => {
-                setFrom(e.target.value);
-                setPage(1);
-              }}
-            />
-          </label>
-          <label>
-            To
-            <input
-              type="date"
-              value={to}
-              onChange={(e) => {
-                setTo(e.target.value);
-                setPage(1);
-              }}
-            />
-          </label>
-          <small>Dates use UTC.</small>
-        </div>
-      </details>
+      <ListToolbar
+        className="ticket-toolbar"
+        scope={
+          <SectionTabs
+            mode="segmented"
+            label="Ticket type"
+            items={[
+              { id: "all", label: "All" },
+              { id: "main", label: "Main" },
+              { id: "fwa", label: "FWA" },
+            ]}
+            value={kind}
+            onChange={(next) => {
+              setKind(next);
+              replacePageParam("tickets", "type", next);
+              setPage(1);
+            }}
+          />
+        }
+        filters={
+          <FiltersTrigger
+            count={filterCount}
+            open={filtersOpen}
+            onClick={(event) => {
+              setFiltersTrigger(event.currentTarget);
+              setFiltersOpen(true);
+            }}
+          />
+        }
+      />
+      {filtersOpen && (
+        <ActionPanel
+          title="Filter tickets"
+          trigger={filtersTrigger}
+          onClose={() => setFiltersOpen(false)}
+        >
+          <div className="ticket-filter-fields">
+            <label>
+              Status
+              <select
+                value={status}
+                onChange={(event) => {
+                  setStatus(event.target.value);
+                  replacePageParam("tickets", "status", event.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="open">Open tickets</option>
+                <option value="all">All tickets</option>
+                <option value="approved">Approved</option>
+                <option value="denied">Denied</option>
+                <option value="closed">Closed tickets</option>
+              </select>
+            </label>
+            <label>
+              Applicant flag
+              <select
+                value={flag}
+                onChange={(e) => {
+                  setFlag(e.target.value);
+                  setPage(1);
+                }}
+              >
+                <option value="all">All flags</option>
+                <option value="blacklisted">Blacklisted</option>
+                <option value="denied_before">Previously denied</option>
+                <option value="not_loyal">Not loyal to WU</option>
+                <option value="ghosted">Ghosted</option>
+                <option value="flew_the_coop">Flew the Coop</option>
+              </select>
+            </label>
+            <label>
+              From
+              <input
+                type="date"
+                value={from}
+                onChange={(e) => {
+                  setFrom(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </label>
+            <label>
+              To
+              <input
+                type="date"
+                value={to}
+                onChange={(e) => {
+                  setTo(e.target.value);
+                  setPage(1);
+                }}
+              />
+            </label>
+            <small>Dates use UTC.</small>
+          </div>
+        </ActionPanel>
+      )}
       <div className="ticket-list-summary">
         <span>
+          {statusLabel}
           {busy
-            ? "Loading…"
+            ? " · Loading…"
             : error
               ? ""
-              : `${countLabel(tickets.length, "ticket")} on this page`}
+              : ` · ${formatNumber(tickets.length)} on this page`}
         </span>
         {(search ||
           status !== "open" ||

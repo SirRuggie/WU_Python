@@ -55,7 +55,7 @@ async function mount(url: string) {
   );
 }
 const select = (label: string) =>
-  host.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
+  document.querySelector<HTMLSelectElement>(`select[aria-label="${label}"]`)!;
 const choose = async (node: HTMLSelectElement, value: string) =>
   act(async () => {
     node.value = value;
@@ -218,6 +218,7 @@ it("a query in the URL keeps the search field open", async () => {
 
 it("Clan and Town Hall selects list A–Z clans and used halls with counts and write one value", async () => {
   await mount("/strikes?activity_view=all");
+  await openFilters();
   const clan = select("Clan");
   expect([...clan.options].map((option) => option.textContent)).toEqual([
     "All clans",
@@ -231,18 +232,23 @@ it("Clan and Town Hall selects list A–Z clans and used halls with counts and w
     "TH17 · 2",
   ]);
   await choose(clan, "#PQQ");
-  expect(params().get("clans")).toBe("#PQQ");
   await choose(select("Town Hall"), "17");
+  expect(params().get("clans")).toBeNull();
+  await applyFilters();
+  expect(params().get("clans")).toBe("#PQQ");
   expect(params().get("th")).toBe("17");
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(1);
+  await openFilters();
   await choose(select("Clan"), "");
   await choose(select("Town Hall"), "");
+  await applyFilters();
   expect(params().get("clans")).toBeNull();
   expect(params().get("th")).toBeNull();
 });
 
 it("old links with 2+ clans or Town Halls show N clans / N Town Halls and keep them until a new selection", async () => {
   await mount("/strikes?activity_view=all&clans=%23PQQ,%23PRR&th=17,18");
+  await openFilters();
   const clan = select("Clan");
   const hall = select("Town Hall");
   expect(clan.selectedOptions[0].textContent).toBe("2 clans");
@@ -252,8 +258,10 @@ it("old links with 2+ clans or Town Halls show N clans / N Town Halls and keep t
   expect(host.querySelectorAll(".strike-activity-row")).toHaveLength(3);
   expect(params().get("clans")).toBe("#PQQ,#PRR");
   await choose(clan, "#PRR");
+  await applyFilters();
   expect(params().get("clans")).toBe("#PRR");
   expect(params().get("th")).toBe("17,18");
+  await openFilters();
   expect(select("Clan").selectedOptions[0].textContent).toBe("Atlas · 1");
   expect(select("Town Hall").selectedOptions[0].textContent).toBe(
     "2 Town Halls",
@@ -262,26 +270,38 @@ it("old links with 2+ clans or Town Halls show N clans / N Town Halls and keep t
 
 it("a single clan or Town Hall in the URL is the selected value", async () => {
   await mount("/strikes?activity_view=all&clans=%23PRR&th=18");
+  await openFilters();
   expect(select("Clan").value).toBe("#PRR");
   expect(select("Town Hall").value).toBe("18");
 });
 
+const applyFilters = async () => {
+  await act(async () =>
+    [...document.querySelectorAll<HTMLButtonElement>("dialog button")]
+      .find((node) => node.textContent === "Apply filters")!
+      .click(),
+  );
+};
 const openFilters = async () => {
   await act(async () =>
     [...host.querySelectorAll<HTMLButtonElement>("button")]
-      .find((node) => node.textContent === "Filters")!
+      .find((node) => node.textContent?.startsWith("Filters"))!
       .click(),
   );
   return document.querySelector<HTMLElement>("dialog .strike-activity-more")!;
 };
 
-it("the Filters panel has no clan or Town Hall controls and keeps the decided order", async () => {
+it("the Filters panel puts Membership, Clan and Town Hall first and keeps the remaining decided order", async () => {
   await mount("/strikes?activity_view=all");
   const more = await openFilters();
   const text = document.querySelector("dialog")!.textContent!;
-  expect(text).not.toContain("Find clan");
-  expect(text).not.toContain("Town halls");
-  expect(text).not.toMatch(/\bClans\b/);
+  expect(text).toContain("Accounts");
+  expect(
+    [...more.querySelectorAll(".strike-filter-scope select")].map((node) =>
+      node.getAttribute("aria-label"),
+    ),
+  ).toEqual(["Membership", "Clan", "Town Hall"]);
+  expect(select("Membership").value).toBe("current");
   const heading = (node: Element) =>
     node.matches(".strike-filter-priority")
       ? "Priority"
@@ -293,6 +313,7 @@ it("the Filters panel has no clan or Town Hall controls and keeps the decided or
             ? `Checkbox: ${node.textContent}`
             : node.firstChild!.textContent!.trim();
   expect([...more.children].map(heading)).toEqual([
+    "Accounts",
     "Priority",
     "Strikes",
     "Raid weekends without attacking",
