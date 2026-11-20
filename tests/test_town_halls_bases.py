@@ -23,6 +23,35 @@ def v2():
     return store.set_base_field(registry(), 19, "merged.link", LINK)
 
 
+@pytest.mark.parametrize("path", ["non_merged.link", "non_merged.instructions", "non_merged.upgrade_notes"])
+def test_below_th16_nonmerged_write_rejected_without_mutating_readable_legacy(path):
+    doc = v2()
+    doc["levels"]["12"]["bases"] = {"non_merged": {"link": LINK}}
+    before = deepcopy(doc)
+    store.validate(doc)  # Existing documents remain readable; no migration.
+    with pytest.raises(ValueError, match="^Non-merged bases start at Town Hall 16\\.$"):
+        store.set_base_field(doc, 12, path, LINK if path.endswith("link") else "notes")
+    assert doc == before
+
+
+def test_th16_nonmerged_and_below_th16_merged_paths_keep_existing_contract():
+    doc = registry()
+    doc["levels"]["16"] = {"emoji": ""}
+    doc = store.set_base_field(doc, 16, "non_merged.link", LINK)
+    doc = store.set_base_field(doc, 12, "merged.link", LINK)
+    assert doc["levels"]["16"]["bases"]["non_merged"]["link"] == LINK
+    assert doc["levels"]["12"]["bases"]["merged"]["link"] == LINK
+
+
+def test_owner_cas_cannot_bypass_below_th16_path_rule(monkeypatch):
+    collection = install(monkeypatch)
+    before = deepcopy(collection.row)
+    with pytest.raises(ValueError, match="Non-merged bases start at Town Hall 16"):
+        run(store.save_base_fields(object(), 123, 12, {'non_merged.link': LINK},
+                                   {'non_merged.link': {'exists': False}}, 456))
+    assert collection.row == before and collection.calls == []
+
+
 def run(value):
     return asyncio.run(value)
 

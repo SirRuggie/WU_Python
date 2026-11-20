@@ -101,6 +101,22 @@ An emoji/weight/minimum Save keeps the existing global revision CAS and stamps
 
 ## Bases in schema2 (245)
 
+### One base below TH16 (253)
+
+Merged defenses start at `MERGED_DEFENSES_FROM` (16). Below that level, the
+dashboard shows one **Base** section using the existing `bases.merged.*` fields;
+there is no Non-merged editor section. Its list status is “Shown to members” or
+“Hidden from members”, based on the saved merged link. TH16 and above retain
+both variant sections. The dashboard and Discord reuse `variant_label` for
+visible labels; member cards below TH16 have no variant word.
+
+`set_base_field` rejects every `non_merged.*` write below TH16 with
+“Non-merged bases start at Town Hall 16.” The HTTP adapter returns the normal
+400 response. Existing documents remain valid and readable: validation does not
+reject old stored fields, and this change performs no migration or data write.
+Field keys, explicit Save, field-original checks and revision-CAS paths remain
+unchanged. Dashboard read-only/admin-only/base-only permissions still apply.
+
 Each level may have `bases.war_image` and `bases.active_image`, shared by Merged
 and Non-merged. `bases.merged` and `bases.non_merged` each hold optional `link`,
 `instructions` and `upgrade_notes`. Links are Clash OpenLayout HTTPS URLs; images

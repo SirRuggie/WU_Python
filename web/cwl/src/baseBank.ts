@@ -2,6 +2,7 @@ export type BankBase = {
   key: string;
   town_hall: number;
   variant: "merged" | "non-merged";
+  variant_label?: string;
   link: string | null;
   war_base_image: string | null;
   has_details: boolean;
@@ -34,5 +35,7 @@ export function defaultTownHall(
   return available.find((th) => linked?.includes(th)) ?? available[0] ?? null;
 }
 export function variantLabel(base: BankBase) {
-  return base.variant === "merged" ? "Merged" : "Non-merged";
+  return (
+    base.variant_label ?? (base.variant === "merged" ? "Merged" : "Non-merged")
+  );
 }

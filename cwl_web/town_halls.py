@@ -52,8 +52,12 @@ def document(doc, item=None, *, readonly=False, can_weight=True, can_bases=False
     for record in records:
         if record.get('list_group') == 'fwa':
             stored = doc['levels'][record['id']].get('bases', {})
-            shown = [label for key, label in [('merged', 'Merged'), ('non_merged', 'Non-merged')] if stored.get(key, {}).get('link')]
-            record['bases_meta'] = ' · '.join(shown) or 'Hidden from members'
+            level = int(record['id'])
+            if level < registry.MERGED_DEFENSES_FROM:
+                record['bases_meta'] = 'Shown to members' if stored.get('merged', {}).get('link') else 'Hidden from members'
+            else:
+                shown = [registry.variant_label(level, key) for key in ('merged', 'non_merged') if stored.get(key, {}).get('link')]
+                record['bases_meta'] = ' · '.join(shown) or 'Hidden from members'
     result['documents'] = records
     if item is None:
         return result
@@ -150,6 +154,10 @@ async def save(request):
             can_weight, can_bases = await bases.permissions(actor, db)
             before = document(current, item, can_weight=can_weight, can_bases=can_bases)
             values = body['values']
+            if can_bases and before.get('partial_save'):
+                for key in values:
+                    if key.startswith(bases.PREFIX):
+                        registry.validate_base_path(int(item), key[len(bases.PREFIX):])
             allowed = {entry['key'] for entry in before['fields'] if not entry.get('readonly')}
             if not values or not set(values) <= allowed:
                 raise web.HTTPForbidden(text='You cannot change these Town Hall fields.')

@@ -202,6 +202,47 @@ it("keeps Town Hall in accessible names while showing only the variant tag", asy
     "Base image not available yet",
   );
 });
+it.each([
+  [12, "", "TH12", "TH12 war base", "Copy TH12 base"],
+  [
+    19,
+    "Merged",
+    "TH19 Merged",
+    "TH19 merged war base",
+    "Copy TH19 merged base",
+  ],
+] as const)(
+  "uses the API's shared variant label for TH%s",
+  async (level, label, title, alt, copy) => {
+    mock.api.mockResolvedValue({
+      bases: [
+        {
+          ...bases[0],
+          key: `th${level}`,
+          town_hall: level,
+          variant: "merged",
+          variant_label: label,
+          war_base_image: "https://example.com/base.png",
+        },
+      ],
+    });
+    await mount([level]);
+    expect(host.querySelector("article")?.getAttribute("aria-label")).toBe(
+      title,
+    );
+    expect(
+      host.querySelector(".base-bank-image img")?.getAttribute("alt"),
+    ).toBe(alt);
+    expect(
+      host.querySelector(".base-bank-copy")?.getAttribute("aria-label"),
+    ).toBe(copy);
+    expect(host.querySelector(".base-bank-tags")?.textContent).toBe(
+      label || title,
+    );
+    if (!label) expect(host.textContent).not.toMatch(/Merged|Non-merged/);
+    expect(mock.api).toHaveBeenCalledTimes(1);
+  },
+);
 it("late linked accounts choose their TH but cannot override an explicit selection", async () => {
   await mount(null);
   await act(async () => root.render(<BaseBank townHalls={[17]} />));

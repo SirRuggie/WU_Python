@@ -18,10 +18,12 @@ def fields(doc, level, *, editable):
     result = []
     for path in registry.BASE_PATHS:
         parts = path.split('.')
+        if level < registry.MERGED_DEFENSES_FROM and parts[0] == 'non_merged':
+            continue
         value = item.get(parts[0], {}).get(parts[1], '') if len(parts) == 2 else item.get(path, '')
         image = path in ('war_image', 'active_image')
         text = path.endswith(('instructions', 'upgrade_notes'))
-        group = 'Base images' if image else 'Merged' if parts[0] == 'merged' else 'Non-merged'
+        group = 'Base images' if image else registry.variant_label(level, parts[0]) or 'Base'
         label = {'war_image': 'War base image', 'active_image': 'Active base image',
                  'link': 'Base link', 'instructions': 'Base instructions', 'upgrade_notes': 'Upgrade notes'}[parts[-1]]
         field = dict(key=PREFIX + path, label=label, value=value,
@@ -39,15 +41,16 @@ def decorate(document, doc, level, *, can_weight, can_bases):
     """Saved metadata drives section status; drafts never affect visibility."""
     document['base_management'] = True
     document['partial_save'] = True
-    document['section_readonly'] = {'Town Hall': not can_weight, 'Base images': not can_bases,
-                                    'Merged': not can_bases, 'Non-merged': not can_bases}
     document['fields'] += fields(doc, level, editable=can_bases)
+    document['section_readonly'] = {field['group']: not can_weight if field['group'] == 'Town Hall' else not can_bases
+                                    for field in document['fields']}
     for field in document['fields']:
         if field.get('group') == 'Town Hall':
             field['readonly'] = not can_weight
     bases = doc['levels'][str(level)].get('bases', {})
-    document['base_status'] = {'Merged': bool(bases.get('merged', {}).get('link')),
-                               'Non-merged': bool(bases.get('non_merged', {}).get('link'))}
+    variants = ('merged',) if level < registry.MERGED_DEFENSES_FROM else ('merged', 'non_merged')
+    document['base_status'] = {registry.variant_label(level, variant) or 'Base': bool(bases.get(variant, {}).get('link'))
+                               for variant in variants}
     document['base_originals'] = {PREFIX + path: registry.base_field_snapshot(doc, level, path)
                                   for path in registry.BASE_PATHS}
     return document

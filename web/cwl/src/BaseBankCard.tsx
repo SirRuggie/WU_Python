@@ -55,17 +55,18 @@ export default function BaseBankCard({
     };
   }, [open, base.key, retry, onDenied]);
   const label = variantLabel(base),
-    link = baseLink(base.link);
+    link = baseLink(base.link),
+    title = [`TH${base.town_hall}`, label].filter(Boolean).join(" "),
+    description = [`TH${base.town_hall}`, label.toLowerCase()]
+      .filter(Boolean)
+      .join(" ");
   return (
-    <article
-      className="base-bank-card"
-      aria-label={`TH${base.town_hall} ${label}`}
-    >
+    <article className="base-bank-card" aria-label={title}>
       <div className="base-bank-image">
         {base.war_base_image && !imageFailed ? (
           <img
             src={base.war_base_image}
-            alt={`TH${base.town_hall} ${label.toLowerCase()} war base`}
+            alt={`${description} war base`}
             width={480}
             height={300}
             loading="lazy"
@@ -79,7 +80,7 @@ export default function BaseBankCard({
       </div>
       <div className="base-bank-card-body">
         <div className="base-bank-tags">
-          <span>{label}</span>
+          <span>{label || title}</span>
         </div>
         {link ? (
           <a
@@ -87,7 +88,7 @@ export default function BaseBankCard({
             href={link}
             target="_blank"
             rel="noopener noreferrer"
-            aria-label={`Copy TH${base.town_hall} ${label.toLowerCase()} base`}
+            aria-label={`Copy ${description} base`}
           >
             Copy base
           </a>
