@@ -84,14 +84,11 @@ it("filters the real Compare view to league Y then sorts without losing chosen l
         />,
       ),
     );
-    const refresh = host.querySelector<HTMLButtonElement>(
-      '.compare-header button[aria-label="Refresh"][aria-busy="true"]',
-    )!;
     expect(
       host.querySelector('[aria-label="Sort: Weight: high to low"]'),
     ).not.toBeNull();
-    expect(refresh).not.toBeNull();
-    expect(refresh.disabled).toBe(true);
+    expect(host.querySelector(".compare-header")).toBeNull();
+    expect(host.querySelector('[aria-label="Refresh"]')).toBeNull();
     await act(async () => button("Filters").click());
     const checkbox = [
       ...document.querySelectorAll('input[type="checkbox"]'),

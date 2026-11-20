@@ -484,3 +484,71 @@ it("routes cold departed lineup players through metadata merge and later reads",
   await render({ accounts: snapshot.accounts });
   expect(host.querySelector(".weight-queue-row input")).not.toBeNull();
 });
+
+it("defaults to All, scopes missing counts, sorts and retains filtered drafts without saving", async () => {
+  const props = await render({
+    accounts: [
+      { ...accounts[0], tag: "#Z", player_name: "Zed", town_hall: 15 },
+      { ...accounts[1], tag: "#A", player_name: "Ada", town_hall: 17 },
+    ],
+  });
+  expect(button("All").getAttribute("aria-pressed")).toBe("true");
+  expect(rows()[0].textContent).toContain("Ada");
+  await type(input(), "25000");
+  await click(button("Main"));
+  expect(host.textContent).toContain("Needs weight · 1");
+  expect(rows()[0].textContent).toContain("Zed");
+  await click(button("All"));
+  expect(input().value).toBe("25000");
+  await click(button("Sort: Highest TH first"));
+  await click(button("Name A–Z", document));
+  expect(rows()[0].textContent).toContain("Ada");
+  expect(props.onSave).not.toHaveBeenCalled();
+});
+
+it("keeps rendered group order, details order and next-focus aligned across TH inversions", async () => {
+  const onOrderChange = vi.fn();
+  const props = await render({
+    accounts: [
+      {
+        ...accounts[0],
+        tag: "#HIGH",
+        player_name: "High manual",
+        town_hall: 18,
+      },
+      {
+        ...accounts[1],
+        tag: "#FWA",
+        player_name: "Low FWA",
+        town_hall: 8,
+        clan_weight_managed: true,
+      },
+      {
+        ...accounts[2],
+        tag: "#NEXT",
+        player_name: "Next manual",
+        town_hall: 12,
+      },
+    ],
+    onOrderChange,
+  });
+  expect(
+    rows().map(
+      (row) => row.querySelector(".weight-queue-name button")?.textContent,
+    ),
+  ).toEqual(["Low FWA", "High manual", "Next manual"]);
+  expect(onOrderChange).toHaveBeenLastCalledWith(["#FWA", "#HIGH", "#NEXT"]);
+  await type(input(1), "25000");
+  await click(button("Save", rows()[1]));
+  expect(props.onSave).toHaveBeenCalledExactlyOnceWith("#HIGH", 125000);
+  expect(document.activeElement).toBe(input(2));
+});
+
+it("keeps view-only scope and sort available in archived seasons", async () => {
+  const props = await render({ archived: true });
+  expect(button("Main").disabled).toBe(false);
+  expect(button("Sort: Highest TH first").disabled).toBe(false);
+  await click(button("Main"));
+  expect(rows().every((row) => row.textContent?.includes("Main"))).toBe(true);
+  expect(props.onSave).not.toHaveBeenCalled();
+});

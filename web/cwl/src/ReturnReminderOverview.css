@@ -135,3 +135,13 @@
   text-decoration: underline;
   text-underline-offset: 3px;
 }
+
+.return-search-line {
+  display: block;
+}
+.return-search-line > label {
+  width: 100%;
+}
+.return-list-toolbar {
+  margin-block: var(--wu-space-2);
+}

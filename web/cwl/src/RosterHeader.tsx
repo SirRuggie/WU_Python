@@ -219,7 +219,7 @@ export default function RosterHeader({
       <div className="roster-header-overview">
         <span className="roster-header-counts">
           {roster
-            ? `${accounts.length} signups · ${unplaced} unplaced · ${missingWeight} no weight${pool !== "all" && missingWeight !== poolMissingWeight ? " (all pools)" : ""}`
+            ? `${accounts.length}${pool === "all" ? "" : pool === "main" ? " Main" : " Lazy"} signups · ${unplaced} unplaced · ${missingWeight} no weight${pool !== "all" ? " (all pools)" : ""}`
             : "Loading roster…"}
         </span>
         <div className="roster-header-status-line">

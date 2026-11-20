@@ -1,5 +1,5 @@
 // @vitest-environment happy-dom
-import { act, useEffect, useState } from "react";
+import { act, useEffect, useState, type ReactNode } from "react";
 import { createRoot } from "react-dom/client";
 import { afterEach, expect, it, vi } from "vitest";
 import RosterWorkspace from "./RosterWorkspace";
@@ -56,13 +56,16 @@ vi.mock("./SignupActivity", () => ({ default: () => null }));
 vi.mock("./CompareClans", () => ({ default: () => <p>Comparison opened</p> }));
 vi.mock("./ClanSettings", () => ({
   default: ({
+    toolbarScope,
     onDirty,
     onHostingBusy,
   }: {
+    toolbarScope: ReactNode;
     onDirty: (dirty: boolean) => void;
     onHostingBusy: (busy: boolean) => void;
   }) => (
     <>
+      {toolbarScope}
       <button onClick={() => onDirty(true)}>Edit clan setting</button>
       <button onClick={() => onHostingBusy(true)}>Begin save</button>
     </>
@@ -291,16 +294,16 @@ it("defers a clan pool switch and runs the chosen pool after Discard", async () 
       ),
     );
     await act(async () => button("Edit clan setting").click());
-    await act(async () => button("Lazy CWL").click());
-    expect(button("Main CWL").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button("Lazy").click());
+    expect(button("Main").getAttribute("aria-pressed")).toBe("true");
     expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
       "You have unsaved roster changes.",
     );
     await act(async () => button("Keep editing").click());
-    expect(button("Main CWL").getAttribute("aria-pressed")).toBe("true");
-    await act(async () => button("Lazy CWL").click());
+    expect(button("Main").getAttribute("aria-pressed")).toBe("true");
+    await act(async () => button("Lazy").click());
     await act(async () => button("Discard").click());
-    expect(button("Lazy CWL").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Lazy").getAttribute("aria-pressed")).toBe("true");
     expect(confirm).not.toHaveBeenCalled();
   } finally {
     await act(async () => root.unmount());
@@ -344,10 +347,10 @@ it("does not discard a queued pool change if a save starts before confirmation",
       ),
     );
     await act(async () => button("Edit clan setting").click());
-    await act(async () => button("Lazy CWL").click());
+    await act(async () => button("Lazy").click());
     await act(async () => button("Begin save").click());
     await act(async () => button("Discard").click());
-    expect(button("Main CWL").getAttribute("aria-pressed")).toBe("true");
+    expect(button("Main").getAttribute("aria-pressed")).toBe("true");
     expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
       "Wait for the save to finish.",
     );

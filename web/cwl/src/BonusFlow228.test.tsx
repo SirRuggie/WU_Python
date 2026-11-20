@@ -1380,11 +1380,11 @@ describe("Results & bonuses page: clan steps half", () => {
   it("changing the pool asks first when the page has an unsaved count", async () => {
     await mount();
     await typeCount("4");
-    await act(async () => poolTab("Main CWL").click());
+    await act(async () => poolTab("Main").click());
     const dialog = document.querySelector(".confirm-dialog")!;
     expect(dialog).not.toBeNull();
     await act(async () => button("Cancel", dialog).click());
-    expect(poolTab("Lazy CWL").getAttribute("aria-selected")).toBe("true");
+    expect(poolTab("Lazy").getAttribute("aria-pressed")).toBe("true");
     expect(urlState).not.toHaveBeenCalled();
     expect(writes()).toHaveLength(0);
   });

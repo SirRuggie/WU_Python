@@ -195,21 +195,15 @@ it("Escape with unsaved review edits asks before closing and writes nothing", as
   expect(writes()).toHaveLength(0);
 });
 
-it("links every workflow pool tab to one labelled panel without mounting inactive content", async () => {
-  const tabs = [
-    ...host.querySelectorAll<HTMLButtonElement>('#bonus-pools [role="tab"]'),
-  ];
-  expect(tabs).toHaveLength(2);
-  for (const tab of tabs) {
-    const panel = document.getElementById(tab.getAttribute("aria-controls")!)!;
-    expect(panel).toBeTruthy();
-    expect(panel.getAttribute("aria-labelledby")).toBe(tab.id);
-    expect(panel.hidden).toBe(tab.getAttribute("aria-selected") !== "true");
-    if (panel.hidden) expect(panel.textContent).toBe("");
-  }
+it("uses a controlled pressed-button pool group without inactive tab panels", async () => {
+  const group = host.querySelector("#bonus-pools")!;
+  expect(group.getAttribute("role")).toBe("group");
+  const buttons = [...group.querySelectorAll<HTMLButtonElement>("button")];
+  expect(buttons).toHaveLength(2);
   expect(
-    host.querySelectorAll('[id^="bonus-pools-panel-"]:not([hidden])'),
+    buttons.filter((item) => item.getAttribute("aria-pressed") === "true"),
   ).toHaveLength(1);
+  expect(group.querySelector('[role="tab"]')).toBeNull();
   expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
     true,
   );
@@ -235,14 +229,18 @@ it("pool tabs keep a dirty candidate and make no read or write when discard is c
   });
   const requests = api.mock.calls.length;
   await act(async () =>
-    host.querySelector<HTMLButtonElement>("#bonus-pools-tab-main")!.click(),
+    [...host.querySelectorAll<HTMLButtonElement>("#bonus-pools button")]
+      .find((item) => item.textContent === "Main")!
+      .click(),
   );
   expect(document.querySelector(".confirm-dialog")).toBeTruthy();
   await act(async () =>
     button("Cancel", document.querySelector(".confirm-dialog")!).click(),
   );
   expect(
-    host.querySelector("#bonus-pools-tab-lazy")?.getAttribute("aria-selected"),
+    [...host.querySelectorAll<HTMLButtonElement>("#bonus-pools button")]
+      .find((item) => item.textContent === "Lazy")
+      ?.getAttribute("aria-pressed"),
   ).toBe("true");
   expect(input.value).toBe("Keep this candidate edit");
   expect(api.mock.calls.length).toBe(requests);

@@ -7,7 +7,8 @@ import {
   settingsWeight,
   weightKeystroke,
 } from "./clanSettingsModel";
-import { useEffect, useId, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode } from "react";
+import ListToolbar from "./rosterUi/ListToolbar";
 import { Check } from "lucide-react";
 import type { Pool } from "./api";
 import type { RosterAccount, RosterClan } from "./roster";
@@ -25,6 +26,8 @@ import "./RosterClanChips.css";
 import "./ClanSettings.css";
 
 type Props = {
+  toolbarScope?: ReactNode;
+  toolbarActions?: ReactNode;
   focusClanTag?: string | null;
   focusClanRequest?: number;
   onFocusHandled?: () => void;
@@ -78,11 +81,20 @@ export default function ClanSettings(props: Props) {
     <section className="roster-ui clan-settings" aria-label="Hosting clans">
       {props.onHostingChanged && props.onHostingBusy && !props.archived && (
         <HostingClanControls
+          toolbarScope={props.toolbarScope}
+          toolbarActions={props.toolbarActions}
           clans={props.clans}
           onChanged={props.onHostingChanged}
           onBusy={props.onHostingBusy}
           onFamily={props.onFamily}
           disabled={props.busy || !!tag}
+        />
+      )}
+      {(!props.onHostingChanged || !props.onHostingBusy || props.archived) && (
+        <ListToolbar
+          className="hosting-list-toolbar"
+          scope={props.toolbarScope}
+          actions={props.toolbarActions}
         />
       )}
       {moved && (

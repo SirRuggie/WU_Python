@@ -64,6 +64,7 @@
   min-width: 0;
 }
 .participation-list-toolbar {
+  flex-wrap: nowrap;
   align-items: center;
   margin-bottom: var(--wu-space-2);
 }
@@ -289,5 +290,35 @@
 @media (max-width: 650px) {
   .participation-dialog {
     padding: var(--wu-space-4);
+  }
+}
+
+/* Match Accounts: scope plus two 44px icon controls remain one row on phones. */
+@media (max-width: 650px) {
+  .participation-list-toolbar {
+    gap: var(--wu-space-1);
+  }
+  .shell .participation-list-toolbar > .cwl-pool-tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .participation-list-toolbar > .participation-filters-trigger,
+  .participation-list-toolbar > .roster-sort-trigger {
+    box-sizing: border-box;
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .participation-filters-trigger > span,
+  .participation-list-toolbar > .roster-sort-trigger > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
   }
 }
