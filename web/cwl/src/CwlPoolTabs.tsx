@@ -26,24 +26,24 @@ export default function CwlPoolTabs({
   value,
   onChange,
   disabled = false,
-  mode = "segmented",
+  compactLabels = false,
   id,
 }: {
   value: Pool;
   onChange: (pool: Pool) => void;
   disabled?: boolean;
-  mode?: "tabs" | "segmented";
+  compactLabels?: boolean;
   id?: string;
 }) {
   return (
     <SectionTabs
-      mode={mode}
+      mode="segmented"
       id={id}
       className="cwl-pool-tabs section-tabs--flow"
       label="CWL group"
       items={[
-        { id: "main", label: "Main CWL" },
-        { id: "lazy", label: "Lazy CWL" },
+        { id: "main", label: compactLabels ? "Main" : "Main CWL" },
+        { id: "lazy", label: compactLabels ? "Lazy" : "Lazy CWL" },
       ]}
       value={value}
       onChange={onChange}

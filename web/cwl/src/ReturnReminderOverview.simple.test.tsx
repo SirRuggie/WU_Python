@@ -304,7 +304,7 @@ it("formats supported frequencies as words", () => {
     "Every 2 hours",
   ]);
 });
-it("shows Select all only after a clan tick and keeps filters in the disclosure", async () => {
+it("shows Select all only after a clan tick and keeps filters in the shared panel", async () => {
   vi.mocked(api).mockResolvedValue({
     fields: [],
     channels: [],
@@ -314,9 +314,8 @@ it("shows Select all only after a clan tick and keeps filters in the disclosure"
     root.render(<ReturnReminderOverview onOpen={vi.fn()} />),
   );
   expect(host.querySelector(".return-select-all")).toBeNull();
-  expect(host.querySelector(".members-more-filters summary")?.textContent).toBe(
-    "Filters",
-  );
+  expect(button("Filters").getAttribute("aria-expanded")).toBe("false");
+  expect(host.querySelector(".members-more-filters")).toBeNull();
   await press(host.querySelector(".return-clan-name input")!);
   expect(host.querySelector(".members-bulk-bar")).not.toBeNull();
   expect(button("Select all")).toBeTruthy();

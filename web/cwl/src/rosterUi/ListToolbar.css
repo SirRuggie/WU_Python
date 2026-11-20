@@ -20,3 +20,121 @@
     flex-basis: 100%;
   }
 }
+
+/* Build roster and return list scopes share the Accounts row at narrow widths. */
+.compare-list-toolbar,
+.hosting-list-toolbar,
+.weight-queue-toolbar,
+.return-list-toolbar {
+  flex-wrap: nowrap;
+  align-items: center;
+}
+.compare-list-toolbar > *,
+.hosting-list-toolbar > *,
+.weight-queue-toolbar > *,
+.return-list-toolbar > * {
+  min-width: 0;
+}
+.compare-list-toolbar .section-tabs,
+.hosting-list-toolbar .section-tabs,
+.weight-queue-toolbar .section-tabs,
+.return-list-toolbar .section-tabs {
+  flex: 0 1 auto;
+}
+.compare-list-toolbar .section-tabs button,
+.hosting-list-toolbar .section-tabs button,
+.weight-queue-toolbar .section-tabs button,
+.return-list-toolbar .section-tabs button {
+  min-width: 44px;
+  padding-inline: 8px;
+}
+.compare-list-toolbar .roster-toolbar-signup,
+.hosting-list-toolbar .roster-toolbar-signup,
+.weight-queue-toolbar .roster-toolbar-signup {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+@media (max-width: 650px) {
+  .compare-list-toolbar,
+  .hosting-list-toolbar,
+  .weight-queue-toolbar,
+  .return-list-toolbar {
+    gap: 6px;
+  }
+  .hosting-add-trigger {
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+  }
+  .hosting-add-trigger span {
+    display: none;
+  }
+  .compare-list-toolbar .roster-sort-trigger span,
+  .weight-queue-toolbar .roster-sort-trigger span {
+    display: none;
+  }
+  .compare-list-toolbar .roster-sort-trigger,
+  .weight-queue-toolbar .roster-sort-trigger {
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+  }
+}
+
+@media (max-width: 650px) {
+  .compare-list-toolbar .compare-filters-trigger {
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+  }
+  .compare-filters-trigger > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}
+
+.shell .list-toolbar > .section-tabs {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0;
+  margin: 0;
+  border: 1px solid var(--roster-border);
+  border-radius: var(--roster-radius-control);
+}
+.shell .list-toolbar > .section-tabs > button {
+  min-width: 44px;
+  min-height: 44px;
+}
+@media (max-width: 650px) {
+  .shell .compare-list-toolbar > .section-tabs > button,
+  .shell .hosting-list-toolbar > .section-tabs > button,
+  .shell .weight-queue-toolbar > .section-tabs > button {
+    padding-inline: 4px;
+    font-size: 12px;
+  }
+}
+.bonus-pool-toolbar {
+  margin-block: var(--wu-space-3);
+}
+
+@media (max-width: 650px) {
+  .return-list-toolbar .return-filters-trigger {
+    width: 44px;
+    min-width: 44px;
+    padding-inline: 0;
+  }
+  .return-filters-trigger > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+}

@@ -1,5 +1,6 @@
 import { identifierInputProps, searchInputProps } from "./inputProps";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import ListToolbar from "./rosterUi/ListToolbar";
 import useChoiceRail from "./useChoiceRail";
 import "./SectionTabs.css";
 import "./ChoiceGroupLayout.css";
@@ -21,12 +22,16 @@ export function availableFamily(clans: Choice[], hosts: RosterClan[]) {
 }
 export default function HostingClanControls({
   clans,
+  toolbarScope,
+  toolbarActions,
   onChanged,
   onBusy,
   onFamily,
   disabled,
 }: {
   clans: RosterClan[];
+  toolbarScope?: ReactNode;
+  toolbarActions?: ReactNode;
   onChanged: () => Promise<void>;
   onBusy: (value: boolean) => void;
   onFamily?: () => void;
@@ -128,7 +133,14 @@ export default function HostingClanControls({
       setBusy(false);
     }
   }
-  if (!allowed) return null;
+  if (!allowed)
+    return toolbarScope || toolbarActions ? (
+      <ListToolbar
+        className="hosting-list-toolbar"
+        scope={toolbarScope}
+        actions={toolbarActions}
+      />
+    ) : null;
   const matches = availableFamily(family, clans).filter((item) =>
     `${item.name} ${item.tag}`
       .toLowerCase()
@@ -136,21 +148,32 @@ export default function HostingClanControls({
   );
   return (
     <>
-      <button
-        ref={trigger}
-        type="button"
-        className="roster-ui roster-ui-button is-secondary"
-        disabled={disabled || busy}
-        onClick={() => {
-          setMode("family");
-          setSearch("");
-          setTag("");
-          setNotice("");
-          setOpen(true);
-        }}
-      >
-        <Plus size={18} aria-hidden="true" /> Add hosting clan
-      </button>
+      <ListToolbar
+        className="hosting-list-toolbar"
+        scope={toolbarScope}
+        actions={
+          <>
+            <button
+              ref={trigger}
+              type="button"
+              className="roster-ui roster-ui-button is-secondary hosting-add-trigger"
+              aria-label="Add hosting clan"
+              disabled={disabled || busy}
+              onClick={() => {
+                setMode("family");
+                setSearch("");
+                setTag("");
+                setNotice("");
+                setOpen(true);
+              }}
+            >
+              <Plus size={18} aria-hidden="true" />{" "}
+              <span>Add hosting clan</span>
+            </button>
+            {toolbarActions}
+          </>
+        }
+      />
       {notice && <p role="status">{notice}</p>}
       {!open && error && <p role="alert">{error}</p>}
       {open && (

@@ -2057,8 +2057,8 @@ surfaces at360x800/1440x1000 and open Filters panels at360x800, plus320/390 refl
 Browser evidence is in-app only (Shaka fallback if needed), with no headless258,
 real-phone, full assistive-technology or live Discord/provider proof inferred.
 
-Later: sort on Declaration check; sort on Tickets (backend); toolbar row on
-Missing weights and Return reminders. Existing Later work remains unchanged.
+Later: sort on Declaration check; sort on Tickets (backend). Missing weights
+and Return reminders toolbar work is implemented by batch 262 below. Other Later work remains unchanged.
 
 ## Signup reminders S1–S7 — 2026-11-20 (batch 260)
 
@@ -2082,3 +2082,22 @@ the review artifact; a mocked fixture is not proof of live Discord delivery.
 
 Later: backend “bot” wording in reminder responses (`sync_note`); tab/pool/message
 in the URL; rendered title line for custom emoji tokens in the Title field.
+
+## Toolbar follow-up — 2026-11-20 (batch 262)
+
+Ruggie at 21:57 UTC requested matching Build roster styling for Compare clans and
+Hosting clans, and asked why signup counts differed. At 22:01 UTC he approved:
+“I want the signup button same place like the accounts and signups page, that
+looks really clean.” Add signup therefore occupies the end of the one-row toolbar
+on every Build roster tab, once per page and with the existing permission rules.
+
+The header now names the selected pool: `147 Lazy signups · 1 unplaced · 15 no
+weight (all pools)`; All retains `170 signups · …`. The underlying counts do not
+change. Compare/Hosting use segmented Main/Lazy, Missing weights uses local
+All/Main/Lazy and sort, Results/Bonus retire underline Main/Lazy, and Return
+reminders adopts pattern D with a Status panel. The member Sign up form is unchanged.
+
+Status: implemented for isolated review; check and native evidence are recorded
+in the short batch report. No merge, release or live delivery is asserted here.
+Existing request bodies, pool discard guards, comparison swipe/rail behavior,
+permission checks and URL contracts remain in scope for regression verification.

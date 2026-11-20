@@ -5,24 +5,6 @@
   margin: 0;
   min-width: 0;
 }
-.return-toolbar,
-.return-toolbar > div:last-child {
-  display: flex;
-  gap: var(--wu-space-2);
-  align-items: center;
-  flex-wrap: wrap;
-}
-.return-toolbar {
-  justify-content: space-between;
-}
-.return-toolbar .workflow-tabs {
-  flex: 1;
-  margin: 0;
-}
-.return-toolbar .workflow-tabs button {
-  display: flex;
-  gap: var(--wu-space-2);
-}
 .return-date-fields {
   display: grid;
   grid-template-columns: 2fr 1fr;
@@ -118,12 +100,6 @@
   .return-date-fields,
   .return-clan-row {
     grid-template-columns: minmax(0, 1fr);
-  }
-  .return-toolbar {
-    align-items: stretch;
-  }
-  .return-toolbar > div {
-    width: 100%;
   }
 }
 .return-overview fieldset > .return-maintenance {

@@ -291,8 +291,8 @@ it("Sort has three options", async () => {
 it("URL keys restore pool, clan, outcome and sort, also after Back", async () => {
   await mount("pool=lazy&clan=%232YQ&outcome=meets&sort=attacks-desc");
   expect(
-    host.querySelector('.cwl-pool-tabs [aria-selected="true"]')?.textContent,
-  ).toBe("Lazy CWL");
+    host.querySelector('.cwl-pool-tabs [aria-pressed="true"]')?.textContent,
+  ).toBe("Lazy");
   expect(
     host.querySelector<HTMLSelectElement>('select[name="clan"]')!.value,
   ).toBe("#2YQ");
@@ -318,8 +318,8 @@ it("URL keys restore pool, clan, outcome and sort, also after Back", async () =>
     ),
   );
   expect(
-    host.querySelector('.cwl-pool-tabs [aria-selected="true"]')?.textContent,
-  ).toBe("Main CWL");
+    host.querySelector('.cwl-pool-tabs [aria-pressed="true"]')?.textContent,
+  ).toBe("Main");
   expect(
     host.querySelector<HTMLSelectElement>('select[name="clan"]')!.value,
   ).toBe("all");

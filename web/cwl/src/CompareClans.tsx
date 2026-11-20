@@ -1,4 +1,6 @@
-import RefreshControl from "./RefreshControl";
+import ListToolbar from "./rosterUi/ListToolbar";
+import FiltersTrigger from "./rosterUi/FiltersTrigger";
+import type { ReactNode } from "react";
 import LoadError from "./LoadError";
 import useCompareRail from "./useCompareRail";
 import useSwipeNavigation from "./useSwipeNavigation";
@@ -11,7 +13,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import { ArrowLeft, ArrowRight, SlidersHorizontal } from "lucide-react";
+import { ArrowLeft, ArrowRight } from "lucide-react";
 import RosterMenu from "./rosterUi/Menu";
 import ActionMenu from "./rosterUi/ActionMenu";
 import ActionPanel from "./ActionPanel";
@@ -34,6 +36,8 @@ import {
 import "./CompareClans.css";
 
 type Props = {
+  toolbarScope?: ReactNode;
+  toolbarActions?: ReactNode;
   onOrderChange?: (tags: string[]) => void;
   memory: ComparisonMemory;
   pool: Pool;
@@ -52,6 +56,8 @@ const playerSortOptions: { value: RosterSort; label: string }[] = [
   { value: "time_zone", label: "Time zone" },
 ];
 export default function CompareClans({
+  toolbarScope,
+  toolbarActions,
   memory,
   onOrderChange,
   pool,
@@ -98,7 +104,6 @@ export default function CompareClans({
     checking,
     error: locationError,
     now,
-    checkedAt,
     published,
     refresh,
   } = useComparisonLocations(
@@ -250,49 +255,39 @@ export default function CompareClans({
   return (
     <section
       className="compare-workspace card roster-ui page-wide"
-      aria-labelledby="compare-title"
+      aria-label="Compare clans"
     >
-      <header className="compare-header">
-        <div>
-          <h2 id="compare-title">Compare clans</h2>
-          <small>
-            {pool === "main" ? "Main" : "Lazy"} CWL · {visibleClans.length}{" "}
-            shown
-          </small>
-        </div>
+      <ListToolbar
+        className="compare-list-toolbar"
+        scope={toolbarScope}
+        filters={
+          <FiltersTrigger
+            className="compare-filters-trigger"
+            count={filterCount}
+            open={panel === "filters"}
+            disabled={busy}
+            onClick={(event) => openPanel("filters", event.currentTarget)}
+          />
+        }
+        sort={
+          <SortTrigger
+            disabled={busy}
+            label={
+              playerSortOptions.find((option) => option.value === sort)!.label
+            }
+            onClick={(event) => openPanel("sort", event.currentTarget)}
+          />
+        }
+        actions={toolbarActions}
+      />
+      <div className="compare-summary">
+        <span>{visibleClans.length} shown ·</span>
         <Button
           disabled={busy || !allClans.length}
           onClick={(event) => openPanel("clans", event.currentTarget)}
         >
           Select clans ({clans.length})
         </Button>
-        <RefreshControl
-          updatedAt={checkedAt}
-          busy={checking}
-          disabled={busy}
-          onRefresh={refresh}
-          showRefresh={!locationError}
-        />
-      </header>
-      <div
-        className="compare-toolbar"
-        role="group"
-        aria-label="Comparison filters and status"
-      >
-        <Button
-          icon={SlidersHorizontal}
-          disabled={busy}
-          onClick={(event) => openPanel("filters", event.currentTarget)}
-        >
-          Filters{filterCount ? ` (${filterCount})` : ""}
-        </Button>
-        <SortTrigger
-          disabled={busy}
-          label={
-            playerSortOptions.find((option) => option.value === sort)!.label
-          }
-          onClick={(event) => openPanel("sort", event.currentTarget)}
-        />
       </div>
       <LoadError
         message={locationError || ""}

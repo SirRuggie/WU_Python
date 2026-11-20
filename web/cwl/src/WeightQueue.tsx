@@ -2,7 +2,11 @@ import { searchInputProps } from "./inputProps";
 import { RefreshButton } from "./RefreshControl";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { usesClanWeights } from "./clanWeightPolicy";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
+import SectionTabs from "./SectionTabs";
+import ListToolbar from "./rosterUi/ListToolbar";
+import SortTrigger from "./rosterUi/SortTrigger";
+import ActionPanel from "./ActionPanel";
 import { Button } from "./rosterUi/primitives";
 import { compactWeightState } from "./CompactWeightField";
 import type { ManualWeightDraft } from "./manualWeight";
@@ -11,6 +15,7 @@ import WeightQueueRow from "./WeightQueueRow";
 import "./WeightQueue.css";
 
 type Props = {
+  toolbarActions?: ReactNode;
   onOrderChange?: (tags: string[]) => void;
   onClanWeights?: (player?: string, clan?: string) => void;
   onDirty?: (dirty: boolean) => void;
@@ -26,6 +31,7 @@ type Props = {
 const emptyDraft: ManualWeightDraft = { unit: "loot", text: "" };
 
 export default function WeightQueue({
+  toolbarActions,
   accounts,
   onOrderChange,
   onClanWeights,
@@ -39,6 +45,11 @@ export default function WeightQueue({
   resetToken,
 }: Props) {
   const [search, setSearch] = useState("");
+  const [scope, setScope] = useState<"all" | "main" | "lazy">("all");
+  const [sort, setSort] = useState<"th" | "name" | "pool">("th");
+  const [sortOpen, setSortOpen] = useState(false);
+  const sortTrigger = useRef<HTMLButtonElement>(null);
+  const sortLabels = { th: "Highest TH first", name: "Name A–Z", pool: "Pool" };
   const [permissionNotice, setPermissionNotice] = useState(false);
   const [limit, setLimit] = useState(50);
   const [drafts, setDrafts] = useState<Record<string, ManualWeightDraft>>({});
@@ -55,9 +66,26 @@ export default function WeightQueue({
     (account) => account.effective_weight === null,
   );
   const query = search.trim().toLocaleLowerCase();
-  const matching = missing.filter((account) =>
-    `${account.player_name} ${account.tag}`.toLocaleLowerCase().includes(query),
+  const scoped = missing.filter(
+    (account) => scope === "all" || account.pool === scope,
   );
+  const matching = scoped
+    .filter((account) =>
+      `${account.player_name} ${account.tag}`
+        .toLocaleLowerCase()
+        .includes(query),
+    )
+    .sort(
+      (a, b) =>
+        Number(usesClanWeights(b)) - Number(usesClanWeights(a)) ||
+        (sort === "th"
+          ? (b.town_hall ?? 0) - (a.town_hall ?? 0)
+          : sort === "pool"
+            ? a.pool.localeCompare(b.pool)
+            : 0) ||
+        a.player_name.localeCompare(b.player_name) ||
+        a.tag.localeCompare(b.tag),
+    );
   const shown = matching.slice(0, limit);
   const orderKey = matching.map((account) => account.tag).join("|");
   useEffect(() => {
@@ -148,7 +176,7 @@ export default function WeightQueue({
       aria-labelledby="weight-queue-title"
     >
       <div className="weight-queue-heading">
-        <h2 id="weight-queue-title">Needs weight · {missing.length}</h2>
+        <h2 id="weight-queue-title">Needs weight · {scoped.length}</h2>
         <RefreshButton
           busy={busy || saving}
           disabled={archived}
@@ -176,6 +204,60 @@ export default function WeightQueue({
           placeholder="Name or player tag"
         />
       </label>
+      <ListToolbar
+        className="weight-queue-toolbar"
+        scope={
+          <SectionTabs
+            mode="segmented"
+            label="Missing weight pool"
+            items={[
+              { id: "all", label: "All" },
+              { id: "main", label: "Main" },
+              { id: "lazy", label: "Lazy" },
+            ]}
+            value={scope}
+            onChange={(next) => {
+              setScope(next);
+              setLimit(50);
+            }}
+            disabled={busy || saving}
+          />
+        }
+        sort={
+          <SortTrigger
+            ref={sortTrigger}
+            label={sortLabels[sort]}
+            aria-expanded={sortOpen}
+            disabled={busy || saving}
+            onClick={() => setSortOpen(true)}
+          />
+        }
+        actions={toolbarActions}
+      />
+      {sortOpen && (
+        <ActionPanel
+          title="Sort missing weights"
+          trigger={sortTrigger.current}
+          className="roster-ui"
+          onClose={() => setSortOpen(false)}
+        >
+          {(Object.keys(sortLabels) as (keyof typeof sortLabels)[]).map(
+            (key) => (
+              <Button
+                key={key}
+                aria-pressed={sort === key}
+                onClick={() => {
+                  setSort(key);
+                  setLimit(50);
+                  setSortOpen(false);
+                }}
+              >
+                {sortLabels[key]}
+              </Button>
+            ),
+          )}
+        </ActionPanel>
+      )}
       {!!missing.length && (
         <div
           className="weight-queue-unit-picker"
@@ -216,9 +298,7 @@ export default function WeightQueue({
       ) : (
         <>
           {!matching.length && (
-            <div role="status">
-              No missing-weight accounts match your search.
-            </div>
+            <div role="status">No missing-weight accounts match this view.</div>
           )}
           {([true, false] as const).map((fwa) => (
             <div key={String(fwa)}>

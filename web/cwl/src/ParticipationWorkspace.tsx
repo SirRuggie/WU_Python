@@ -700,18 +700,11 @@ export default function ParticipationWorkspace({
               Archived season · Results are read only.
             </div>
           )}
-          <CwlPoolTabs
-            mode="tabs"
+          <SectionTabPanel
             id="participation-pools"
             value={pool}
-            disabled={controlsLocked}
-            onChange={(next) => {
-              choosePool(next);
-              setClan("all");
-              emit({ pool: next, clan: "all" }, false);
-            }}
-          />
-          <SectionTabPanel id="participation-pools" value={pool}>
+            enabled={false}
+          >
             {clanChoices.length > 0 && (
               <BonusClanSelect
                 clans={clanChoices}
@@ -757,8 +750,22 @@ export default function ParticipationWorkspace({
             </div>
             <ListToolbar
               className="participation-list-toolbar"
+              scope={
+                <CwlPoolTabs
+                  compactLabels
+                  id="participation-pools"
+                  value={pool}
+                  disabled={controlsLocked}
+                  onChange={(next) => {
+                    choosePool(next);
+                    setClan("all");
+                    emit({ pool: next, clan: "all" }, false);
+                  }}
+                />
+              }
               filters={
                 <FiltersTrigger
+                  className="participation-filters-trigger"
                   count={Number(activeOutcome !== "all")}
                   open={listPanel === "filters"}
                   disabled={controlsLocked || !ruleShown}
