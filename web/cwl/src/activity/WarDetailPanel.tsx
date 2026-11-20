@@ -1,3 +1,4 @@
+import { countLabel } from "../countLabel";
 import SectionTabs, { SectionTabPanel } from "../SectionTabs";
 import { formatDateTime } from "../format";
 import { useEffect, useMemo, useState } from "react";
@@ -412,7 +413,7 @@ export default function WarDetailPanel({
                   <span>
                     {data.attacks_per_member == null
                       ? "Attack limit unknown"
-                      : `${data.attacks_per_member} ${data.attacks_per_member === 1 ? "attack" : "attacks"} per member`}
+                      : `${countLabel(data.attacks_per_member, "attack")} per member`}
                   </span>
                 </header>
                 {!data.attacks_complete && (

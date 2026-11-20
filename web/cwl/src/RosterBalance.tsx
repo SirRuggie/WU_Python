@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
 import { useEffect, useRef, useState } from "react";
 import { Button, Input } from "./rosterUi/primitives";
 import { ArrowLeft, Check, Eye, X, LockKeyhole } from "lucide-react";
@@ -240,7 +242,7 @@ export default function RosterBalance({
             >
               {busy
                 ? "Applying…"
-                : `Apply ${preview.placements.length} move${preview.placements.length === 1 ? "" : "s"}`}
+                : `Apply ${countLabel(preview.placements.length, "move")}`}
             </Button>
           </>
         ) : (
@@ -403,14 +405,13 @@ export default function RosterBalance({
               >
                 {includeLocked
                   ? "Exclude locked"
-                  : `Include ${skippedLocked.length} locked account${skippedLocked.length === 1 ? "" : "s"}`}
+                  : `Include ${countLabel(skippedLocked.length, "locked account")}`}
               </Button>
             )}
             <p role="status">
-              {preview.placements.length} move
-              {preview.placements.length === 1 ? "" : "s"} ·{" "}
-              {preview.unassigned.length} skipped · {summary?.unchanged.length}{" "}
-              unchanged
+              {countLabel(preview.placements.length, "move")} ·{" "}
+              {formatNumber(preview.unassigned.length)} skipped ·{" "}
+              {summary ? formatNumber(summary.unchanged.length) : ""} unchanged
             </p>
             {publicationStatus === "published" && published && (
               <p className="notice warning">

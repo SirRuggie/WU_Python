@@ -28,8 +28,8 @@
   color: var(--roster-text-muted);
   font-size: var(--wu-text-xs);
   font-weight: var(--wu-weight-medium);
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
+  letter-spacing: normal;
+  text-transform: none;
 }
 
 .roster-clan-chips-list {

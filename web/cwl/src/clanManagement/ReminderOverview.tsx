@@ -1,4 +1,5 @@
-import { formatDateTime } from "../format";
+import { searchInputProps } from "../inputProps";
+import { formatDateTime, formatTime } from "../format";
 import LoadError from "../LoadError";
 import { clanCategory } from "./ClanCategories";
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -227,6 +228,7 @@ export default function ReminderOverview({
             <label>
               Find a clan
               <input
+                {...searchInputProps}
                 type="search"
                 value={query}
                 placeholder="Clan name, tag or channel…"
@@ -276,9 +278,8 @@ export default function ReminderOverview({
               {visible.length} of {rows.length} clans
             </span>{" "}
             · Updated{" "}
-            {new Date(data.generated_at).toLocaleTimeString([], {
-              hour: "numeric",
-              minute: "2-digit",
+            {formatTime(new Date(data.generated_at), {
+              format: { hour: "numeric", minute: "2-digit" },
             })}{" "}
             · refreshes every 30s
           </p>

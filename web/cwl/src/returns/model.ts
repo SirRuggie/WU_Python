@@ -1,3 +1,4 @@
+import { formatDateTime } from "../format";
 import type { ManagementSection } from "../serverManagement";
 export type ReturnClan = ManagementSection & {
   return_section?: "MAIN" | "FWA";
@@ -81,11 +82,13 @@ export function scheduleValues(start: string, end: string) {
 }
 export function displayDate(value?: string | null) {
   return value
-    ? new Date(value).toLocaleString([], {
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
+    ? formatDateTime(new Date(value), {
+        format: {
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+        },
       })
     : "Not set";
 }

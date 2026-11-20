@@ -81,7 +81,7 @@ it("uses the large self-hosted helmet throughout loading and signed-out branding
       "WARRIORS UNITED",
     );
     expect(host.querySelector(".brand small")?.textContent).toBe(
-      "SERVER DASHBOARD",
+      "Server dashboard",
     );
     expect(host.querySelector(".welcome-screen .primary")?.textContent).toBe(
       "Continue with Discord",
@@ -153,7 +153,7 @@ it("keeps the signed-in sidebar helmet at its portrait height with its compact d
       "WARRIORS UNITED",
     );
     expect(host.querySelector(".sidebar .brand small")?.textContent).toBe(
-      "SERVER DASHBOARD",
+      "Server dashboard",
     );
     const phoneLogo = host.querySelector<HTMLImageElement>(
       ".topbar .topbar-logo",

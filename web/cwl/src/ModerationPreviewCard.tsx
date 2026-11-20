@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import type { CSSProperties, ReactNode } from "react";
 import "./ModerationPreviewCard.css";
 
@@ -91,9 +92,8 @@ function discordText(value: string, names: Record<string, string>): ReactNode {
                   Math.round((date.getTime() - Date.now()) / 86400000),
                   "day",
                 )
-              : date.toLocaleString(undefined, {
-                  dateStyle: "medium",
-                  timeStyle: "short",
+              : formatDateTime(date, {
+                  format: { dateStyle: "medium", timeStyle: "short" },
                 });
           return (
             <time key={index} dateTime={date.toISOString()}>

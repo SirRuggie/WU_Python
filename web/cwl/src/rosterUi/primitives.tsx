@@ -5,6 +5,7 @@ import {
   type ReactNode,
 } from "react";
 import type { LucideIcon } from "lucide-react";
+import { mobileInputProps } from "../inputProps";
 import "./tokens.css";
 import "./primitives.css";
 
@@ -148,6 +149,7 @@ export function Input({
         {Icon && <Icon className="roster-ui-input-icon" aria-hidden="true" />}
         <input
           {...props}
+          {...mobileInputProps(props.type)}
           id={inputId}
           aria-invalid={error ? true : props["aria-invalid"]}
           aria-describedby={describedBy}

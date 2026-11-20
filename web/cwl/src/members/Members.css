@@ -61,8 +61,8 @@
 }
 .members-bulk-bar {
   position: sticky;
-  top: 64px;
-  z-index: 4;
+  top: var(--wu-topbar-h, 0px);
+  z-index: 2;
   display: flex;
   flex-wrap: wrap;
   gap: var(--wu-space-2);

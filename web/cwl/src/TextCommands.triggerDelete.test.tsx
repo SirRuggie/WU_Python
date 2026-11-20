@@ -93,6 +93,40 @@ async function mount(commands: Command[]) {
   return { host, root };
 }
 
+it("groups command usage and uses singular directory and reply labels without writes", async () => {
+  const { host, root } = await mount([
+    {
+      ...oldCommand,
+      use_count: 1411,
+      blocks: [{ type: "text", text: "Reply" }],
+    },
+  ]);
+  try {
+    expect(
+      host
+        .querySelector(".text-command-list .small")
+        ?.textContent?.replace(/\s+/g, " ")
+        .trim(),
+    ).toBe("1 command · 1 enabled");
+    const command = host.querySelector<HTMLButtonElement>(
+      ".text-command-rows button",
+    )!;
+    expect(command.textContent).toContain("Used 1,411 times");
+    await act(async () => command.click());
+    const reply = [...host.querySelectorAll("summary")].find((node) =>
+      node.textContent?.startsWith("Reply ·"),
+    );
+    expect(reply?.textContent).toContain("Reply · 1 block ·");
+    expect(reply?.textContent).not.toContain("1 blocks");
+    expect(
+      api.mock.calls.filter((call) => call[1] && call[1] !== "GET"),
+    ).toHaveLength(0);
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
 it("keeps one task-forward gold action across command list and editor states", async () => {
   const { host, root } = await mount([oldCommand]);
   const primary = () =>

@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import {
   useCallback,
   useEffect,
@@ -31,7 +32,7 @@ function expiry(value: string | null) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? "Expiry unavailable"
-    : `Expires ${date.toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}`;
+    : `Expires ${formatDateTime(date, { format: { dateStyle: "medium", timeStyle: "short" } })}`;
 }
 export function rankInviteCodes(
   codes: string[],

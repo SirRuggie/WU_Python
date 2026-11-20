@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
 import DetailsFrame from "../DetailsFrame";
@@ -103,6 +104,7 @@ function PersonRoles({
       <label>
         {t.roleSearch}
         <input
+          {...searchInputProps}
           type="search"
           value={query}
           onChange={(event) => setQuery(event.target.value)}

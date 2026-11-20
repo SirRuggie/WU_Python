@@ -292,7 +292,24 @@ describe("season overview", () => {
     ]);
   });
   it("a step in the bar asks the same question", async () => {
+    // The partial filter must offer a real visible edit, not a hidden clean row.
+    api.mockImplementation(async (route: string) =>
+      route.endsWith("/bonus-status")
+        ? status
+        : route === "/announcement-roles"
+          ? { roles: [] }
+          : {
+              ...participation,
+              accounts: participation.accounts.map((account) => ({
+                ...account,
+                source_complete: account.tag !== "#P1",
+              })),
+            },
+    );
     await mount(true, "pool=lazy&clan=%232YQ&outcome=partial");
+    expect(button("Retain local result edit #P1").closest("li")?.hidden).toBe(
+      false,
+    );
     await act(async () => button("Retain local result edit #P1").click());
     const draw = host.querySelector<HTMLAnchorElement>(
       '.bonus-step[data-step="draw"] a',
@@ -300,6 +317,7 @@ describe("season overview", () => {
     await act(async () => draw.click());
     expect(document.querySelector(".confirm-dialog")).not.toBeNull();
     expect(bonus).not.toHaveBeenCalled();
+    expect(writes()).toHaveLength(0);
   });
   it("results-only staff see the list and a bar they cannot open past Results", async () => {
     await mount(false, "pool=lazy&clan=%232YQ");

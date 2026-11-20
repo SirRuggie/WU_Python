@@ -1,3 +1,5 @@
+import { formatDate } from "./format";
+import { identifierInputProps, searchInputProps } from "./inputProps";
 import { useEffect, useState } from "react";
 import { api } from "./api";
 import HistoryTime from "./clanManagement/HistoryTime";
@@ -35,7 +37,7 @@ const fields: Record<string, string> = {
 };
 function day(at: string | null) {
   return at && Number.isFinite(Date.parse(at))
-    ? new Date(at).toLocaleDateString(undefined, { dateStyle: "long" })
+    ? formatDate(new Date(at), { format: { dateStyle: "long" } })
     : "Date unavailable";
 }
 export default function ClanHistory({
@@ -115,6 +117,7 @@ export default function ClanHistory({
         <label>
           Find a clan
           <input
+            {...searchInputProps}
             type="search"
             placeholder="Clan name or tag"
             disabled={busy}
@@ -255,6 +258,7 @@ export default function ClanHistory({
                         <label>
                           Type {event.clan.tag} to confirm
                           <input
+                            {...identifierInputProps}
                             autoComplete="off"
                             value={confirmTag}
                             disabled={busy}

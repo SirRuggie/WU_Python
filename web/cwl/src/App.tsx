@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import RefreshControl, { type RefreshControlProps } from "./RefreshControl";
 import {
   defaultStaffSeason,
@@ -1531,7 +1532,7 @@ function App() {
       if (result.error) throw result.error;
       setNotice({
         kind: "success",
-        text: `${removed.size} ${removed.size === 1 ? "signup" : "signups"} withdrawn.`,
+        text: `${countLabel(removed.size, "signup")} withdrawn.`,
       });
     } catch (error) {
       setNotice({
@@ -1793,7 +1794,7 @@ function App() {
         {pendingWeightLeave && (
           <ConfirmDialog
             heading="Unsaved changes"
-            text={`You have ${weightState.count} unsaved weight${weightState.count === 1 ? "" : "s"}.`}
+            text={`You have ${countLabel(weightState.count, "unsaved weight")}.`}
             confirmLabel="Discard"
             cancelLabel="Keep editing"
             danger
@@ -1818,7 +1819,7 @@ function App() {
               pendingRosterLeave.working
                 ? "Wait for the save to finish."
                 : rosterDirtySummary.onlyWeights
-                  ? `You have ${rosterDirtySummary.weightCount} unsaved weight${rosterDirtySummary.weightCount === 1 ? "" : "s"}.`
+                  ? `You have ${countLabel(rosterDirtySummary.weightCount, "unsaved weight")}.`
                   : "You have unsaved roster changes."
             }
             confirmLabel={pendingRosterLeave.working ? "OK" : "Discard"}
@@ -2761,7 +2762,7 @@ function Brand({ large = false }: { large?: boolean }) {
       )}
       <span>
         <strong>WARRIORS UNITED</strong>
-        <small>SERVER DASHBOARD</small>
+        <small>Server dashboard</small>
       </span>
     </div>
   );

@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import { RefreshButton } from "./RefreshControl";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { usesClanWeights } from "./clanWeightPolicy";
@@ -164,6 +165,7 @@ export default function WeightQueue({
       <label className="weight-queue-search">
         <span className="sr-only">Find account</span>
         <input
+          {...searchInputProps}
           ref={searchInput}
           type="search"
           value={search}

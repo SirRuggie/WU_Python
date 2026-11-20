@@ -1,12 +1,15 @@
+import { formatDateTime } from "./format";
 import { clanCapacity } from "./rosterCapacity";
 import type { PublicationDraft } from "./publication";
 
 export function publicationDate(value: string): string {
-  return new Date(value).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+  return formatDateTime(new Date(value), {
+    format: {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    },
   });
 }
 

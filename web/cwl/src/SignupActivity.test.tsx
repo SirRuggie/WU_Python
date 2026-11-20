@@ -104,6 +104,9 @@ it("words single, plural and 100+ changes; shortage requires an active clan with
   expect(
     signupChangeLabel(Array.from({ length: 100 }, (_, i) => item(i))),
   ).toBe("100+ signup changes to review · Review ›");
+  expect(
+    signupChangeLabel(Array.from({ length: 1000 }, (_, i) => item(i))),
+  ).toBe("1,000 signup changes to review · Review ›");
   expect(signupShortage([item()], [clan(15)])?.text).toBe(
     "Morning Woods! · 14 / 15 players",
   );

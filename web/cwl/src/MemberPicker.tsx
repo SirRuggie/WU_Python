@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import type { ManagementOption, ManagementValue } from "./serverManagement";
@@ -161,6 +162,7 @@ export default function MemberPicker({
         <label className="member-search">
           Search members
           <input
+            {...searchInputProps}
             type="search"
             value={search}
             maxLength={80}

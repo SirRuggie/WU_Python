@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 type Props = {
   poolLabel: string;
   count: number;
@@ -25,8 +26,8 @@ export default function SignupReviewHeading({
       </div>
       <div className="signup-review-heading">
         <p>
-          {count} {count === 1 ? "account" : "accounts"} selected. Staff will
-          assign your hosting clans.
+          {countLabel(count, "account")} selected. Staff will assign your
+          hosting clans.
         </p>
         <button
           type="button"

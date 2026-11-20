@@ -1,3 +1,4 @@
+import { formatTime } from "../format";
 // Types and small helpers for Bot → World clocks. The server builds every
 // channel name, so the page never guesses a name the bot will not write.
 
@@ -134,7 +135,7 @@ export function localTime(value: string | null | undefined) {
   if (!value) return "";
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
-  return date.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" });
+  return formatTime(date, { format: { hour: "numeric", minute: "2-digit" } });
 }
 
 /** The name members see now: the last name the bot wrote, else the preview. */

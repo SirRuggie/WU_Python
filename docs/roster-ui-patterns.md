@@ -1,5 +1,24 @@
 # Roster UI patterns
 
+## Labels, type and shared formats (252)
+
+Use sentence-case labels without tracking for eyebrows, navigation groups,
+walkthrough steps, clan-group headings, Discord channel groups and the brand's
+“Server dashboard” line. Preserve their incumbent colour, including gold. Negative
+letter-spacing belongs to h1 only; text below 24 px uses normal tracking. Existing
+32/24 px h1 rules stay intact.
+
+Use shared mobile input props for searches/exact identifiers, `formatNumber` and
+`countLabel` for grouped counts/plurals, and shared date helpers with resolved
+viewer or explicit UTC zones. Keep raw game tags and Discord names untranslated.
+Use colocated `countNoun` only when the count and noun need separate responsive
+markup or an existing capped-count label; keep those semantics and unknown
+placeholders intact rather than duplicating noun-selection ternaries.
+Menu open/close and drawer motion use the shared ease tokens, with reduced-motion
+alternatives. These refinements retain the existing controls, handlers, navigation
+and permission gates; validation scope and physical-phone limitations are recorded
+with the 252 review artifact.
+
 ## CWL names and plain words (audit 119)
 
 | Thing                                           | Visible name                                            |

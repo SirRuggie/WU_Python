@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { rosterCapacity } from "./rosterCapacity";
 import { useMemo, useRef, useState } from "react";
 import { Input, ProgressBar } from "./rosterUi/primitives";
@@ -147,8 +148,7 @@ export default function RosterAssignPanel({
     >
       <div className="roster-assign-panel">
         <p className="roster-assign-intro">
-          Assign {selectedAccounts.length} account
-          {selectedAccounts.length === 1 ? "" : "s"}
+          Assign {countLabel(selectedAccounts.length, "account")}
           {" · "}manual assignment locks placement
         </p>
         {pool !== null && (
@@ -166,9 +166,12 @@ export default function RosterAssignPanel({
         )}
         {hiddenTags.length > 0 && (
           <p className="roster-assign-warning">
-            {hiddenTags.length} selected account
-            {hiddenTags.length === 1 ? " is" : "s are"} not visible in the list
-            and will be included below.
+            {countLabel(
+              hiddenTags.length,
+              "selected account is",
+              "selected accounts are",
+            )}{" "}
+            not visible in the list and will be included below.
           </p>
         )}
         {pool === null && selectedAccounts.length > 0 && (
@@ -352,8 +355,7 @@ export default function RosterAssignPanel({
           {locked.length > 0 && (
             <details className="roster-assign-accounts">
               <summary>
-                {locked.length} locked placement{locked.length === 1 ? "" : "s"}{" "}
-                affected
+                {countLabel(locked.length, "locked placement")} affected
               </summary>
               <ul>
                 {locked.map((account) => (

@@ -1,3 +1,4 @@
+import { countLabel } from "../countLabel";
 import { formatDate } from "../format";
 import { strikeCountLabel } from "../strikeCountLabel";
 import type { ImportDraft, ImportResult, Tab } from "./types";
@@ -44,6 +45,6 @@ export function savedImport(userId: string): ImportDraft {
   }
 }
 export const reviewCount = (count: number) =>
-  `${count} ${count === 1 ? "needs" : "need"} review`;
+  countLabel(count, "needs review", "need review");
 export const importResultText = (result: ImportResult) =>
   `${strikeCountLabel(result.added_strikes ?? result.strikes, "strike")} added · ${result.duplicates ?? (Array.isArray(result.skipped) ? result.skipped.length : result.skipped)} skipped as duplicate · ${result.history_only ?? result.applied - result.strikes} history-only${result.excluded ? ` · ${result.excluded} excluded` : ""}${(result.deferred_count ?? result.deferred_accounts?.length ?? 0) > 0 ? ` · ${reviewCount(result.deferred_count ?? result.deferred_accounts?.length ?? 0)}` : ""}.`;

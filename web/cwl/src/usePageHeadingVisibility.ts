@@ -15,6 +15,17 @@ export function observePageHeading(
   let heading: HTMLHeadingElement | null = null;
   let intersection: IntersectionObserver | null = null;
   let generation = 0;
+  const shell = topbar?.closest<HTMLElement>(".shell");
+  const syncTopbarHeight = () => {
+    if (!topbar || !shell) return;
+    const height =
+      getComputedStyle(topbar).position === "sticky"
+        ? topbar.getBoundingClientRect().height
+        : 0;
+    const value = `${height}px`;
+    if (shell.style.getPropertyValue("--wu-topbar-h") !== value)
+      shell.style.setProperty("--wu-topbar-h", value);
+  };
 
   const topInset = () =>
     Math.max(0, topbar?.getBoundingClientRect().bottom ?? 0);
@@ -32,6 +43,7 @@ export function observePageHeading(
 
   const bindHeading = (force = false) => {
     if (!active) return;
+    if (force) syncTopbarHeight();
     const next = findHeading();
     if (!force && next === heading) return;
     intersection?.disconnect();

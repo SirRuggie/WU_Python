@@ -1,3 +1,4 @@
+import { countLabel as plural } from "./countLabel";
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import ActionPanel from "./ActionPanel";
 import AccountCard from "./AccountCard";
@@ -30,9 +31,6 @@ type Props = {
 
 const errorText = (cause: unknown, fallback: string) =>
   cause instanceof Error && cause.message ? cause.message : fallback;
-
-const plural = (count: number, word: string) =>
-  `${count} ${word}${count === 1 ? "" : "s"}`;
 
 function PlayerCard({
   player,

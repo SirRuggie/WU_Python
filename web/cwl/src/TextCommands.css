@@ -15,7 +15,7 @@
 .text-command-rows {
   display: grid;
   gap: var(--wu-space-2);
-  max-height: 60vh;
+  max-height: 60dvh;
   overflow: auto;
   margin-top: var(--wu-space-3);
 }

@@ -1,3 +1,4 @@
+import { countLabel } from "../countLabel";
 import { formatDateTime } from "../format";
 import { useEffect, useRef, useState } from "react";
 import { api } from "../api";
@@ -179,8 +180,7 @@ export default function ReturnBatch({
     >
       <div className="section-heading">
         <h3 id="return-batch-heading" tabIndex={-1} ref={heading}>
-          {actionLabels[action]} · {clans.length}{" "}
-          {clans.length === 1 ? "clan" : "clans"}
+          {actionLabels[action]} · {countLabel(clans.length, "clan")}
         </h3>
         <button disabled={busy || pending} onClick={onClose}>
           {receipt ? "Done" : "Cancel"}
@@ -324,9 +324,9 @@ export default function ReturnBatch({
             )}
             {action === "save" && (
               <p>
-                Save the list of the members who are now in the home clan, before they leave for CWL.
-                This does not send reminders. Your clan selection is kept for
-                the next step.
+                Save the list of the members who are now in the home clan,
+                before they leave for CWL. This does not send reminders. Your
+                clan selection is kept for the next step.
               </p>
             )}
             {action === "send" && (
@@ -353,7 +353,8 @@ export default function ReturnBatch({
             )}
             {action === "clear" && (
               <p>
-                This closes the selected member lists and stops their reminders. The history stays.
+                This closes the selected member lists and stops their reminders.
+                The history stays.
               </p>
             )}
             <button
@@ -384,10 +385,10 @@ export default function ReturnBatch({
       )}
       {review && (
         <ConfirmDialog
-          confirmLabel={`${actionLabels[action]} for ${targets.length} ${targets.length === 1 ? "clan" : "clans"}`}
+          confirmLabel={`${actionLabels[action]} for ${countLabel(targets.length, "clan")}`}
           onCancel={() => setReview(null)}
           onConfirm={() => void submit()}
-          text={`${actionLabels[action]} for ${targets.map((clan) => clan.clan_name || clan.label).join(", ")}?${skipped.length ? ` Skipped: ${skipped.map(({ clan, reason }) => `${clan.clan_name || clan.label}: ${reason}`).join("; ")}` : ""}${action === "schedule" ? ` Start ${formatDateTime(new Date(String(review.schedule_start)))}; stop ${formatDateTime(new Date(String(review.schedule_end)))}; ${returnFrequency(Number(minutes)).toLowerCase()}.` : ""}${action === "start" ? ` Capture current members for ${captureCount} clans without a list; keep all existing lists. Start now and repeat ${returnFrequency(Number(minutes)).toLowerCase()}. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` ${returnFrequency(Number(minutes))}. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
+          text={`${actionLabels[action]} for ${targets.map((clan) => clan.clan_name || clan.label).join(", ")}?${skipped.length ? ` Skipped: ${skipped.map(({ clan, reason }) => `${clan.clan_name || clan.label}: ${reason}`).join("; ")}` : ""}${action === "schedule" ? ` Start ${formatDateTime(new Date(String(review.schedule_start)))}; stop ${formatDateTime(new Date(String(review.schedule_end)))}; ${returnFrequency(Number(minutes)).toLowerCase()}.` : ""}${action === "start" ? ` Capture current members for ${countLabel(captureCount, "clan")} without a list; keep all existing lists. Start now and repeat ${returnFrequency(Number(minutes)).toLowerCase()}. This can send Discord messages immediately and replaces any future start; existing earlier stop times remain.` : ""}${action === "frequency" ? ` ${returnFrequency(Number(minutes))}. The existing stop time stays unchanged.` : ""}${action === "send" ? " This sends Discord messages." : ""}${action === "schedule" || action === "start" || action === "resume" ? " Automatic reminders will be enabled." : ""}`}
         />
       )}
     </section>

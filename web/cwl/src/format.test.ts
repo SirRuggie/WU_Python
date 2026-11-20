@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import {
   formatCycleMonth,
   formatDate,
@@ -42,5 +42,37 @@ describe("format helpers", () => {
   it("reads cycle months in UTC", () => {
     expect(formatCycleMonth("2026-04")).toMatch(/Apr/);
     expect(formatCycleMonth("2026-01", "short")).toMatch(/2026/);
+  });
+  it("resolves date boundaries in the explicit zone while retaining requested parts", () => {
+    const midnight = "2026-03-04T00:30:00Z";
+    expect(
+      formatDate(midnight, {
+        locale: "en-US",
+        timeZone: "America/Los_Angeles",
+      }),
+    ).toBe("Mar 3, 2026");
+    expect(
+      formatDate(midnight, {
+        locale: "en-US",
+        timeZone: "UTC",
+        format: { month: "numeric", day: "numeric" },
+      }),
+    ).toBe("3/4");
+    expect(
+      formatDate(midnight, { locale: "en-US", timeZone: "Not/AZone" }),
+    ).toBe("—");
+  });
+  it("passes the resolved viewer zone explicitly when a caller does not choose one", () => {
+    const defaults = Intl.DateTimeFormat().resolvedOptions();
+    const resolve = vi
+      .spyOn(Intl.DateTimeFormat.prototype, "resolvedOptions")
+      .mockReturnValue({ ...defaults, timeZone: "Pacific/Honolulu" });
+    try {
+      expect(formatDate("2026-03-04T00:30:00Z", { locale: "en-US" })).toBe(
+        "Mar 3, 2026",
+      );
+    } finally {
+      resolve.mockRestore();
+    }
   });
 });

@@ -67,7 +67,11 @@ it("shows Imported and hides voided winners, with Main first", () => {
   );
   expect(html).toContain("Imported");
   expect(html).not.toContain("Voided name");
-  expect(html).toContain("TH 17 · #Q2Y");
+  const host = document.createElement("div");
+  host.innerHTML = html;
+  const meta = host.querySelector(".player-card-meta")!;
+  expect(meta.textContent).toBe("TH 17 · #Q2Y");
+  expect(meta.querySelector('[translate="no"]')?.textContent).toBe("#Q2Y");
   expect(html).toContain("Attacks");
   expect(html).toContain(">15<");
   // Unknown Town Hall: no "TH —" text in the meta line.

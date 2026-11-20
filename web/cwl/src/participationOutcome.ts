@@ -1,3 +1,5 @@
+import { formatDateTime, formatTime } from "./format";
+import { countLabel } from "./countLabel";
 import type { Pool } from "./api";
 import type { StatusTone } from "./rosterUi/primitives";
 
@@ -116,19 +118,13 @@ export function matchesOutcome(
 }
 
 export function countText(count: number, one: string, many = `${one}s`) {
-  return `${count} ${count === 1 ? one : many}`;
+  return countLabel(count, one, many);
 }
-
-const dateFormat = new Intl.DateTimeFormat(undefined, {
-  dateStyle: "medium",
-  timeStyle: "short",
-});
-const timeFormat = new Intl.DateTimeFormat(undefined, { timeStyle: "short" });
 
 /** The one date format on Results and Bonus medals. */
 export function resultDateText(value: string) {
-  return dateFormat.format(new Date(value));
+  return formatDateTime(value);
 }
 export function resultTimeText(value: string) {
-  return timeFormat.format(new Date(value));
+  return formatTime(value);
 }

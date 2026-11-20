@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { formatDateTime } from "./format";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import { eventTypes } from "./moderationSettingsModel";
 
@@ -92,7 +94,7 @@ function durationText(seconds: number) {
   for (const [unit, size] of units) {
     if (seconds >= size && seconds % size === 0) {
       const count = seconds / size;
-      return `${count} ${unit}${count === 1 ? "" : "s"}`;
+      return countLabel(count, unit);
     }
   }
   return "";
@@ -143,9 +145,8 @@ export function formatDate(value: string) {
   const date = new Date(value);
   return Number.isNaN(date.getTime())
     ? "Date unavailable"
-    : date.toLocaleString(undefined, {
-        dateStyle: "medium",
-        timeStyle: "short",
+    : formatDateTime(date, {
+        format: { dateStyle: "medium", timeStyle: "short" },
       });
 }
 

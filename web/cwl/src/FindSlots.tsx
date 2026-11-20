@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import EmptyState from "./EmptyState";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import RosterFilterOptions from "./RosterFilterOptions";
@@ -258,6 +259,7 @@ export default function FindSlots({
           <label>
             Clans
             <input
+              {...searchInputProps}
               type="search"
               name="slot-clan-search"
               value={clanQuery}

@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { formatDateTime } from "./format";
 import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
@@ -132,7 +133,7 @@ export default function StrikeTrackingStatus({
   const review = needsReviewCount(clans);
   const slow = clans.filter((item) => item.slow).length;
   const compactLabel = review
-    ? `${review} ${review === 1 ? "clan needs" : "clans need"} review ›`
+    ? `${countLabel(review, "clan needs", "clans need")} review ›`
     : "All clans on track";
   const tone = error ? "warning" : summary.tone;
   // A native toggle may still be queued when the portal target changes.
@@ -235,7 +236,7 @@ export default function StrikeTrackingStatus({
           })}
         {!error && slow > 0 && (
           <small className="strikes-tracking-slow">
-            {slow} {slow === 1 ? "clan" : "clans"} scanned late
+            {countLabel(slow, "clan")} scanned late
           </small>
         )}
       </div>

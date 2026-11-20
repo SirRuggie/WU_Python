@@ -59,7 +59,9 @@ export default function AccountMenu({
           <AccountIdentity user={user} />
           {variant === "profile" && (
             <>
-              <small className="account-menu-handle">@{user.username}</small>
+              <small className="account-menu-handle" translate="no">
+                @{user.username}
+              </small>
               <ChevronDown
                 className="account-menu-chevron"
                 size={16}

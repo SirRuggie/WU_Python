@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import type { ReactNode } from "react";
 import FilterChips from "../FilterChips";
 import RoleSelect from "../RoleSelect";
@@ -41,6 +42,7 @@ export default function MemberFilters({
         <label>
           <span className="members-search-label">{t.search}</span>
           <input
+            {...searchInputProps}
             type="search"
             value={value.query}
             placeholder={t.searchHint}

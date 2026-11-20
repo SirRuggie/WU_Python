@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import EmptyState from "./EmptyState";
 import RefreshControl, { useRefreshTime } from "./RefreshControl";
 import { formatDateTime } from "./format";
@@ -106,6 +108,7 @@ export default function DashboardIssues() {
         <label>
           Find an issue
           <input
+            {...searchInputProps}
             type="search"
             placeholder="Name, Discord ID or reference"
             value={search}
@@ -152,7 +155,7 @@ export default function DashboardIssues() {
       <p className="issues-count" role="status">
         {loading && !history.items.length
           ? "Loading reports…"
-          : `${matching.length} ${matching.length === 1 ? "report" : "reports"} · Last 30 days`}
+          : `${countLabel(matching.length, "report")} · Last 30 days`}
       </p>
       {!loading && !error && !matching.length && (
         <EmptyState

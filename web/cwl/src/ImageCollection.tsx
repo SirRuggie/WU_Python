@@ -1,3 +1,6 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import type { ReactNode } from "react";
 import RefreshControl, {
   RefreshButton,
@@ -306,7 +309,7 @@ export default function ImageCollection({
         setAdding(false);
       } finally {
         setNotice(
-          `${count} image${count === 1 ? "" : "s"} added. Check the gallery before retrying an interrupted upload.`,
+          `${countLabel(count, "image")} added. Check the gallery before retrying an interrupted upload.`,
         );
         await load();
       }
@@ -470,6 +473,7 @@ export default function ImageCollection({
           <label>
             Find an image
             <input
+              {...searchInputProps}
               type="search"
               value={query}
               onChange={async (e) => {
@@ -550,7 +554,8 @@ export default function ImageCollection({
         ) : (
           <>
             <p className="small">
-              {matches.length} images · {selected.length} selected
+              {countLabel(matches.length, "image")} ·{" "}
+              {formatNumber(selected.length)} selected
             </p>
             <div className="command-image-grid">
               {matches.slice(current * 24, (current + 1) * 24).map((item) => (
@@ -591,8 +596,7 @@ export default function ImageCollection({
                   )}
                   <small>
                     {imageCategory(item.folder) || "Unsorted"} ·{" "}
-                    {item.commands.length} command
-                    {item.commands.length === 1 ? "" : "s"}
+                    {countLabel(item.commands.length, "command")}
                   </small>
                   <div className="gallery-card-actions">
                     {onChoose && (

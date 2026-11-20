@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { signupPlacementNotice } from "./signupWithdrawal";
 import PoolChangeDialog from "./PoolChangeDialog";
 import { poolChangeDecision } from "./signupMoves";
@@ -208,7 +209,9 @@ export default function SavedSignups({
             </button>
           </div>
           <small>
-            Your changes stay here until you select Save changes. Accounts that are in that pool stay in it. Staff get a message about withdrawals and pool changes.
+            Your changes stay here until you select Save changes. Accounts that
+            are in that pool stay in it. Staff get a message about withdrawals
+            and pool changes.
           </small>
           {selected.some((row) =>
             missingAccounts.some((missing) => missing.tag === row.tag),
@@ -224,7 +227,7 @@ export default function SavedSignups({
         <AttentionSummary
           items={[
             {
-              title: `${missingAccounts.length} saved ${missingAccounts.length === 1 ? "account is" : "accounts are"} missing from the current linked-account list`,
+              title: `${countLabel(missingAccounts.length, "saved account is", "saved accounts are")} missing from the current linked-account list`,
               detail: "Check these account links before changing CWL pools.",
               detailsLabel: "Accounts to check",
               technicalDetail: missingAccounts
@@ -343,10 +346,7 @@ export default function SavedSignups({
       </div>
       {changes.length > 0 && (
         <div className="saved-signup-savebar" aria-label="Pending CWL changes">
-          <span>
-            {changes.length} {changes.length === 1 ? "change" : "changes"} · Not
-            saved yet
-          </span>
+          <span>{countLabel(changes.length, "change")} · Not saved yet</span>
           <button
             disabled={busy}
             onClick={() => {

@@ -1,3 +1,4 @@
+import { formatTime } from "../format";
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import FilterChips from "../FilterChips";
@@ -155,9 +156,8 @@ export function RecentUpdates({ runs }: { runs: ClockRun[] }) {
       <ul>
         {runs.map((run) => (
           <li key={run.at}>
-            {new Date(run.at).toLocaleTimeString([], {
-              hour: "numeric",
-              minute: "2-digit",
+            {formatTime(new Date(run.at), {
+              format: { hour: "numeric", minute: "2-digit" },
             })}{" "}
             {run.discord_unavailable ? (
               "· Discord was unavailable. Nothing was renamed."

@@ -1,3 +1,4 @@
+import { formatTime } from "./format";
 /** Display Discord's timestamps locally without changing the outgoing payload. */
 export function reminderPreviewText(text: string, now = Date.now()): string {
   // Discord's single-line quotes end at the next unquoted line. CommonMark
@@ -11,9 +12,8 @@ export function reminderPreviewText(text: string, now = Date.now()): string {
     (_, seconds: string, style: string) => {
       const at = new Date(Number(seconds) * 1000);
       if (style === "t")
-        return at.toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
+        return formatTime(at, {
+          format: { hour: "numeric", minute: "2-digit" },
         });
       const minutes = Math.max(0, Math.round((at.getTime() - now) / 60000));
       if (minutes === 0) return "now";

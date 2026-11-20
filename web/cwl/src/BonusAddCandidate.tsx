@@ -1,3 +1,4 @@
+import { identifierInputProps } from "./inputProps";
 import type { RefObject } from "react";
 
 type Lookup = {
@@ -74,11 +75,10 @@ export default function BonusAddCandidate({
             <label>
               Player tag
               <input
+                {...identifierInputProps}
                 ref={tagInputRef}
                 name="player-tag"
                 autoComplete="off"
-                spellCheck={false}
-                autoCapitalize="characters"
                 inputMode="text"
                 value={tag}
                 maxLength={20}

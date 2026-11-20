@@ -1,3 +1,5 @@
+import { formatNumber } from "./format";
+import { countLabel } from "./countLabel";
 import CommandImage from "./CommandImage";
 import {
   HexColor,
@@ -516,11 +518,11 @@ export default function CommandBuilder({
                               .map((button) => button.label)
                               .join(" · ")
                           : block.type === "gallery"
-                            ? `${block.items.length} media items`
+                            ? countLabel(block.items.length, "media item")
                             : block.type === "section"
                               ? block.texts.join(" · ")
                               : block.type === "container"
-                                ? `${block.blocks.length} ${block.blocks.length === 1 ? "block" : "blocks"}`
+                                ? `${countLabel(block.blocks.length, "block")}`
                                 : block.type === "file"
                                   ? block.filename || "Upload a file"
                                   : block.type === "actions"
@@ -528,7 +530,7 @@ export default function CommandBuilder({
                                         .map((b) => b.label)
                                         .join(" · ")
                                     : block.type === "select"
-                                      ? `${block.options.length} ${block.options.length === 1 ? "option" : "options"}`
+                                      ? `${countLabel(block.options.length, "option")}`
                                       : block.divider
                                         ? "Divider line"
                                         : "Blank space"}
@@ -1168,9 +1170,11 @@ export default function CommandBuilder({
         </SortableContext>
       </DndContext>
       <p className="small">
-        {value.text.length +
-          blocks.reduce((sum, block) => sum + blockTextLength(block), 0)}
-        /4,000 text characters · {blocks.length}/15 blocks
+        {formatNumber(
+          value.text.length +
+            blocks.reduce((sum, block) => sum + blockTextLength(block), 0),
+        )}
+        /4,000 text characters · {formatNumber(blocks.length)}/15 blocks
       </p>
     </section>
   );

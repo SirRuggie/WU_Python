@@ -1,3 +1,4 @@
+import { numericInputProps } from "../inputProps";
 import type { Campaign } from "../reminderCampaign";
 import SignupDateField from "./SignupDateField";
 import TimingEditor from "./TimingEditor";
@@ -107,6 +108,7 @@ export default function ReminderScheduleTab({
                     }[key]
                   }
                   <input
+                    {...numericInputProps}
                     type="number"
                     min={1}
                     max={key === "count" ? 10 : 744}
@@ -157,6 +159,7 @@ export default function ReminderScheduleTab({
             <label>
               Minimum hours between reminders
               <input
+                {...numericInputProps}
                 type="number"
                 min={1}
                 max={24}

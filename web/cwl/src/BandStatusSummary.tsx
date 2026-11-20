@@ -1,3 +1,4 @@
+import { formatDateTime } from "./format";
 import type { ManagementField } from "./serverManagement";
 
 const primaryKeys = new Set([
@@ -48,13 +49,15 @@ function statusValue(field: ManagementField) {
   if (!date) return display(field.value);
   return (
     <time dateTime={String(field.value)}>
-      {date.toLocaleString(undefined, {
-        year: "numeric",
-        month: "short",
-        day: "numeric",
-        hour: "numeric",
-        minute: "2-digit",
-        timeZoneName: "short",
+      {formatDateTime(date, {
+        format: {
+          year: "numeric",
+          month: "short",
+          day: "numeric",
+          hour: "numeric",
+          minute: "2-digit",
+          timeZoneName: "short",
+        },
       })}
     </time>
   );

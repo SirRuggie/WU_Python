@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { RefreshButton } from "./RefreshControl";
 import useAnnouncementTestChannel from "./useAnnouncementTestChannel";
 import TestChannelDefault from "./TestChannelDefault";
@@ -153,8 +154,9 @@ export default function SingleClanRosterTest({
           {clan && (
             <>
               <p className="small">
-                Finalized version {data?.version} · {clan.pages} image
-                {clan.pages === 1 ? "" : "s"}. Draft changes are not included.
+                Finalized version {data?.version} ·{" "}
+                {countLabel(clan.pages, "image")}. Draft changes are not
+                included.
               </p>
               <RosterImageCarousel
                 clans={data!.clans}
@@ -220,7 +222,7 @@ export default function SingleClanRosterTest({
       {confirmTest && clan && (
         <ConfirmDialog
           heading="Send test image"
-          text={`Send only ${clan.name} (${clan.pages} image${clan.pages === 1 ? "" : "s"}) to #${channels.find((c) => c.id === channel)?.name || "Unknown channel"}? No pings.`}
+          text={`Send only ${clan.name} (${countLabel(clan.pages, "image")}) to #${channels.find((c) => c.id === channel)?.name || "Unknown channel"}? No pings.`}
           disabled={busy}
           onCancel={() => setConfirmTest(false)}
           onConfirm={() => void send()}

@@ -97,6 +97,21 @@ it("omits duplicate group labels but keeps distinct context", () => {
   expect(pageBreadcrumb("CWL", "Build roster")).toBe("CWL");
   expect(pageBreadcrumb(undefined, "Dashboard")).toBe("");
 });
+it("publishes actual sticky topbar height to its shared shell and clears desktop occlusion", () => {
+  const shell = document.createElement("div");
+  shell.className = "shell";
+  shell.append(topbar, main);
+  document.body.append(shell);
+  topbar.style.position = "sticky";
+  stop = observePageHeading(main, topbar, () => {});
+  expect(shell.style.getPropertyValue("--wu-topbar-h")).toBe("64px");
+  stop();
+  stop = undefined;
+  topbar.style.position = "static";
+  stop = observePageHeading(main, topbar, () => {});
+  expect(shell.style.getPropertyValue("--wu-topbar-h")).toBe("0px");
+  shell.remove();
+});
 it("starts with the real h1 visible, then follows it leaving and returning below the sticky bar", () => {
   main.innerHTML = "<h1>Tasks</h1>";
   const heading = main.querySelector("h1")!;

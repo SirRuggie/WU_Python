@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import DiscordIdentity, { type DiscordProfile } from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
@@ -201,6 +202,7 @@ export default function MentionText({
           <label>
             {picker === "role" ? "Search roles" : "Search members"}
             <input
+              {...searchInputProps}
               type="search"
               maxLength={80}
               placeholder="Type at least 2 letters"

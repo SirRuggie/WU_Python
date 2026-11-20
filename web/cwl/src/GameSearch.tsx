@@ -1,3 +1,5 @@
+import { countLabel } from "./countLabel";
+import { searchInputProps } from "./inputProps";
 import { useEffect, useId, useRef, useState } from "react";
 import { api, ApiError, type Account, type Clan, type Session } from "./api";
 import type { GameResult, GameSearchResponse } from "./dashboardSearch";
@@ -130,6 +132,7 @@ export default function GameSearch({
           <DashboardIcon name="search" />
           <span className="sr-only">Search your players and clans</span>
           <input
+            {...searchInputProps}
             id={id}
             type="search"
             maxLength={40}
@@ -224,9 +227,7 @@ export default function GameSearch({
           />
         )}
       {payload && !busy && (
-        <p role="status">
-          {visible.length} available result{visible.length === 1 ? "" : "s"}
-        </p>
+        <p role="status">{countLabel(visible.length, "available result")}</p>
       )}
       <div className="search-results">
         {visible.slice(currentPage * 20, (currentPage + 1) * 20).map((row) => (

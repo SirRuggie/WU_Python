@@ -1,3 +1,4 @@
+import { searchInputProps } from "./inputProps";
 import { formatDateTime } from "./format";
 import DashboardIcon from "./DashboardIcon";
 import { ArrowUpRight } from "lucide-react";
@@ -388,6 +389,7 @@ export default function PushReminders({
           <label>
             Find an account
             <input
+              {...searchInputProps}
               type="search"
               value={search}
               onChange={(event) => setSearch(event.target.value)}

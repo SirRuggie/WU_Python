@@ -159,6 +159,19 @@
   background: var(--wu-surface-raised);
   color: var(--wu-text);
   box-shadow: 0 12px 30px #0008; /* keep: shadow black */
+  transform-origin: var(--trigger-anchor-point, top right);
+}
+.account-menu-popover[data-entering] {
+  animation: wu-popover-enter 150ms var(--wu-ease-out);
+}
+.account-menu-popover[data-exiting] {
+  animation: wu-popover-exit 100ms var(--wu-ease-out);
+}
+@media (prefers-reduced-motion: reduce) {
+  .account-menu-popover {
+    animation: none !important;
+    transition: none !important;
+  }
 }
 
 .account-menu-summary {

@@ -1,3 +1,4 @@
+import { numericInputProps } from "./inputProps";
 import { useMemo, useState } from "react";
 import ActionPanel from "./ActionPanel";
 import StrikeMemberSelect, { strikeMemberOptions } from "./StrikeMemberSelect";
@@ -152,6 +153,7 @@ export default function StrikeActivityFiltersPanel({
           <label>
             Minimum weight
             <input
+              {...numericInputProps}
               type="number"
               min="0"
               value={draft.minWeight ?? ""}
@@ -168,6 +170,7 @@ export default function StrikeActivityFiltersPanel({
           <label>
             Maximum weight
             <input
+              {...numericInputProps}
               type="number"
               min="0"
               value={draft.maxWeight ?? ""}

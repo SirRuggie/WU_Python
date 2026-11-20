@@ -1,3 +1,4 @@
+import { formatNumber } from "./format";
 import RefreshControl from "./RefreshControl";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
@@ -14,7 +15,7 @@ import type { SignupChange } from "./signupActivityModel";
 import PublicationAwarenessBanner from "./PublicationAwarenessBanner";
 import { useHorizontalFades } from "./useHorizontalFades";
 import "./horizontalFades.css";
-import { countLabel } from "./countLabel";
+import { countLabel, countNoun } from "./countLabel";
 
 type StatusFilter = "all" | "unassigned" | "missing_weight";
 
@@ -283,8 +284,8 @@ export default function RosterHeader({
                     onClick={() => onStatusFilter("all")}
                     disabled={uiLocked}
                   >
-                    <strong>{accounts.length}</strong> signup
-                    {accounts.length === 1 ? "" : "s"}
+                    <strong>{formatNumber(accounts.length)}</strong>{" "}
+                    {countNoun(accounts.length, "signup")}
                   </Button>
                   <div className="roster-header-unplaced">
                     <Button

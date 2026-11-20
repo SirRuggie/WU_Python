@@ -186,8 +186,7 @@ it("walks every step, target advances, phone menu closes for practice, finishes 
       expect(document.querySelector(".tour-spotlight")).not.toBeNull();
     if (i === 1) expect(menu).toHaveBeenLastCalledWith(true);
     if (i === 4) expect(menu).toHaveBeenLastCalledWith(false);
-    if (i === 8)
-      expect(document.querySelector(".tour-confetti")).not.toBeNull();
+    if (i === 8) expect(document.querySelector(".tour-confetti")).toBeNull();
     if (i === 9) expect(document.querySelector(".tour-practice")).toBeNull();
     expect(document.querySelector(".tour-policy")).toBeNull();
     if (i === 7) {
@@ -439,7 +438,7 @@ it("clears the blocked staff editor explanation as soon as the editor is clean",
 it("uses the approved playful tour copy and bolds each navigation tap target", () => {
   expect(steps.map(({ title, text }) => [title, text])).toEqual([
     [
-      "Hey Chief! Welcome to Warriors United!",
+      "Hey Chief, welcome to Warriors United!",
       "Let's take a minute to show you around.",
     ],
     ["Start here, Chief!", "Tap **Home** — it shows what to do next."],

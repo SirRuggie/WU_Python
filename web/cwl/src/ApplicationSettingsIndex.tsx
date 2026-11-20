@@ -1,14 +1,15 @@
-import { useRef, useState } from 'react'
-import type { ManagementSection } from './serverManagement'
-import { applicationSteps } from './applicationSteps'
-import './ApplicationSettingsIndex.css'
+import { searchInputProps } from "./inputProps";
+import { useRef, useState } from "react";
+import type { ManagementSection } from "./serverManagement";
+import { applicationSteps } from "./applicationSteps";
+import "./ApplicationSettingsIndex.css";
 
 type Props = {
-  sections: ManagementSection[]
-  query: string
-  onQuery: (query: string) => void
-  onOpen: (section: ManagementSection, trigger: HTMLButtonElement) => void
-}
+  sections: ManagementSection[];
+  query: string;
+  onQuery: (query: string) => void;
+  onOpen: (section: ManagementSection, trigger: HTMLButtonElement) => void;
+};
 
 /** One index for the existing editors; never duplicates their save or send flows. */
 export default function ApplicationSettingsIndex({
@@ -17,14 +18,15 @@ export default function ApplicationSettingsIndex({
   onQuery,
   onOpen,
 }: Props) {
-  const [expanded, setExpanded] = useState('')
-  const search = useRef<HTMLInputElement>(null)
-  const groups = applicationSteps(sections, query)
+  const [expanded, setExpanded] = useState("");
+  const search = useRef<HTMLInputElement>(null);
+  const groups = applicationSteps(sections, query);
   return (
     <div className="application-index">
       <label>
         Find an application setting
         <input
+          {...searchInputProps}
           ref={search}
           type="search"
           value={query}
@@ -41,9 +43,9 @@ export default function ApplicationSettingsIndex({
           key={group.id}
           open={!!query || expanded === group.id}
           onToggle={(event) => {
-            if (!query && event.currentTarget.open) setExpanded(group.id)
+            if (!query && event.currentTarget.open) setExpanded(group.id);
             else if (!query && expanded === group.id)
-              setExpanded((current) => (current === group.id ? '' : current))
+              setExpanded((current) => (current === group.id ? "" : current));
           }}
         >
           <summary>
@@ -73,14 +75,14 @@ export default function ApplicationSettingsIndex({
         <div className="empty">
           <p>
             {query
-              ? 'No settings match this search.'
-              : 'No application settings are available for your access.'}
+              ? "No settings match this search."
+              : "No application settings are available for your access."}
           </p>
           {query && (
             <button
               onClick={() => {
-                onQuery('')
-                search.current?.focus()
+                onQuery("");
+                search.current?.focus();
               }}
             >
               Clear search
@@ -89,5 +91,5 @@ export default function ApplicationSettingsIndex({
         </div>
       )}
     </div>
-  )
+  );
 }

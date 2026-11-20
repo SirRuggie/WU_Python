@@ -304,7 +304,7 @@
   text-overflow: ellipsis;
 }
 .weight-clan-picker-panel .roster-menu-list {
-  max-height: min(56vh, 448px);
+  max-height: min(56dvh, 448px);
   overflow-y: auto;
 }
 .weight-clan-picker-panel .roster-menu-item {

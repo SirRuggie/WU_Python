@@ -1,3 +1,4 @@
+import { formatDateTime, formatNumber } from "./format";
 import { memberSignupsOpen } from "./memberSeason";
 import { useEffect, useState } from "react";
 import { ChevronRight, TriangleAlert } from "lucide-react";
@@ -16,17 +17,19 @@ export function relativeMinutes(at: number, now: number) {
   const minutes = Math.max(1, Math.ceil((at - now) / 60000));
   if (minutes >= 1440) {
     const days = Math.round(minutes / 1440);
-    return `in ${days} day${days === 1 ? "" : "s"}`;
+    return `in ${countLabel(days, "day")}`;
   }
   if (minutes >= 60) return `in ${Math.ceil(minutes / 60)} h`;
   return `in ${minutes} min`;
 }
 function formatMemberDate(at: number) {
-  return new Date(at).toLocaleString(undefined, {
-    month: "short",
-    day: "numeric",
-    hour: "numeric",
-    minute: "2-digit",
+  return formatDateTime(new Date(at), {
+    format: {
+      month: "short",
+      day: "numeric",
+      hour: "numeric",
+      minute: "2-digit",
+    },
   });
 }
 function signupCloseLine(season: Season | undefined, now: number) {
@@ -59,7 +62,7 @@ export function signupHeading(signed: number, total: number | null) {
     return `✓ You are signed up · ${countLabel(signed, "account")}`;
   return signed === total
     ? `✓ You are signed up · all ${countLabel(total, "account")}`
-    : `✓ You are signed up · ${signed} of ${countLabel(total, "account")}`;
+    : `✓ You are signed up · ${formatNumber(signed)} of ${countLabel(total, "account")}`;
 }
 export default function MemberSignupStatus({
   signups,
@@ -234,8 +237,7 @@ export default function MemberSignupStatus({
             ) : (
               <>
                 <TriangleAlert aria-hidden="true" size={22} />
-                {remaining.length} account{remaining.length === 1 ? "" : "s"}{" "}
-                not signed up yet
+                {countLabel(remaining.length, "account")} not signed up yet
               </>
             )}
           </h2>
@@ -246,8 +248,7 @@ export default function MemberSignupStatus({
             )}
           {!checkingAccounts && !accountsUnavailable && remaining.length > 0 ? (
             <button onClick={onRemaining}>
-              Sign up {remaining.length} more account
-              {remaining.length === 1 ? "" : "s"} ›
+              Sign up {countLabel(remaining.length, "more account")} ›
             </button>
           ) : (
             <p

@@ -840,7 +840,7 @@ export default function BonusWorkspace({
         ? allowance.total
         : null;
   const summaries: Record<BonusStep, string> = {
-    results: `${clanAccounts.length} ${clanAccounts.length === 1 ? "player" : "players"}${
+    results: `${countLabel(clanAccounts.length, "player")}${
       pool === "main" && savedMinimum === null
         ? ""
         : `, ${

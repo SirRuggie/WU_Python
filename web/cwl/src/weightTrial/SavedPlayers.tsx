@@ -1,3 +1,4 @@
+import { searchInputProps } from "../inputProps";
 import { formatDate } from "../format";
 import { useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
@@ -160,6 +161,7 @@ export default function SavedPlayers({
         <label>
           Name or tag
           <input
+            {...searchInputProps}
             type="search"
             maxLength={80}
             value={query}

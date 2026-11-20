@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import LoadError from "./LoadError";
 import FilterChips from "./FilterChips";
 import CwlPageHeader from "./CwlPageHeader";
@@ -289,9 +290,7 @@ export default function ExportWorkspace({
             <>
               <div className="export-ready">
                 <div>
-                  <strong>
-                    {rows.length} {rows.length === 1 ? "account" : "accounts"}
-                  </strong>
+                  <strong>{countLabel(rows.length, "account")}</strong>
                   <span>
                     {kind === "accounts" &&
                     displayedPreview.summary.published_available &&

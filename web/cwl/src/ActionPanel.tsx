@@ -24,6 +24,8 @@ type Props = {
   footer?: ReactNode;
   className?: string;
   onClose: () => void | boolean;
+  /** Optional immediate Back path for a panel with an explicit-dismiss exit. */
+  onHistoryClose?: () => void | boolean;
   busy?: boolean;
   trigger: HTMLElement | null;
   expandOnSearchFocus?: boolean;
@@ -55,6 +57,7 @@ export default function ActionPanel({
   footer,
   className = "",
   onClose,
+  onHistoryClose,
   busy = false,
   trigger,
   expandOnSearchFocus = false,
@@ -65,12 +68,14 @@ export default function ActionPanel({
   const closeButton = useRef<HTMLButtonElement>(null);
   const busyRef = useRef(busy);
   const onCloseRef = useRef(onClose);
+  const onHistoryCloseRef = useRef(onHistoryClose);
   const panelId = useId();
   const marker = `action-panel:${panelId}`;
   const [searchFocused, setSearchFocused] = useState(false);
   const pressStartedOnBackdrop = useRef(false);
   busyRef.current = busy;
   onCloseRef.current = onClose;
+  onHistoryCloseRef.current = onHistoryClose;
 
   useLayoutEffect(() => {
     closeRosterActionMenus();
@@ -84,14 +89,23 @@ export default function ActionPanel({
     // Focus the explicit close control. Search inputs remain unfocused on open.
     closeButton.current?.focus({ preventScroll: true });
 
-    const removeBackHandler = installPanelBackHandler({
+    let removeBackHandler = () => {};
+    removeBackHandler = installPanelBackHandler({
       windowPort: window,
       historyPort: history,
       marker,
       panelState,
       isBusy: () => busyRef.current,
       isTop: () => isTopActionPanel(marker),
-      close: () => onCloseRef.current(),
+      close: () => {
+        const historyClose = onHistoryCloseRef.current;
+        if (!historyClose) return onCloseRef.current();
+        const result = historyClose();
+        // This path must not keep consuming later Back entries during React's
+        // unmount commit. Other panels retain their existing close contract.
+        if (result !== false) removeBackHandler();
+        return result;
+      },
     });
 
     return () => {

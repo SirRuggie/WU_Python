@@ -1,3 +1,4 @@
+import { identifierInputProps } from "./inputProps";
 import DiscordIdentity from "./DiscordIdentity";
 import { useEffect, useRef, useState } from "react";
 import { CheckCircle2, Plus, Search, UserRoundSearch } from "lucide-react";
@@ -114,13 +115,12 @@ export default function StaffTagSignup({
       </p>
       <div className="staff-tag-lookup">
         <Input
+          {...identifierInputProps}
           label="Player tag"
           value={tag}
           disabled={busy}
           placeholder="#ABC123"
-          spellCheck={false}
           autoComplete="off"
-          autoCapitalize="characters"
           inputMode="text"
           maxLength={20}
           onChange={(event) => {
@@ -205,9 +205,9 @@ export default function StaffTagSignup({
               {hasDiscord && !result.linked_user_id && (
                 <>
                   <Input
+                    {...identifierInputProps}
                     label="Discord ID"
                     inputMode="numeric"
-                    spellCheck={false}
                     autoComplete="off"
                     placeholder="Enter Discord user ID"
                     value={uid}

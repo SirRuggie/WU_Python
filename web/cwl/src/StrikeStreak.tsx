@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 export type StrikeStreakState = { count: number; last_war_key?: string | null };
 
 export default function StrikeStreak({
@@ -20,8 +21,8 @@ export default function StrikeStreak({
   const remaining = count >= 4 ? 6 - count : 2 - (count % 2);
   return (
     <p className="strikes-streak">
-      Streak: {count} {count === 1 ? "war" : "wars"} played · {remaining} more
-      to {count >= 4 ? "clear all strikes" : "lose a strike"}
+      Streak: {countLabel(count, "war")} played · {remaining} more to{" "}
+      {count >= 4 ? "clear all strikes" : "lose a strike"}
     </p>
   );
 }

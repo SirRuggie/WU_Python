@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import useWorkspacePreference from "./useWorkspacePreference";
 import EmptyState from "./EmptyState";
 import SectionTabs, { SectionTabPanel } from "./SectionTabs";
@@ -806,7 +807,7 @@ export default function RosterWorkspace({
       if (activeSeason.current === sid) {
         const fromBulk = selectedTags.length > 0;
         await afterWrite(
-          `${result.count} signup${result.count === 1 ? "" : "s"} ${action === "remove" ? "removed" : `changed to ${action === "main" ? "Main" : "Lazy"} CWL`}. Publish again to update the published roster.`,
+          `${countLabel(result.count, "signup")} ${action === "remove" ? "removed" : `changed to ${action === "main" ? "Main" : "Lazy"} CWL`}. Publish again to update the published roster.`,
         );
         if (fromBulk) focusListHeading();
       }

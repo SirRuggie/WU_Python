@@ -1,3 +1,4 @@
+import { countLabel } from "./countLabel";
 import { comparisonAge, sameLocationClan } from "./comparisonLocation";
 import { MapPin } from "lucide-react";
 
@@ -37,8 +38,8 @@ export function playerClanStatus(
     minutes === 0
       ? "just now"
       : [
-          hours ? `${hours} hour${hours === 1 ? "" : "s"}` : "",
-          remainder ? `${remainder} minute${remainder === 1 ? "" : "s"}` : "",
+          hours ? countLabel(hours, "hour") : "",
+          remainder ? countLabel(remainder, "minute") : "",
         ]
           .filter(Boolean)
           .join(" ") + " ago";
@@ -86,7 +87,11 @@ export default function PlayerClanStatus({
         title={`${status.name} ${status.suffix}`}
         aria-hidden="true"
       >
-        {showAssigned && <strong>{status.name}</strong>}
+        {showAssigned && (
+          <strong translate={status.assigned ? "no" : undefined}>
+            {status.name}
+          </strong>
+        )}
         {status.inClan && !currentOnly && (
           <span className="player-in-clan-pill">In clan</span>
         )}
@@ -103,6 +108,11 @@ export default function PlayerClanStatus({
                 aria-hidden="true"
               />{" "}
               <span
+                translate={
+                  ["No clan", "in no clan"].includes(status.current)
+                    ? undefined
+                    : "no"
+                }
                 className={
                   status.assigned && !status.inClan
                     ? "player-current-clan is-elsewhere"

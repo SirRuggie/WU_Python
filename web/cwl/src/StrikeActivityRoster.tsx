@@ -1,3 +1,5 @@
+import { formatTime } from "./format";
+import { searchInputProps } from "./inputProps";
 import RefreshControl, {
   useRefreshTime,
   type RefreshControlProps,
@@ -110,6 +112,25 @@ export default function StrikeActivityRoster({
   onDenied?: () => void;
 }) {
   const rosterRef = useRef<HTMLElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [data, setData] = useState<Response>({ accounts: [], clans: [] });
+  useLayoutEffect(() => {
+    const toolbar = toolbarRef.current;
+    const root = rosterRef.current;
+    if (!toolbar || !root) return;
+    const measure = () =>
+      root.style.setProperty(
+        "--strike-activity-toolbar-h",
+        `${toolbar.getBoundingClientRect().height}px`,
+      );
+    measure();
+    const observer =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(measure);
+    observer?.observe(toolbar);
+    return () => observer?.disconnect();
+  }, [data]);
   const chipsRef = useRef<HTMLDivElement>(null);
   const [moreChips, setMoreChips] = useState(false);
   const phone = useCompactPreview(760);
@@ -136,7 +157,6 @@ export default function StrikeActivityRoster({
     setSelected([]);
     setSelecting(false);
   }, [filterIdentity, selectionReset]);
-  const [data, setData] = useState<Response>({ accounts: [], clans: [] });
   const [loading, setLoading] = useState(true),
     [error, setError] = useState(""),
     [loadedAt, setLoadedAt] = useState("");
@@ -248,9 +268,8 @@ export default function StrikeActivityRoster({
       if (current !== request.current) return;
       setData(result);
       setLoadedAt(
-        new Date().toLocaleTimeString([], {
-          hour: "numeric",
-          minute: "2-digit",
+        formatTime(new Date(), {
+          format: { hour: "numeric", minute: "2-digit" },
         }),
       );
       return true;
@@ -636,7 +655,7 @@ export default function StrikeActivityRoster({
           ))}
         </select>
       </div>
-      <div className="strike-activity-toolbar">
+      <div ref={toolbarRef} className="strike-activity-toolbar">
         {!onRefreshControl && (
           <RefreshControl
             updatedAt={refreshUpdatedAt}
@@ -706,6 +725,7 @@ export default function StrikeActivityRoster({
       {searching && (
         <div className="strike-activity-search">
           <input
+            {...searchInputProps}
             ref={searchInput}
             aria-label="Find account or member"
             type="search"

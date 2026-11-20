@@ -1,8 +1,10 @@
+import { searchInputProps } from "./inputProps";
 import { SectionTabPanel } from "./SectionTabs";
 import EmptyState from "./EmptyState";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
+import { Button } from "./rosterUi/primitives";
 import BonusHelpPanel from "./BonusHelpPanel";
 import useConfirmDialog from "./useConfirmDialog";
 import { exportMonthLabel } from "./exportPreview";
@@ -90,7 +92,6 @@ export default function ParticipationWorkspace({
   const [syncBusy, setSyncBusy] = useState(false);
   const syncPending = useRef(false);
   const [syncError, setSyncError] = useState("");
-  const [page, setPage] = useState(0);
   const [recordEpoch, setRecordEpoch] = useState(0);
   const [search, setSearch] = useState("");
   const [storedPool, setStoredPool] = useCwlPool();
@@ -103,6 +104,15 @@ export default function ParticipationWorkspace({
     initial.current.outcome || "all",
   );
   const [sort, setSort] = useState<ResultsSort>(initial.current.sort || "name");
+  const filterKey = JSON.stringify([
+    search,
+    pool,
+    clan,
+    sort,
+    outcome,
+    seasonId,
+  ]);
+  const [renderLimit, setRenderLimit] = useState({ key: filterKey, count: 50 });
   const [status, setStatus] = useState<BonusStatus | null>(null);
   const [statusFailed, setStatusFailed] = useState(false);
   const [statusError, setStatusError] = useState("");
@@ -252,7 +262,11 @@ export default function ParticipationWorkspace({
       requestId.current += 1;
     };
   }, [seasonId, load]);
-  useEffect(() => setPage(0), [search, pool, clan, sort, outcome, seasonId]);
+  useEffect(() => {
+    setRenderLimit((current) =>
+      current.key === filterKey ? current : { key: filterKey, count: 50 },
+    );
+  }, [filterKey]);
 
   const changeSeason = async (id: string) => {
     if (controlsLocked || id === seasonId) return;
@@ -475,14 +489,12 @@ export default function ParticipationWorkspace({
   const visible = filtered.filter((account) =>
     matchesOutcome(account, activeOutcome, mainMinimum),
   );
-  const lastPage = Math.max(0, Math.ceil(visible.length / 20) - 1);
-  const currentPage = Math.min(page, lastPage);
-  const visibleTags = new Set(
-    visible
-      .slice(currentPage * 20, (currentPage + 1) * 20)
-      .map((account) => account.tag),
-  );
-  // Keep all records mounted while filtering so a failed save never destroys a draft.
+  // A new filter starts at50 on its first render, before the reset effect runs.
+  const requestedCount = renderLimit.key === filterKey ? renderLimit.count : 50;
+  const shown = visible.slice(0, requestedCount);
+  const visibleTags = new Set(shown.map((account) => account.tag));
+  // Keep dirty/busy or open records mounted even when outside the visible slice.
+  // Clean offscreen records can remount from the saved parent data.
   const sorted = visibleParticipation(data?.accounts || [], {
     search: "",
     pool: "all",
@@ -726,10 +738,10 @@ export default function ParticipationWorkspace({
               <label>
                 Find a player
                 <input
+                  {...searchInputProps}
                   type="search"
                   name="search"
                   autoComplete="off"
-                  spellCheck={false}
                   value={search}
                   disabled={controlsLocked}
                   onChange={(event) => setSearch(event.target.value)}
@@ -794,36 +806,43 @@ export default function ParticipationWorkspace({
             {data.accounts.length ? (
               <>
                 <ul className="participation-list">
-                  {sorted.map((account) => (
-                    <li
-                      key={`${seasonId}:${recordEpoch}:${account.tag}`}
-                      hidden={!visibleTags.has(account.tag)}
-                    >
-                      <ParticipationRecord
-                        account={account}
-                        mainMinimum={mainMinimum}
-                        publicationVersion={data.publication_version}
-                        readonly={!!archived}
-                        locked={
-                          activeEditorTag === account.tag
-                            ? ownRecordLocked
-                            : writesLocked
-                        }
-                        open={activeEditorTag === account.tag}
-                        onOpen={() => setActiveEditorTag(account.tag)}
-                        onClose={() =>
-                          setActiveEditorTag((current) =>
-                            current === account.tag ? null : current,
-                          )
-                        }
-                        onSave={save}
-                        onReset={resetToSource}
-                        onDirty={onDirty}
-                        onAddStrike={onAddStrike}
-                        infractions={onBonus ? infractions : undefined}
-                      />
-                    </li>
-                  ))}
+                  {sorted
+                    .filter(
+                      (account) =>
+                        visibleTags.has(account.tag) ||
+                        dirtyTags.has(account.tag) ||
+                        activeEditorTag === account.tag,
+                    )
+                    .map((account) => (
+                      <li
+                        key={`${seasonId}:${recordEpoch}:${account.tag}`}
+                        hidden={!visibleTags.has(account.tag)}
+                      >
+                        <ParticipationRecord
+                          account={account}
+                          mainMinimum={mainMinimum}
+                          publicationVersion={data.publication_version}
+                          readonly={!!archived}
+                          locked={
+                            activeEditorTag === account.tag
+                              ? ownRecordLocked
+                              : writesLocked
+                          }
+                          open={activeEditorTag === account.tag}
+                          onOpen={() => setActiveEditorTag(account.tag)}
+                          onClose={() =>
+                            setActiveEditorTag((current) =>
+                              current === account.tag ? null : current,
+                            )
+                          }
+                          onSave={save}
+                          onReset={resetToSource}
+                          onDirty={onDirty}
+                          onAddStrike={onAddStrike}
+                          infractions={onBonus ? infractions : undefined}
+                        />
+                      </li>
+                    ))}
                 </ul>
                 {!visible.length && (
                   <EmptyState
@@ -838,29 +857,25 @@ export default function ParticipationWorkspace({
                 line="Current signups will appear here."
               />
             )}
-            {lastPage > 0 && (
-              <nav
-                className="roster-pagination"
-                aria-label="Participation pages"
-              >
-                <button
-                  type="button"
-                  disabled={controlsLocked || currentPage === 0}
-                  onClick={() => setPage(currentPage - 1)}
-                >
-                  Previous
-                </button>
+            {visible.length > 0 && (
+              <div className="roster-load-more" aria-live="polite">
                 <span>
-                  Page {currentPage + 1} of {lastPage + 1}
+                  Showing {shown.length} of {visible.length} matching players
                 </span>
-                <button
-                  type="button"
-                  disabled={controlsLocked || currentPage === lastPage}
-                  onClick={() => setPage(currentPage + 1)}
-                >
-                  Next
-                </button>
-              </nav>
+                {shown.length < visible.length && (
+                  <Button
+                    disabled={controlsLocked}
+                    onClick={() =>
+                      setRenderLimit({
+                        key: filterKey,
+                        count: shown.length + 50,
+                      })
+                    }
+                  >
+                    Load more
+                  </Button>
+                )}
+              </div>
             )}
           </SectionTabPanel>
         </>
