@@ -1,5 +1,56 @@
 # Release and rollback history
 
+## Official WU crest and list toolbars — November 20, 2026
+
+Released PRs [#406](https://github.com/SirRuggie/WU_Python/pull/406) and
+[#407](https://github.com/SirRuggie/WU_Python/pull/407) as frontend
+`0643a4ffefcc505595e0765e12f77de980054911`, tag
+`wu-crest-toolbar-256-258-1` (tag object `eb3f2fcb7e3b0b10d8ffe4074c9fbc8d0eb2e789`).
+Shaka approved the exact source heads in handoff 1237 and 1253; owner release
+instructions are 1238 and 1243. Handoff 1253 allowed this combined release while
+259 continued separately.
+
+The normal staging helper built a clean tagged isolated checkout. All 187 public
+asset hashes matched the staged manifest; config returned 200 and signed-out
+seasons returned 401. Entry `assets/index-B7EbeV8l.js` SHA256:
+`f3c3dc048dc35416fadc769aa567dc85a643c75e342ea0590113633dbfabd486`.
+The bot's same-path logo was separately backed up and replaced with approved
+SHA256 `0192ac66fe7bc3438362660390ad7461e5a393ada248c621659aa7389d89065d`
+(438,771 bytes, uid 1002, gid 1004, mode 0644). Its owning workers exited and
+were reaped before subsequent guards. No restart, Discord/R2 request, database
+restore or data repair occurred.
+
+Backend remained `4035d1592dc4a9c0fff59233d5d305a5b759cd84`, PID 691416;
+bot code remained `af99e27deecf33fad827749276fb4f40139c4bbb`, PID 329298;
+gateway PID 307279 remained unchanged. Only the bot logo path became dirty.
+
+Verified backup serves as the explicitly named BEFORE snapshot. Separate POST
+verification, strict comparison and final journal/runtime window passed before
+DONE 2277. Main signup/assignment/lock counts stayed 23/23/23; Lazy 147/146/131.
+Protected Mongo metrics stayed 3,562 active strikes, 301 active accounts,
+625 streak profiles, 260 eligible accounts and 489 member profiles. All 76 SQL
+tables were observed; existing session/claim and timestamp policies passed with
+strict remaining counts, schemas, pools and publication state. All positive
+staff business projections across 81 Mongo namespaces remained exact; no 1245
+content-edit exception was needed. Member events increased from 5,939 to 5,941
+and unknown-owner changes were recorded under the existing 1107 policy; this is
+not a claim that all background data or row contents were unchanged. Whole
+Town Hall and legacy FWA documents and indexes remained exact.
+
+Evidence: `.local/256-retry-1245-actual/completion-256-258.json`, SHA256
+`b2d0eaefb9f80f85c5a1f42c31666e3b8a544685c8c06693a04d1ee9c5ce0f6f`.
+The original 256 attempt failed on a staff-field comparison and was rolled back;
+its failure evidence remains frozen and was never relabelled as passing. This
+fresh attempt used its own verified before/after captures. Shaka's read-only
+production smoke follows DONE separately.
+
+Retained frontend rollback: `f7e072bee7e2665988266d86c67f5f9b79cb90e9`.
+Retained logo backup:
+`/home/botrunner/wu-logo-release-256-258-0643a4ffefcc505595e0765e12f77de980054911`,
+intent SHA256 `95ff7fafd38fd29a4ddbdbdcd3dc3138692578f5d3d1775bbeb7d02a2a2cf017`.
+Any later recovery requires fresh current-state guards and code/asset-only
+rollback. Never replay historical coordinators or restore the database.
+
 ## Reading this record
 
 The latest dated release facts supersede older uses of “current”, “standby” or
