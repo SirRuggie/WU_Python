@@ -154,6 +154,16 @@ def base_variants(doc):
     return result
 
 
+MERGED_DEFENSES_FROM = 16
+
+
+def variant_label(level, variant):
+    """Merged defenses start at TH16; lower levels show no variant word."""
+    if variant == "non_merged":
+        return "Non-merged"
+    return "Merged" if level >= MERGED_DEFENSES_FROM else ""
+
+
 def menu_options(doc):
     """Transport-neutral Discord choices, within the native25-option limit."""
     variants = base_variants(doc)
@@ -161,8 +171,8 @@ def menu_options(doc):
         _LOG.warning("Town Hall base menu has more than25 variants; keeping the highest25.")
     result = []
     for item in variants[:25]:
-        label = "Non-merged" if item["variant"] == "non_merged" else "Merged"
-        option = {"label": f"TH{item['level']} {label}", "value": item["key"]}
+        label = variant_label(item["level"], item["variant"])
+        option = {"label": f"TH{item['level']} {label}".rstrip(), "value": item["key"]}
         emoji = emoji_markup(doc, item["level"])
         if emoji:
             option["emoji"] = emoji

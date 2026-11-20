@@ -38,10 +38,10 @@ def base_choice(value):
                  if row['level'] == level and row['variant'] == variant), None)
     if item is None:
         return None
-    label = 'Non-merged' if variant == 'non_merged' else 'Merged'
+    label = town_halls.variant_label(level, variant)
     return {
-        **item, 'display_name': f'TH{level} {label}',
-        'friendly_name': f'Town Hall {level} {label}',
+        **item, 'display_name': f'TH{level} {label}'.rstrip(),
+        'friendly_name': f'Town Hall {level} {label}'.rstrip(),
         'war_image': optimized(item['war_image'], width=DETAIL) if item['war_image'] else '',
         'active_image': optimized(item['active_image'], width=DETAIL) if item['active_image'] else '',
     }
