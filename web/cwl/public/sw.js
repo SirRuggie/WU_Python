@@ -16,7 +16,7 @@ self.addEventListener('push', event => {
   const body = typeof payload.body === 'string' ? payload.body.slice(0, 1500) : 'Open Tasks to check your remaining attacks.';
   const tag = typeof payload.tag === 'string' ? payload.tag.slice(0, 180) : 'wu-todo-reminder';
   event.waitUntil(self.registration.showNotification(title, {
-    body, tag, icon: '/icons/wu-logo.png',
+    body, tag, icon: '/icons/wu-crest-192.png',
     data: { url: todoUrl(payload.url) },
   }));
 });
