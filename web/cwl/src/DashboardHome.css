@@ -851,3 +851,10 @@
 .home-signup-summary > .member-signup-status {
   margin: 12px;
 }
+
+@media (max-width: 480px) {
+  .home-signup-summary > summary {
+    font-size: var(--wu-text-sm);
+    white-space: nowrap;
+  }
+}
