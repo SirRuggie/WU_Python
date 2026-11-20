@@ -22,8 +22,12 @@ def catalog():
     def add(prefix, key, label, permission, group, description):
         result.append(dict(id=f'{prefix}--{key}', label=label, permission=permission, group=group, description=description))
     for key, doc in gauntlet.DOCUMENTS.items():
-        add('gauntlet', key, doc.label, 'recruit', 'Welcome messages', 'Preview and edit this private ticket message.' if key == 'rite-of-passage' else 'Preview, edit and publish this message.')
-        if key not in {'apply', 'rite-of-passage'}:
+        description = ('Edit shared rules. After saving, open Family Rules in Discord /manage to review and update linked posts.'
+                       if key == 'family-rules' else
+                       'Preview and edit this private ticket message.' if key == 'rite-of-passage' else
+                       'Preview, edit and publish this message.')
+        add('gauntlet', key, doc.label, 'recruit', 'Welcome messages', description)
+        if gauntlet.has_posting_channel(key):
             add('destination', key, f'{doc.label}: posting channel', 'recruit', 'Welcome messages', "Select the channel used by Discord /manage when posting this message.")
     for group in questions.GROUPS.values():
         for key in group['variants']:
@@ -96,7 +100,7 @@ def schema(item, template):
                 purpose = 'Replaces image ' + entry['label'][6:] + ' in the message, counted from top to bottom.'
             entry['description'] = purpose + ' Save changes to apply this draft.' + (' Leave empty to use the original artwork.' if prefix == 'gauntlet' else '')
     actions = []
-    if prefix == 'gauntlet' and key != 'rite-of-passage':
+    if prefix == 'gauntlet' and not gauntlet.is_template_only(key):
         actions.append(dict(id='load-published', label='Copy from Discord', advanced=True, description='Copy the current Discord post into this draft. Save to keep it.', confirm='Replace the editor draft with the published copy? Nothing is saved yet.', endpoint=API + '/manage/content/' + item['id'] + '/load-published'))
     if prefix != 'destination':
         actions.append(dict(id='reset', label='Reset to default', advanced=True, description='Replace saved text and artwork with the bot’s default message.', confirm='Reset saved text and artwork to the default message? Your saved edits will be replaced. This does not update the Discord post.', endpoint=API + '/manage/content/' + item['id'] + '/reset'))
@@ -105,7 +109,7 @@ def schema(item, template):
         for slot, section in template['sections'].items():
             if slot.startswith('custom_'):
                 actions.append(dict(id='remove-' + slot, label='Remove ' + staff.section_label(slot, section), confirm='Remove this additional staff message?', endpoint=API + '/manage/content/' + item['id'] + '/remove-' + slot))
-    return {**{k: v for k, v in item.items() if k != 'permission'}, 'endpoint': API + '/manage/content/' + item['id'], 'revision': template['revision'], 'fields': fields, 'preview_supported': prefix != 'destination', 'publish_endpoint': API + '/manage/publish/' + key if prefix == 'gauntlet' and key != 'rite-of-passage' else None, 'actions': actions}
+    return {**{k: v for k, v in item.items() if k != 'permission'}, 'endpoint': API + '/manage/content/' + item['id'], 'revision': template['revision'], 'fields': fields, 'preview_supported': prefix != 'destination', 'publish_endpoint': API + '/manage/publish/' + key if prefix == 'gauntlet' and not gauntlet.is_template_only(key) else None, 'actions': actions}
 
 
 def candidate(item, loaded, body):
@@ -236,14 +240,20 @@ async def artwork(request):
     return web.FileResponse(path, headers={'Cache-Control': 'private, max-age=3600', 'X-Content-Type-Options': 'nosniff'})
 
 
-async def editor_document(item, template):
+async def editor_document(item, template, *, mongo=None):
     result = schema(item, template)
     if result['preview_supported']:
-        result['preview'] = await preview(item, template)
+        try:
+            result['preview'] = await preview(item, template, mongo=mongo)
+        except ValueError as error:
+            # Loading editable text must still work when a composed preview's
+            # registry is unavailable or its complete text exceeds the budget.
+            # Delivery uses the strict renderer, never this editor-only error.
+            result['preview'] = [{'type': 'text', 'text': 'Preview unavailable: ' + str(error)}]
     return result
 
 
-async def preview(item, template):
+async def preview(item, template, *, mongo=None):
     gauntlet, questions, staff, war = modules()
     prefix, key = item['id'].split('--', 1)
     if prefix == 'destination':
@@ -253,7 +263,7 @@ async def preview(item, template):
         return [{'type': 'container', 'children': [{'type': 'text', 'text': text}]} for _, text in staff.messages(key, template, recruiter_role=1)]
     if prefix == 'gauntlet':
         # Same native renderer validates text count, size and layout.
-        components = await gauntlet.render(gauntlet.DOCUMENTS[key], template['sections'], media=template['media'], preview=True)
+        components = await gauntlet.render(gauntlet.DOCUMENTS[key], template['sections'], media=template['media'], preview=True, mongo=mongo, guild_id=GUILD_ID)
     elif prefix == 'question':
         components = questions.preview_template(template)
     else:
@@ -304,7 +314,7 @@ async def item_handler(request):
     async with mongo(request) as db:
         loaded = await load(db, item)
         if request.method == 'GET':
-            return web.json_response(await editor_document(item, loaded))
+            return web.json_response(await editor_document(item, loaded, mongo=db))
         try:
             body = await request.json()
             action = request.match_info.get('action')
@@ -331,14 +341,14 @@ async def item_handler(request):
                     return value
                 components = convert(post.get('components', []))
                 document = gauntlet.DOCUMENTS[key]
-                if gauntlet.component_shape(components) != gauntlet.component_shape(await gauntlet.baseline(document)) or not gauntlet.acknowledgement_id(components, document):
+                if not await gauntlet.supported_post_shape(document, components) or document.acknowledgement and not gauntlet.acknowledgement_id(components, document):
                     raise ValueError('The saved post no longer matches this message type')
-                sections = [node.content for node in gauntlet.text_nodes(components)]
+                sections = [node.content for node in gauntlet.editable_text_nodes(document, components)]
                 urls = gauntlet.media_snapshot(components)
                 if len(urls) != len(gauntlet.MEDIA_SLOTS[key]):
                     raise ValueError('The published artwork layout changed')
                 media = dict(zip((slot for slot, _ in gauntlet.MEDIA_SLOTS[key]), urls))
-                await gauntlet.render(document, sections, media=media, preview=True)
+                await gauntlet.render(document, sections, media=media, preview=True, mongo=db, guild_id=GUILD_ID)
                 draft = {f'sections.{index}': value for index, value in enumerate(sections)}
                 draft.update({f'media.{slot}': url for slot, url in media.items()})
                 return web.json_response({'draft_values': draft, 'message': 'Published copy loaded. Save changes to keep it.'})
@@ -347,7 +357,7 @@ async def item_handler(request):
                     raise ValueError('Select a posting channel instead')
                 if prefix == 'gauntlet':
                     components = await gauntlet.baseline(gauntlet.DOCUMENTS[key])
-                    updated = dict(sections=[node.content for node in gauntlet.text_nodes(components)], media={}, revision=loaded['revision'])
+                    updated = dict(sections=[node.content for node in gauntlet.editable_text_nodes(gauntlet.DOCUMENTS[key], components)], media={}, revision=loaded['revision'])
                 else:
                     updated = (staff.defaults(key) if prefix == 'staff' else (questions if prefix == 'question' else war).default_template(key))
                     updated['revision'] = loaded['revision']
@@ -361,7 +371,7 @@ async def item_handler(request):
                 del updated['sections'][slot]
             elif action:
                 raise web.HTTPNotFound(text='Unknown message action')
-            rendered = await preview(item, updated)
+            rendered = await preview(item, updated, mongo=db)
             if request.path.endswith('/preview'):
                 return web.json_response({**schema(item, updated), 'preview': rendered})
             from .change_history import begin, finish, fields
@@ -390,7 +400,7 @@ async def item_handler(request):
                 module = questions if prefix == 'question' else war
                 await module.save_template(db, GUILD_ID, key, updated, loaded['revision'], int(actor['user_id']))
             fresh = await load(db, item)
-            document = await editor_document(item, fresh)
+            document = await editor_document(item, fresh, mongo=db)
             await finish(db, history_id, fields(document), fresh)
             return web.json_response(document)
         except DuplicateKeyError:

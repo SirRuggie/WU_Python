@@ -11,10 +11,11 @@ from urllib.parse import urlparse
 
 import hikari
 import lightbulb
-from pymongo.errors import DuplicateKeyError
+from pymongo.errors import DuplicateKeyError, PyMongoError
 
 from extensions.components import register_action
-from utils.component_state import get_state, insert_state, utcnow
+from utils.component_state import get_state, insert_state, update_state, utcnow
+from utils.info_channel_content import load_family_clans, validate_rendered_text, strip_manual_clan_prefix
 from utils.content_media import (
     media_galleries,
     media_url,
@@ -45,7 +46,7 @@ MESSAGE_LINK = re.compile(r"<?https://(?:(?:canary|ptb)\.)?discord(?:app)?\.com/
 class Document:
     key: str
     label: str
-    acknowledgement: str
+    acknowledgement: str | None
     legacy_key: str | None = None
 
 
@@ -56,14 +57,18 @@ DOCUMENTS = {
     "family-particulars": Document("family-particulars", "Family Particulars", "familyparticulars_acknowledge"),
     "apply": Document("apply", "Apply / Clan Entry", "ticket_v2_rite_open"),
     "rite-of-passage": Document("rite-of-passage", "Rite of Passage", "ticket_v2_rite_choose"),
+    "family-rules": Document("family-rules", "Family Rules", None),
+    "wu-faq": Document("wu-faq", "WU FAQ", None),
 }
 BLOCK_LABELS = {
     "join-family": ("Heading", "Welcome", "What happens next", "Call to action"),
     "about-us": ("Welcome heading", "Welcome overview", "Tactical heading", "Tactical details", "Flexible Fun heading", "Flexible Fun details", "FWA heading", "FWA details", "Disclaimer heading", "Disclaimer", "Next step heading", "Next step"),
-    "strike-system": ("Basic rules heading", "Basic rules", "Strike overview heading", "Strike overview", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
-    "family-particulars": ("Family heading", "Golden rule heading", "Golden rule", "Friendly challenges heading", "Friendly challenges", "Clan games heading", "Clan games", "War rules heading", "War eligibility heading", "War eligibility", "Prep day heading", "Prep day", "Battle day heading", "Battle day", "CWL heading", "CWL overview", "CWL principles heading", "CWL principles", "Acknowledgement heading", "Acknowledgement"),
+    "strike-system": ("How strikes work heading", "How strikes work", "At 4 strikes heading", "At 4 strikes", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
+    "family-particulars": ("Family heading", "Intro heading", "Intro", "Friendly challenges heading", "Friendly challenges", "Clan games heading", "Clan games", "War rules heading", "War eligibility heading", "War eligibility", "Prep day heading", "Prep day", "Battle day heading", "Battle day", "CWL heading", "CWL overview", "CWL principles heading", "CWL principles", "Acknowledgement heading", "Acknowledgement"),
     "apply": ("Heading", "Body"),
     "rite-of-passage": ("Heading", "Introduction", "Main path", "FWA path", "Closing"),
+    "family-rules": ("Heading", "Body"),
+    "wu-faq": ("Questions heading", "Questions"),
 }
 MEDIA_SLOTS = {
     "join-family": (("welcome", "Welcome banner"),),
@@ -76,9 +81,19 @@ MEDIA_SLOTS = {
     "family-particulars": (("welcome", "Welcome banner"), ("cwl", "CWL banner")),
     "apply": (("footer", "Footer image"),),
     "rite-of-passage": (("guide", "Rite of Passage guide"),),
+    "family-rules": (),
+    "wu-faq": (),
 }
 _baselines: dict[str, list] = {}
 _DESTINATION_TYPES = frozenset((hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS))
+
+
+def has_posting_channel(document_key):
+    return document_key in DOCUMENTS and document_key not in {"apply", "rite-of-passage", "family-rules"}
+
+
+def is_template_only(document_key):
+    return document_key in {"rite-of-passage", "family-rules"}
 
 
 def acknowledgement_setup(document_key: str, guild_id: int = 644963518025826315) -> tuple[int, int]:
@@ -147,11 +162,13 @@ def media_slots(document: Document):
 async def baseline(document: Document):
     if document.key in _baselines:
         return copy.deepcopy(_baselines[document.key])
-    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family
+    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family, recruit_wu_faq
     from extensions.commands.tickets import setup as ticket_setup, rite
     build = {
         "join-family": recruit_join_family.build_join_family,
         "about-us": recruit_aboutus.build_aboutus,
+        "family-rules": recruit_wu_faq.build_family_rules,
+        "wu-faq": recruit_wu_faq.build_wu_faq,
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
         "apply": ticket_setup.create_public_ticket_embed,
@@ -162,11 +179,13 @@ async def baseline(document: Document):
 
 
 def document_renderer(document: Document):
-    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family
+    from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family, recruit_wu_faq
     from extensions.commands.tickets import setup as ticket_setup, rite
     return {
         "join-family": recruit_join_family.build_join_family,
         "about-us": recruit_aboutus.build_aboutus,
+        "family-rules": recruit_wu_faq.build_family_rules,
+        "wu-faq": recruit_wu_faq.build_wu_faq,
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
         "apply": ticket_setup.create_public_ticket_embed,
@@ -174,21 +193,44 @@ def document_renderer(document: Document):
     }[document.key]
 
 
-async def render(document: Document, sections, *, media=None, action_id="preview", preview=False):
-    baseline_components = await baseline(document)
-    if component_count(baseline_components) > 40:
-        raise ValueError("This document exceeds Discord's 40-component message limit.")
-    nodes = text_nodes(baseline_components)
-    if len(sections) != len(nodes) or any(not isinstance(value, str) or not value.strip() for value in sections):
+def editable_text_nodes(document, components):
+    nodes = text_nodes(components)
+    if document.key == "about-us" and len(nodes) == 14:
+        return nodes[:10] + nodes[12:]
+    if document.key == "wu-faq" and len(nodes) == 4:
+        return nodes[2:]
+    return nodes
+
+
+async def validate_template(document, sections, media=None):
+    expected = len(editable_text_nodes(document, await baseline(document)))
+    if (not isinstance(sections, list) or len(sections) != expected
+            or any(not isinstance(value, str) or not value.strip() for value in sections)):
         raise ValueError("This saved content is incomplete. Reopen the dashboard and correct every block.")
-    if sum(map(len, sections)) > 4000:
-        raise ValueError("This document exceeds the editor's 4,000-character total.")
-    overrides = normal_media(document, media)
+    return normal_media(document, media)
+
+
+async def render(document: Document, sections, *, media=None, action_id="preview", preview=False,
+                 mongo=None, guild_id=None):
+    overrides = await validate_template(document, sections, media)
+    resolved = {}
+    if document.key in {"about-us", "wu-faq"}:
+        if mongo is None or guild_id is None or int(guild_id) <= 0:
+            raise ValueError("This preview needs its server and clan registry. Reopen Recruit Gauntlet.")
+        try:
+            rules, _rules_media, _rules_revision = await template_for(mongo, DOCUMENTS["family-rules"], int(guild_id))
+        except (PyMongoError, OSError) as error:
+            raise ValueError("I cannot read Family Rules right now. No post was changed. Try Preview again later.") from error
+        resolved["family_rules"] = rules
+        if document.key == "about-us":
+            resolved["clans"] = await load_family_clans(mongo)
     components = document_renderer(document)(
-        sections, media=overrides, action_id=action_id, preview=preview
+        sections, media=overrides, action_id=action_id, preview=preview, **resolved
     )
-    galleries = media_galleries(components)
-    if len(galleries) != len(media_slots(document)):
+    if component_count(components) > 40:
+        raise ValueError("This document exceeds Discord's 40-component message limit.")
+    validate_rendered_text([node.content for node in text_nodes(components)])
+    if len(media_galleries(components)) != len(media_slots(document)):
         raise ValueError("This document's media layout is not supported by the content dashboard.")
     return components
 
@@ -199,22 +241,25 @@ async def template_for(mongo, document: Document, guild_id: int):
     if saved and isinstance(saved.get("sections"), list):
         try:
             media = normal_media(document, saved.get("media"))
-            await render(document, saved["sections"], media=media)
+            await validate_template(document, saved["sections"], media=media)
             return list(saved["sections"]), media, int(saved.get("revision", 0))
         except ValueError:
-            pass
+            if document.key == "family-rules":
+                raise ValueError("The saved Family Rules are incomplete. Correct their heading and body before posting.") from None
+    elif saved and document.key == "family-rules":
+        raise ValueError("The saved Family Rules are incomplete. Correct their heading and body before posting.")
     if document.legacy_key:
         legacy = await mongo.bot_config.find_one({"_id": f"{document.legacy_key}:{guild_id}"})
         if legacy and isinstance(legacy.get("sections"), list):
             try:
-                await render(document, legacy["sections"])
+                await validate_template(document, legacy["sections"])
                 # Migration writes a new content key, so legacy revision cannot
                 # participate in that key's compare-and-swap predicate.
                 return list(legacy["sections"]), {}, 0
             except ValueError:
                 pass
     components = await baseline(document)
-    return [node.content for node in text_nodes(components)], {}, 0
+    return [node.content for node in editable_text_nodes(document, components)], {}, 0
 
 
 async def sections_for(mongo, document, guild_id):
@@ -241,6 +286,8 @@ def editable_blocks(document, sections):
 def editable_groups(document, sections):
     """Keep a section's heading and body in the same modal."""
     blocks = editable_blocks(document, sections)
+    if document.key == "family-rules":
+        return (("Family Rules", ((0, "Heading", "full"), (1, "Body", "full"))),)
     if document.key == "join-family":
         return (
             ("Welcome", ((blocks[0][0], "Heading", "full"), (blocks[1][0], "Body", "full"))),
@@ -286,6 +333,8 @@ def target_matches_destination(state):
 
 
 def acknowledgement_id(components, document):
+    if document.acknowledgement is None:
+        return None
     for component in components:
         for child in getattr(component, "components", ()):
             for button in getattr(child, "components", ()):
@@ -298,7 +347,7 @@ def acknowledgement_id(components, document):
 
 
 def destination_key(guild_id: int, document_key: str) -> str:
-    if document_key not in DOCUMENTS or int(guild_id) <= 0:
+    if document_key not in DOCUMENTS or document_key == "family-rules" or int(guild_id) <= 0:
         raise ValueError("Select a Recruit Gauntlet document in this server.")
     return f"content_destination:{int(guild_id)}:{document_key}"
 
@@ -323,7 +372,7 @@ def published_key(guild_id: int, document_key: str) -> str:
 
 
 async def published_for(mongo, guild_id: int, document_key: str):
-    if document_key == "rite-of-passage":
+    if is_template_only(document_key):
         return None
     if document_key == "apply":
         from extensions.commands import ticket_runtime
@@ -368,18 +417,47 @@ async def loaded_published_target(bot, guild_id: int, document: Document, coordi
         if int(getattr(channel, "guild_id", 0)) != guild_id:
             raise ValueError(f"The published post is outside this server. {recovery}")
         message = await bot.rest.fetch_message(coordinates["channel_id"], coordinates["message_id"])
-        if int(message.author.id) != application_id or component_shape(message.components) != component_shape(await baseline(document)) or not acknowledgement_id(message.components, document):
+        if (int(message.author.id) != application_id
+                or not await supported_post_shape(document, message.components)
+                or document.acknowledgement and not acknowledgement_id(message.components, document)):
             raise ValueError(f"The saved message is not supported now. {recovery}")
         sections = [node.content for node in text_nodes(message.components)]
         original_media = media_snapshot(message.components)
         if len(original_media) != len(media_slots(document)):
             raise ValueError("The saved post's images changed. Check the channel. If you need a new post, select Send to channel.")
-        await render(document, sections)
+        await validate_template(document, [node.content for node in editable_text_nodes(document, message.components)])
     except (hikari.NotFoundError, hikari.ForbiddenError):
         raise ValueError(f"The saved post cannot be found or opened. {recovery}") from None
     except (hikari.HTTPError, OSError):
         raise ValueError("I cannot read the published post right now. Your draft is still available.") from None
-    return dict(coordinates, original=sections, original_media=original_media)
+    return dict(coordinates, original=sections, original_media=original_media,
+                editable_original=[node.content for node in editable_text_nodes(document, message.components)],
+                tracked=True)
+
+
+async def shared_rule_targets(mongo, bot, guild_id, application_id):
+    """Snapshot existing posts when an update is offered, without registry reads."""
+    targets, errors = {}, {}
+    for key in ("wu-faq", "about-us"):
+        try:
+            coordinates = await published_for(mongo, guild_id, key)
+            if not coordinates:
+                continue
+            targets[key] = await loaded_published_target(bot, guild_id, DOCUMENTS[key], coordinates, application_id)
+        except ValueError as error:
+            errors[key] = str(error)
+        except (PyMongoError, OSError):
+            errors[key] = "I cannot read this linked post right now. It was not updated. Reopen the editor to review it later."
+    return targets, errors
+
+
+async def supported_post_shape(document, components):
+    if component_shape(components) == component_shape(await baseline(document)):
+        return True
+    if document.key == "about-us":
+        from extensions.commands.setup.recruit_aboutus import build_aboutus
+        return component_shape(components) == component_shape(build_aboutus(include_family_rules=False))
+    return False
 
 
 def _apply_overwrite(base: hikari.Permissions, overwrite) -> hikari.Permissions:
@@ -431,6 +509,8 @@ async def destination_permissions(bot, guild_id: int, channel) -> hikari.Permiss
 
 async def _ready_for_destination(ctx, bot, channel, permissions, document_key: str) -> tuple[bool, str | None]:
     """Run the existing role and next-channel check against destination permissions."""
+    if document_key == "wu-faq":
+        return True, None
     messages = []
     async def capture(message, **_):
         messages.append(message)
@@ -518,6 +598,10 @@ def panel(state, notice=None):
             content=f"{'Unsaved changes' if has_unsaved_edits(state) else 'Saved'} · {sum(map(len, state['sections']))}/4,000 characters · draft expires in 30 minutes."
         ),
     ]
+    if document.key in {"about-us", "wu-faq"}:
+        rows.append(hikari.impl.TextDisplayComponentBuilder(
+            content="Preview checks the complete post, including current Family Rules and registry clan lists, against the 4,000-character limit."
+        ))
     if notice:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
     blocks = hikari.impl.MessageActionRowBuilder()
@@ -532,7 +616,7 @@ def panel(state, notice=None):
     for slot, label in media_slots(document):
         source = "custom image" if slot in overrides else "default image"
         image_menu.add_option(f"{label} ({source})", slot, is_default=slot == selected_slot)
-    private_only = document.key == "rite-of-passage"
+    private_only = is_template_only(document.key)
     fixed_public = document.key == "apply"
     destination = state.get("destination_channel_id")
     destination_menu = hikari.impl.MessageActionRowBuilder()
@@ -574,17 +658,22 @@ def panel(state, notice=None):
     if target and target_matches_destination(state):
         target_url = f"https://discord.com/channels/{state['guild_id']}/{target['channel_id']}/{target['message_id']}"
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"Published post to update: [View post]({target_url}) in <#{target['channel_id']}>."))
-        if state["sections"] != target["original"]:
+        if state["sections"] != target.get("editable_original", target["original"]):
             rows.append(hikari.impl.TextDisplayComponentBuilder(content="The saved template is not the same as the published post. This draft shows the saved template. To start from the published text, select Load published copy first."))
             load_buttons = hikari.impl.MessageActionRowBuilder()
             load_buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_load_published:{sid}", label="Load published copy")
             rows.append(load_buttons)
     if target and not target_matches_destination(state) and not fixed_public:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="The saved post is in a different channel. If you send here, a new post is made. To update the saved post, select its original channel."))
-    controls = [blocks, images, hikari.impl.SeparatorComponentBuilder(divider=True)]
+    controls = [blocks]
+    if media_slots(document):
+        controls.append(images)
+    controls.append(hikari.impl.SeparatorComponentBuilder(divider=True))
     if private_only:
         controls.append(hikari.impl.TextDisplayComponentBuilder(
-            content="Save template updates future private Rite of Passage panels."
+            content=("Family Rules is shared by WU FAQ and About Us. Saving does not change a published post."
+                     if document.key == "family-rules" else
+                     "Save template updates future private Rite of Passage panels.")
         ))
     elif fixed_public:
         controls.append(hikari.impl.TextDisplayComponentBuilder(
@@ -612,10 +701,38 @@ def panel(state, notice=None):
             ),
         ])
     controls.append(buttons)
+    if document.key == "family-rules":
+        controls.extend(shared_rules_offer(state))
     if selected_buttons is not None:
         controls.append(selected_buttons)
     controls.extend([hikari.impl.SeparatorComponentBuilder(divider=True, spacing=hikari.SpacingType.SMALL), footer])
     return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows + controls)]
+
+
+def shared_rules_offer(state):
+    targets = state.get("shared_targets", {})
+    errors = state.get("shared_target_errors", {})
+    results = state.get("shared_update_results", {})
+    rows = []
+    for key in ("wu-faq", "about-us"):
+        target = targets.get(key)
+        if key in results:
+            message = results[key]["message"]
+        elif target:
+            link = f"https://discord.com/channels/{state['guild_id']}/{target['channel_id']}/{target['message_id']}"
+            message = f"[Published post]({link}) can be updated after you save."
+        else:
+            message = errors.get(key, "No linked published post. No new message will be sent.")
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"**{DOCUMENTS[key].label}:** {message}"))
+    if targets and state.get("revision", 0) > 0 and not has_unsaved_edits(state) and not state.get("shared_update_started"):
+        row = hikari.impl.MessageActionRowBuilder()
+        row.add_interactive_button(hikari.ButtonStyle.SUCCESS, f"content_rules_publish:{state['_id']}", label="Update linked posts")
+        rows.append(row)
+    if state.get("shared_update_started") and not results:
+        rows.append(hikari.impl.TextDisplayComponentBuilder(
+            content="This update was already started. Check both posts before reopening the editor; it will not retry automatically."
+        ))
+    return rows
 
 
 def error_panel(message):
@@ -625,10 +742,16 @@ def error_panel(message):
     )]
 
 
-async def preview_panel(state):
+async def preview_panel(state, mongo=None):
     """Keep the post layout intact while turning its inert CTA into Back."""
     document = DOCUMENTS[state["document"]]
-    components = await render(document, state["sections"], media=state.get("media"), preview=True)
+    components = await render(document, state["sections"], media=state.get("media"), preview=True,
+                              mongo=mongo, guild_id=state["guild_id"])
+    if document.acknowledgement is None:
+        back = hikari.impl.MessageActionRowBuilder()
+        back.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_document:{state['_id']}", label="Back to editor")
+        components.append(back)
+        return components
     for component in components:
         for child in getattr(component, "components", ()):
             if isinstance(child, hikari.impl.MessageActionRowBuilder):
@@ -712,24 +835,27 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
                     await initial_panel(ctx, mongo, state, "Open this ticket panel from Recruit Gauntlet. Apply updates only the active public ticket post."); return
             if not document:
                 await initial_panel(ctx, mongo, state, "Select a supported post."); return
-            sections = [node.content for node in text_nodes(message.components)]
+            original_sections = [node.content for node in text_nodes(message.components)]
+            sections = [node.content for node in editable_text_nodes(document, message.components)]
             try:
-                if component_shape(message.components) != component_shape(await baseline(document)):
+                if not await supported_post_shape(document, message.components):
                     raise ValueError("The content dashboard does not support the layout of that post.")
                 original_media = media_snapshot(message.components)
                 if len(original_media) != len(media_slots(document)):
                     raise ValueError("The content dashboard does not support the image layout of that post.")
-                await render(document, sections)
+                await validate_template(document, sections)
             except ValueError:
                 await initial_panel(ctx, mongo, state, "The content dashboard does not support the layout of that post."); return
             _template, _media, revision = await template_for(mongo, document, state["guild_id"])
-            destination_row = await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
+            destination_row = (await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
+                       if document.key != "family-rules" else None)
             state.update(
                 view="document", document=document.key, sections=sections, revision=revision,
                 media=dict(zip((slot for slot, _label in media_slots(document)), original_media, strict=True)),
                 target={
                     "channel_id": int(match[2]), "message_id": int(match[3]),
-                    "original": sections, "original_media": original_media,
+                    "original": original_sections, "original_media": original_media,
+                    "editable_original": sections,
                 },
                 destination_channel_id=(destination_row or {}).get("channel_id"),
                 destination_baseline=destination_row,
@@ -784,9 +910,10 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
         return panel(state, "Select one supported document.")
     document = DOCUMENTS[value[0]]
     sections, media, revision = await template_for(mongo, document, state["guild_id"])
-    destination_row = await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
+    destination_row = (await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
+                       if document.key != "family-rules" else None)
     destination_channel_id = ((destination_row or {}).get("channel_id")
-                              if document.key not in {"apply", "rite-of-passage"} else None)
+                              if has_posting_channel(document.key) else None)
     target = state.get("target") if state.get("document") == document.key and document.key != "apply" else None
     notice = None
     if target is None:
@@ -809,6 +936,11 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
     )
     if document.key == "apply" and target is None and notice is None:
         notice = "No active public Apply post is bound. Complete ticket setup before updating the post."
+    for name in ("shared_targets", "shared_target_errors", "shared_update_started", "shared_update_results"):
+        draft_state.pop(name, None)
+    if document.key == "family-rules":
+        targets, errors = await shared_rule_targets(mongo, bot, state["guild_id"], int(ctx.interaction.application_id))
+        draft_state.update(shared_targets=targets, shared_target_errors=errors)
     draft_state["saved_snapshot"] = draft_snapshot(draft_state)
     return panel(await new_draft(mongo, draft_state), notice)
 
@@ -823,10 +955,10 @@ async def load_published_copy(ctx, action_id, mongo: MongoClient = lightbulb.di.
         return panel(state, "The published post is unavailable in this posting channel.")
     document = DOCUMENTS[state["document"]]
     target = state["target"]
-    sections = list(target["original"])
+    sections = list(target.get("editable_original", target["original"]))
     media = dict(zip((slot for slot, _ in media_slots(document)), target["original_media"], strict=True))
     try:
-        await render(document, sections, media=media)
+        await validate_template(document, sections, media=media)
     except ValueError as exc:
         return panel(state, str(exc))
     # Keep the original saved snapshot so loading live text remains an unsaved
@@ -846,7 +978,7 @@ async def choose_destination(
         return error_panel(problem)
     document_key = state.get("document")
     values = getattr(ctx.interaction, "values", ()) or ()
-    if document_key in {"apply", "rite-of-passage"}:
+    if document_key in {"apply", "rite-of-passage", "family-rules"}:
         return panel(state, "This ticket panel does not support a posting channel. Use ticket setup for the public Apply post.")
     if document_key not in DOCUMENTS or len(values) != 1:
         return panel(state, "Select one text or announcement channel.")
@@ -899,10 +1031,10 @@ async def send_to_channel(
     if problem:
         return error_panel(problem)
     document_key = state.get("document")
-    if document_key in {"apply", "rite-of-passage"}:
+    if document_key in {"apply", "rite-of-passage", "family-rules"}:
         return panel(state, "This ticket panel cannot send a new post. Use ticket setup for the public Apply post.")
     channel_id = state.get("destination_channel_id")
-    if document_key not in DOCUMENTS or not isinstance(channel_id, int) or channel_id <= 0:
+    if not has_posting_channel(document_key) or not isinstance(channel_id, int) or channel_id <= 0:
         return panel(state, "Select and save a posting channel before sending.")
     try:
         channel = await bot.rest.fetch_channel(channel_id)
@@ -925,7 +1057,7 @@ async def send_to_channel(
     try:
         rendered = await render(
             DOCUMENTS[document_key], state["sections"], media=state.get("media"),
-            action_id=uuid.uuid4().hex,
+            action_id=uuid.uuid4().hex, mongo=mongo, guild_id=state["guild_id"],
         )
     except ValueError as exc:
         return panel(state, str(exc))
@@ -956,13 +1088,18 @@ async def send_to_channel(
         remembered = False
     target = {
         "channel_id": channel_id, "message_id": int(message.id),
-        "original": list(state["sections"]), "original_media": media_snapshot(rendered),
+        "original": [node.content for node in text_nodes(rendered)], "original_media": media_snapshot(rendered),
+        "editable_original": [node.content for node in editable_text_nodes(DOCUMENTS[document_key], rendered)],
+        "tracked": remembered,
     }
     draft = await new_draft(mongo, dict(state, target=target))
     link = f"https://discord.com/channels/{state['guild_id']}/{channel_id}/{message.id}"
     notice = (f"Sent the current draft to <#{channel_id}>: [View posted message]({link})."
               if remembered else
               f"Sent the current draft to <#{channel_id}>: [View posted message]({link}). I could not save its ID. To update this post later, reopen it with this message link.")
+    if not remembered and document_key == "wu-faq":
+        notice = (f"Post sent: [View posted message]({link}). I could not save its published-post reference. "
+                  "Do not send again. Keep this editor and the link; this draft can still update that exact post.")
     return panel(draft, notice)
 
 
@@ -1222,7 +1359,7 @@ async def submit_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
                 await interaction.edit_initial_response(components=panel(state, str(exc)), **NO_MENTIONS); return
             sections[index] = f"{title}\n{body}"
     try:
-        await render(DOCUMENTS[state["document"]], sections, media=state.get("media"))
+        await validate_template(DOCUMENTS[state["document"]], sections, media=state.get("media"))
     except ValueError as exc:
         await interaction.edit_initial_response(components=panel(state, str(exc)), **NO_MENTIONS); return
     draft = await new_draft(mongo, dict(state, sections=sections))
@@ -1268,7 +1405,8 @@ async def _save_untracked(ctx, state, mongo):
 
 @register_action("content_save", preload_state=False)
 @lightbulb.di.with_di
-async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
+               bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_):
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         return error_panel(problem)
@@ -1277,6 +1415,11 @@ async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     if not await _save(ctx, state, mongo):
         return panel(state, "The template changed. Reopen the dashboard. If you save now, you replace the new template.")
     saved_state = dict(state, revision=state["revision"] + 1)
+    if state["document"] == "family-rules":
+        targets, errors = await shared_rule_targets(mongo, bot, state["guild_id"], int(ctx.interaction.application_id))
+        saved_state.update(shared_targets=targets, shared_target_errors=errors)
+        saved_state.pop("shared_update_started", None)
+        saved_state.pop("shared_update_results", None)
     saved_state["saved_snapshot"] = draft_snapshot(saved_state)
     return panel(await new_draft(mongo, saved_state), "Template saved for future posts in this server.")
 
@@ -1290,7 +1433,7 @@ async def preview(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **
     if not state.get("document"):
         return panel(state, "Select a document before previewing.")
     try:
-        return await preview_panel(state)
+        return await preview_panel(state, mongo)
     except ValueError as exc:
         return panel(state, str(exc))
 
@@ -1301,8 +1444,10 @@ async def save_and_publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         return error_panel(problem)
-    if state.get("document") == "rite-of-passage":
-        return panel(state, "Rite of Passage is private. Save the template to update future choice panels.")
+    if is_template_only(state.get("document")):
+        return panel(state, ("Rite of Passage is private. Save the template to update future choice panels."
+                             if state.get("document") == "rite-of-passage" else
+                             "Family Rules is shared. Save it, then review its linked posts."))
     if not state.get("document") or not target_matches_destination(state):
         return panel(state, "The published post is unavailable in this posting channel. Your draft is unchanged.")
     if state["document"] == "apply":
@@ -1323,78 +1468,157 @@ async def publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, bo
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         return error_panel(problem)
-    if state.get("document") == "rite-of-passage":
-        return panel(state, "Rite of Passage is private. Save the template to update future choice panels.")
+    if is_template_only(state.get("document")):
+        return panel(state, ("Rite of Passage is private. Save the template to update future choice panels."
+                             if state.get("document") == "rite-of-passage" else
+                             "Family Rules is shared. Save it, then review its linked posts."))
     if not state.get("target") or not state.get("document"):
         return panel(state, "Select a published post before updating it.")
     return await publish_state(ctx, state, mongo, bot)
 
 
-async def publish_state(ctx, state, mongo, bot, *, saved_template=False):
-    if state.get("document") == "rite-of-passage":
-        return panel(state, "Rite of Passage is private. Save the template to update future choice panels.")
-    if state.get("document") == "apply":
-        authoritative = await published_for(mongo, state["guild_id"], "apply")
-        target = state.get("target")
-        if not authoritative or not target or any(target.get(key) != value for key, value in authoritative.items()):
-            return panel(state, "The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged.")
+async def publish_state(ctx, state, mongo, bot, *, saved_template=False, return_outcome=False):
+    def answer(message, *, ok=False, uncertain=False, updated_state=None):
+        if return_outcome:
+            return {"ok": ok, "uncertain": uncertain, "message": message}
+        return panel(updated_state or state, message)
+
+    if is_template_only(state.get("document")):
+        return answer("Rite of Passage is private. Save the template to update future choice panels."
+                      if state.get("document") == "rite-of-passage" else
+                      "Family Rules is shared. Save it, then review its linked posts.")
+    target = state.get("target")
     if not target_matches_destination(state):
-        return panel(state, "The posting channel is not the channel of this post. Select the original channel, then update the post.")
-    target = state["target"]; document = DOCUMENTS[state["document"]]; token = uuid.uuid4().hex
+        return answer("The posting channel is not the channel of this post. Select the original channel, then update the post.")
+    document = DOCUMENTS[state["document"]]
+    if document.key == "apply" or target.get("tracked"):
+        current = await published_for(mongo, state["guild_id"], document.key)
+        if not current or any(current.get(key) != target.get(key) for key in ("channel_id", "message_id")):
+            return answer("The linked published post changed. Reopen the editor to review the current post.")
+    token = uuid.uuid4().hex
     lease_key = f"content_publish:{target['channel_id']}:{target['message_id']}"
     try:
-        await mongo.bot_config.update_one({"_id": lease_key, "until": {"$lte": utcnow()}}, {"$set": {"until": utcnow() + timedelta(minutes=1), "token": token}}, upsert=True)
+        await mongo.bot_config.update_one(
+            {"_id": lease_key, "until": {"$lte": utcnow()}},
+            {"$set": {"until": utcnow() + timedelta(minutes=1), "token": token}}, upsert=True,
+        )
     except DuplicateKeyError:
-        return panel(state, "Another update is in progress. Try again in a few minutes.")
+        return answer("Another update is in progress. Try again in a few minutes.")
+    attempted_edit = False
     try:
         channel = await bot.rest.fetch_channel(target["channel_id"])
-        if int(getattr(channel, "guild_id", 0)) != state["guild_id"]: raise ValueError("The published post is not in this server.")
+        if int(getattr(channel, "guild_id", 0)) != state["guild_id"]:
+            raise ValueError("The published post is not in this server.")
         message = await bot.rest.fetch_message(target["channel_id"], target["message_id"])
-        if (
-            int(message.author.id) != int(ctx.interaction.application_id)
-            or component_shape(message.components) != component_shape(await baseline(document))
-            or [node.content for node in text_nodes(message.components)] != target["original"]
-            or (
-                target.get("original_media") is not None
-                and media_snapshot(message.components) != target["original_media"]
-            )
-        ):
+        if (int(message.author.id) != int(ctx.interaction.application_id)
+                or not await supported_post_shape(document, message.components)
+                or [node.content for node in text_nodes(message.components)] != target["original"]
+                or target.get("original_media") is not None and media_snapshot(message.components) != target["original_media"]):
             raise ValueError("That post changed since this draft opened. Reopen the dashboard to review it.")
         acknowledgement = acknowledgement_id(message.components, document)
-        if not acknowledgement: raise ValueError("That is not the selected content type.")
-        if document.key == "apply":
-            source = await published_for(mongo, state["guild_id"], "apply")
-            if source != {"channel_id": target["channel_id"], "message_id": target["message_id"]}:
-                raise ValueError("The active public Apply post changed. Reopen Recruit Gauntlet after ticket setup.")
+        if document.acknowledgement and not acknowledgement:
+            raise ValueError("That is not the selected content type.")
+        if document.key == "apply" or target.get("tracked"):
+            current = await published_for(mongo, state["guild_id"], document.key)
+            if current != {"channel_id": target["channel_id"], "message_id": target["message_id"]}:
+                raise ValueError("The active linked post changed. Reopen the editor before updating it.")
         rendered = await render(
-            document, state["sections"], media=state.get("media"), action_id=acknowledgement
+            document, state["sections"], media=state.get("media"), action_id=acknowledgement or "public",
+            mongo=mongo, guild_id=state["guild_id"],
         )
-        referenced_attachment_ids = {
-            attachment_id for url in media_snapshot(rendered)
-            if (attachment_id := discord_attachment_id(url)) is not None
-        }
-        retained_attachments = [
-            attachment for attachment in getattr(message, "attachments", ())
-            if str(attachment.id) in referenced_attachment_ids
-        ]
+        if "_rules_revision" in state:
+            rules = await mongo.bot_config.find_one({"_id": f"content:family-rules:{state['guild_id']}"})
+            if not rules or rules.get("revision") != state["_rules_revision"]:
+                raise ValueError("Family Rules changed. Reopen the editor before updating this post.")
+        referenced_ids = {attachment_id for url in media_snapshot(rendered)
+                          if (attachment_id := discord_attachment_id(url)) is not None}
+        attachments = [attachment for attachment in getattr(message, "attachments", ())
+                       if str(attachment.id) in referenced_ids]
+        attempted_edit = True
         updated_message = await bot.rest.edit_message(
-            target["channel_id"], target["message_id"],
-            components=rendered,
-            attachments=retained_attachments,
-            **NO_MENTIONS,
+            target["channel_id"], target["message_id"], components=rendered,
+            attachments=attachments, **NO_MENTIONS,
         )
-    except (ValueError, hikari.HTTPError, OSError) as exc:
-        reason = str(exc) if isinstance(exc, ValueError) else "The bot cannot update that message."
-        return panel(state, f"{reason} The template was saved, but the post is unchanged." if saved_template else f"{reason} Your draft is still available.")
+    except (ValueError, hikari.HTTPError, OSError) as error:
+        uncertain = attempted_edit and not isinstance(error, ValueError)
+        if uncertain:
+            reason = "I could not confirm the update. Check this post before trying again; it will not retry automatically."
+        else:
+            reason = str(error) if isinstance(error, ValueError) else "The bot cannot read or update that message."
+            reason += " The template was saved, but the post is unchanged." if saved_template else " Your draft is still available."
+        return answer(reason, uncertain=uncertain)
     finally:
         await mongo.bot_config.delete_one({"_id": lease_key, "token": token})
-    return panel(
-        await new_draft(mongo, dict(
-            state,
-            target=dict(
-                target, original=state["sections"],
-                original_media=media_snapshot(getattr(updated_message, "components", ())),
-            ),
-        )),
-        "Template saved and published post updated." if saved_template else "Published post updated.",
-    )
+    notice = "Template saved and published post updated." if saved_template else "Published post updated."
+    if return_outcome:
+        return answer(notice, ok=True)
+    public_components = getattr(updated_message, "components", ()) or rendered
+    updated_state = await new_draft(mongo, dict(state, target=dict(
+        target, original=[node.content for node in text_nodes(public_components)],
+        editable_original=[node.content for node in editable_text_nodes(document, public_components)],
+        original_media=media_snapshot(public_components),
+    )))
+    return answer(notice, ok=True, updated_state=updated_state)
+
+
+@register_action("content_rules_publish", preload_state=False)
+@lightbulb.di.with_di
+async def publish_shared_rules(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
+                               bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if state.get("document") != "family-rules" or has_unsaved_edits(state):
+        return panel(state, "Save Family Rules before updating linked posts.")
+    rules = await mongo.bot_config.find_one({"_id": f"content:family-rules:{state['guild_id']}"})
+    if (not rules or rules.get("revision") != state.get("revision")
+            or rules.get("sections") != state.get("sections")):
+        return panel(state, "Family Rules changed. Reopen the editor to review them before updating any post.")
+    if not state.get("shared_targets"):
+        return panel(state, "No linked published posts are available. No new message will be sent.")
+    claim = await update_state(mongo, {
+        "_id": state["_id"], "user_id": state["user_id"], "guild_id": state["guild_id"],
+        "shared_update_started": {"$ne": True},
+    }, {"$set": {"shared_update_started": True}})
+    if claim.matched_count != 1:
+        return panel(state, "This update was already started. Check the posts; it will not retry automatically.")
+    results = {}
+    for key in ("wu-faq", "about-us"):
+        target = state["shared_targets"].get(key)
+        if not target:
+            continue
+        # Persist an uncertain state before delivery. A restart must not repeat
+        # an edit whose Discord acknowledgement may have been lost.
+        results[key] = {"ok": False, "uncertain": True, "message": "Update started; check this post before another attempt."}
+        try:
+            await update_state(mongo, state["_id"], {"$set": {"shared_update_results": results}})
+        except (PyMongoError, OSError):
+            results[key] = {"ok": False, "uncertain": False, "message": "Result storage is unavailable; this edit was not attempted."}
+            return shared_results_unavailable(state, results)
+        try:
+            current = await published_for(mongo, state["guild_id"], key)
+            if current != {"channel_id": target["channel_id"], "message_id": target["message_id"]}:
+                result = {"ok": False, "uncertain": False, "message": "The linked post changed. Reopen the editor to review it."}
+            else:
+                child = dict(state, document=key, sections=list(target["editable_original"]),
+                             media=dict(zip((slot for slot, _ in media_slots(DOCUMENTS[key])), target["original_media"], strict=True)),
+                             target=target, destination_channel_id=target["channel_id"], _rules_revision=state["revision"])
+                result = await publish_state(ctx, child, mongo, bot, return_outcome=True)
+        except (PyMongoError, OSError):
+            result = {"ok": False, "uncertain": True, "message": "I could not confirm this update. Check the post; it will not retry automatically."}
+        results[key] = result
+        try:
+            await update_state(mongo, state["_id"], {"$set": {"shared_update_results": results}})
+        except (PyMongoError, OSError):
+            return shared_results_unavailable(state, results)
+    updated = await new_draft(mongo, dict(state, shared_update_started=True, shared_update_results=results))
+    return panel(updated, "Family Rules remain saved. Each linked-post result is shown separately; no new message was sent.")
+
+
+def shared_results_unavailable(state, results):
+    for key in state.get("shared_targets", {}):
+        results.setdefault(key, {"ok": False, "uncertain": False,
+                                 "message": "Not attempted because result storage became unavailable."})
+    return panel(dict(state, shared_update_started=True, shared_update_results=results),
+                 "The results below could not all be persisted. No further edits were attempted. "
+                 "Keep this editor and check the posts before reopening; there is no automatic retry.")

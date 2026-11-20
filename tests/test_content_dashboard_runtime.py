@@ -203,7 +203,7 @@ def test_real_hikari_models_adopt_existing_post_and_keep_template_revision(monke
         document = content.DOCUMENTS["about-us"]
         baseline = await content.baseline(document)
         models = _as_discord_models(baseline)
-        sections = [node.content for node in content.text_nodes(models)]
+        sections = [node.content for node in content.editable_text_nodes(document, models)]
         config = _ConfigCollection({
             "content:about-us:20": {
                 "_id": "content:about-us:20", "sections": sections, "revision": 7
@@ -231,7 +231,7 @@ def test_real_hikari_models_adopt_existing_post_and_keep_template_revision(monke
         assert captured[-1]["revision"] == 7
         assert captured[-1]["target"]["channel_id"] == 30
         assert captured[-1]["target"]["message_id"] == 40
-        assert captured[-1]["target"]["original"] == sections
+        assert captured[-1]["target"]["original"] == [node.content for node in content.text_nodes(models)]
         assert captured[-1]["target"]["original_media"] == [
             "https://cdn.discordapp.com/attachments/20/30/1.png"
         ]
@@ -372,7 +372,7 @@ def test_publish_refuses_cross_guild_and_active_lease_without_edit(monkeypatch):
         original = [node.content for node in content.text_nodes(await content.baseline(document))]
         state = {
             "_id": "draft", "user_id": 10, "guild_id": 20, "document": "about-us",
-            "sections": original, "revision": 0,
+            "sections": ([node.content for node in content.editable_text_nodes(document, await content.baseline(document))] if document.key == "about-us" else original), "revision": 0,
             "target": {"channel_id": 30, "message_id": 40, "original": original},
         }
 
@@ -428,7 +428,7 @@ def test_publish_refuses_stale_real_model_without_edit(monkeypatch):
         )
         state = {
             "_id": "draft", "user_id": 10, "guild_id": 20, "document": document.key,
-            "sections": original, "revision": 0,
+            "sections": ([node.content for node in content.editable_text_nodes(document, await content.baseline(document))] if document.key == "about-us" else original), "revision": 0,
             "target": {"channel_id": 30, "message_id": 40, "original": original},
         }
 
@@ -475,7 +475,7 @@ def test_publish_refuses_an_image_changed_since_the_linked_draft_opened(monkeypa
         )
         state = {
             "_id": "draft", "user_id": 10, "guild_id": 20, "document": document.key,
-            "sections": original, "revision": 0,
+            "sections": ([node.content for node in content.editable_text_nodes(document, await content.baseline(document))] if document.key == "about-us" else original), "revision": 0,
             "target": {
                 "channel_id": 30, "message_id": 40, "original": original,
                 "original_media": original_media,
@@ -505,7 +505,7 @@ def test_publish_refuses_an_image_changed_since_the_linked_draft_opened(monkeypa
 def test_legacy_about_sections_migrate_with_new_key_revision_zero():
     async def check():
         document = content.DOCUMENTS["about-us"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         collection = _ConfigCollection({
             "recruit_aboutus:20": {
                 "_id": "recruit_aboutus:20", "sections": sections, "revision": 9
@@ -560,7 +560,7 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
         }[key]
         monkeypatch.setattr(module, "require_ready", AsyncMock(return_value=True))
         document = content.DOCUMENTS[key]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         sections[0] = sections[0] + " saved"
         media = {
             slot: f"https://img.example.com/{key}-{slot}.png"
@@ -571,6 +571,8 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
         class Collection:
             async def find_one(self, query):
                 events.append(("find", query["_id"]))
+                if query["_id"].startswith("content:family-rules:"):
+                    return None
                 return {
                     "_id": query["_id"], "sections": sections, "media": media,
                     "revision": 1,
@@ -619,8 +621,8 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
 @pytest.mark.parametrize(
     ("key", "command_type", "builder", "expected_total", "expected_count", "headings"),
     [
-        ("about-us", recruit_aboutus.RecruitAboutUs, recruit_aboutus.build_aboutus, 2579, 12,
-         ("Welcome to Warriors United!", "High Level Tactical Clans", "Flexible Fun War Clans", "FWA Clans", "Disclaimer", "NEXT STEP")),
+        ("about-us", recruit_aboutus.RecruitAboutUs, recruit_aboutus.build_aboutus, 3831, 14,
+         ("Warriors United Family", "Tactical Clan", "Flexible Fun War Clans", "FWA Clans", "Final decision", "Family Rules", "Next Step")),
         ("strike-system", recruit_strikesystem.RecruitStrikeSystem, recruit_strikesystem.build_strikesystem, 3236, 12,
          ("Warriors United Basic Rules", "Warriors United Strike System", "MAIN CLAN STRIKE SYSTEM", "FWA STRIKE SYSTEM", "Terms and Conditions", "ACKNOWLEDGMENT")),
         ("family-particulars", recruit_familyparticulars.RecruitFamilyParticulars, recruit_familyparticulars.build_familyparticulars, 3710, 28,
@@ -641,6 +643,8 @@ def test_setup_posters_fall_back_from_malformed_saved_template(
 
         class Collection:
             async def find_one(self, query):
+                if query["_id"].startswith("content:family-rules:"):
+                    return None
                 if query["_id"].startswith("content:"):
                     return {"_id": query["_id"], "sections": ["incomplete"]}
                 return None
@@ -677,7 +681,12 @@ def test_setup_posters_fall_back_from_malformed_saved_template(
         create = creates[0]
         assert create["channel"] == 30
         texts = [node.content for node in content.text_nodes(create["components"])]
-        expected_components = builder()
+        if key == "about-us":
+            from test_info_channel_content import Clans
+            from utils.info_channel_content import load_family_clans
+            expected_components = builder(clans=await load_family_clans(SimpleNamespace(clans=Clans())))
+        else:
+            expected_components = builder()
         expected_texts = [node.content for node in content.text_nodes(expected_components)]
         assert texts == expected_texts
         assert len(texts) == expected_count
@@ -701,7 +710,7 @@ def test_document_select_and_back_edit_the_same_ephemeral_panel(monkeypatch):
     async def check():
         root = {"_id": "root", "user_id": 10, "guild_id": 20, "view": "root"}
         document = content.DOCUMENTS["about-us"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
 
         async def state_for(_mongo, sid):
             return root if sid == "root" else dict(
@@ -744,7 +753,7 @@ def test_document_select_and_back_edit_the_same_ephemeral_panel(monkeypatch):
 def test_preview_reuses_the_acknowledgement_slot_for_back_at_the_component_limit(monkeypatch):
     async def check():
         document = content.DOCUMENTS["family-particulars"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         state = {
             "_id": "family", "user_id": 10, "guild_id": 20,
             "view": "document", "document": document.key,
@@ -778,7 +787,7 @@ def test_preview_reuses_the_acknowledgement_slot_for_back_at_the_component_limit
 def test_modal_submit_updates_its_source_panel_without_a_followup(monkeypatch):
     async def check():
         document = content.DOCUMENTS["about-us"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         state = {
             "_id": "modal", "user_id": 10, "guild_id": 20,
             "view": "document", "document": document.key, "sections": sections,
@@ -850,7 +859,7 @@ def test_link_error_replaces_the_initial_ephemeral_response(monkeypatch):
 def test_save_and_publish_navigate_with_dispatcher_edits_not_followups(monkeypatch):
     async def check():
         document = content.DOCUMENTS["about-us"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         saved_state = {
             "_id": "save", "user_id": 10, "guild_id": 20,
             "view": "document", "document": document.key,
@@ -877,7 +886,7 @@ def test_save_and_publish_navigate_with_dispatcher_edits_not_followups(monkeypat
         models = _as_discord_models(await content.baseline(document))
         linked_state = dict(
             saved_state, _id="publish", revision=1,
-            target={"channel_id": 30, "message_id": 40, "original": sections},
+            target={"channel_id": 30, "message_id": 40, "original": [node.content for node in content.text_nodes(models)]},
         )
 
         async def linked_state_for(_mongo, _sid):
@@ -976,7 +985,7 @@ def test_hikari_edit_payload_retains_existing_attachments_with_reset_local_media
 def test_unset_posting_channel_uses_approved_explanation():
     async def check():
         document = content.DOCUMENTS['about-us']
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         state = {'_id': 'draft', 'user_id': 10, 'guild_id': 20, 'view': 'document',
                  'document': document.key, 'sections': sections, 'revision': 0}
         panel = content.panel(state)
@@ -1002,3 +1011,19 @@ def test_strike_system_default_uses_approved_strike_policy_copy():
         "Strikes are recorded automatically. Staff manage them in Strikes & replacements. Each strike resets after a set time. This is usually 60 days.\n\n"
         "Below are charts of offenses and the value of each offense."
     ) in texts
+
+
+@pytest.fixture(autouse=True)
+def _legacy_unit_registry_context(monkeypatch):
+    """Legacy transport units use fake bot_config only; provide isolated clans.
+
+    Tests with their own clans collection still exercise that real fixture.
+    Registry failure/query contracts live in test_info_channel_content.
+    """
+    original = content.load_family_clans
+    async def fixture_registry(db):
+        if hasattr(db, "clans"):
+            return await original(db)
+        from test_info_channel_content import Clans
+        return await original(SimpleNamespace(clans=Clans()))
+    monkeypatch.setattr(content, "load_family_clans", fixture_registry)

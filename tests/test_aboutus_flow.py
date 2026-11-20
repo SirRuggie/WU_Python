@@ -40,7 +40,7 @@ def _run(ctx, bot):
 def test_aboutus_next_step_and_target_are_updated():
     parts = join_family.build_aboutus()
     text = content.text_nodes(parts)[-1].content
-    assert "unlock WU Strike System" in text
+    assert "Then read the WU Strike System." in text
     assert "https://" not in text
     assert join_family.ABOUT_US_ROLE_ID == 1553110276251979937
     assert join_family.STRIKE_SYSTEM_CHANNEL_ID == 1547242610819604560

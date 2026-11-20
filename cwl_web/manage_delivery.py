@@ -45,17 +45,27 @@ def snapshot(components):
 async def review(request, key):
     from .server_management import mongo, discord
     from extensions.commands import content
-    if key not in content.DOCUMENTS or key == 'rite-of-passage':
+    if key not in content.DOCUMENTS or content.is_template_only(key):
         raise web.HTTPNotFound(text='This message is only used in private ticket panels')
     async with mongo(request) as db:
         sections, media, revision = await content.template_for(db, content.DOCUMENTS[key], GUILD_ID)
         destination = await content.destination_for(db, GUILD_ID, key)
         target = await content.published_for(db, GUILD_ID, key)
+        derived = {}
+        if key in {'about-us', 'wu-faq'}:
+            try:
+                rendered = await content.render(content.DOCUMENTS[key], sections, media=media,
+                                                preview=True, mongo=db, guild_id=GUILD_ID)
+            except ValueError as error:
+                raise web.HTTPBadRequest(text=str(error)) from None
+            from .manage_content import serialize_components
+            derived = {'rendered_snapshot': snapshot(rendered),
+                       'rendered_preview': serialize_components(rendered, 'gauntlet--' + key)}
     live = None
     if target:
         post = await discord(request, 'GET', f"/channels/{target['channel_id']}/messages/{target['message_id']}")
         live = snapshot(post.get('components', []))
-    return dict(document=key, template_revision=revision, template=fingerprint({'sections':sections,'media':media}), destination=destination, target=target, post=live, sections=sections)
+    return dict(document=key, template_revision=revision, template=fingerprint({'sections':sections,'media':media}), destination=destination, target=target, post=live, sections=sections, **derived)
 
 
 async def page(request):
@@ -83,7 +93,10 @@ async def page(request):
     for action, label, enabled in [('send','Send new post',key != 'apply' and data['destination']), ('update','Update existing post',data['target'])]:
         if enabled:
             actions.append({'id':action,'label':label,'confirm':f'{label} in Discord? Review the channel and saved message above first.', 'endpoint':API + f'/manage/publish/{key}/{action}'})
-    return web.json_response({'id':'publish--'+key,'label':'Publish '+content.DOCUMENTS[key].label,'group':'Welcome messages','description':'Publish the saved message to Discord.', 'posting_channel':channel_name, 'existing_channel':existing_channel, 'destination_editor':API + '/manage/content/destination--' + key if key != 'apply' else None, 'target_url':f"https://discord.com/channels/{GUILD_ID}/{data['target']['channel_id']}/{data['target']['message_id']}" if data['target'] else None, 'revision':fingerprint(data),'fields':fields,'readonly':True,'actions':actions})
+    response = {'id':'publish--'+key,'label':'Publish '+content.DOCUMENTS[key].label,'group':'Welcome messages','description':'Publish the saved message to Discord.', 'posting_channel':channel_name, 'existing_channel':existing_channel, 'destination_editor':API + '/manage/content/destination--' + key if key != 'apply' else None, 'target_url':f"https://discord.com/channels/{GUILD_ID}/{data['target']['channel_id']}/{data['target']['message_id']}" if data['target'] else None, 'revision':fingerprint(data),'fields':fields,'readonly':True,'actions':actions}
+    if 'rendered_preview' in data:
+        response['preview'] = data['rendered_preview']
+    return web.json_response(response)
 
 
 async def queue(request):
@@ -104,10 +117,21 @@ async def queue(request):
     return await queue_action(request, 'recruit', action, data, fingerprint(data))
 
 
+async def reviewed_render(document, sections, media, mongo, values, *, action_id):
+    """Compose the exact reviewed dependencies immediately before delivery."""
+    from extensions.commands import content
+    rendered = await content.render(document, sections, media=media, action_id=action_id,
+                                    mongo=mongo, guild_id=GUILD_ID)
+    if document.key in {'about-us', 'wu-faq'}:
+        if 'rendered_snapshot' not in values or snapshot(rendered) != values['rendered_snapshot']:
+            raise ValueError('Family Rules or the clan registry changed. Reload and review the complete post before publishing.')
+    return rendered
+
+
 async def publish(bot, mongo, row, ctx):
     from extensions.commands import content
     values = row['values']; key = values['document']; action = row['action']
-    if key not in content.DOCUMENTS or key == 'rite-of-passage' or action not in ('send','update'):
+    if key not in content.DOCUMENTS or content.is_template_only(key) or action not in ('send','update'):
         raise ValueError("Select a public onboarding message")
     document = content.DOCUMENTS[key]
     sections, media, revision = await content.template_for(mongo, document, GUILD_ID)
@@ -136,12 +160,15 @@ async def publish(bot, mongo, row, ctx):
         ready, issue = await content._ready_for_destination(ctx, bot, channel, permissions, key)
         if not ready:
             raise ValueError(issue or 'Onboarding roles or next channels need attention.')
-        rendered = await content.render(document, sections, media=media, action_id=uuid.uuid4().hex)
+        rendered = await reviewed_render(document, sections, media, mongo, values, action_id=uuid.uuid4().hex)
         # Native durable send claim also protects direct/replayed dispatches.
         try:
             await mongo.bot_config.insert_one({'_id':'content_send:'+row['_id'], 'guild_id':GUILD_ID,'document':key,'channel_id':destination,'requested_by':int(row['user_id']),'created_at':content.utcnow()})
         except DuplicateKeyError:
             raise ValueError('This send was already attempted. Check the channel before sending again.') from None
+        # Recheck after the durable claim await; the reviewed dependencies must
+        # still match the payload at the actual Discord boundary.
+        rendered = await reviewed_render(document, sections, media, mongo, values, action_id=uuid.uuid4().hex)
         message = await bot.rest.create_message(channel=destination, components=rendered, **content.NO_MENTIONS)
         try:
             await content.remember_published(mongo,GUILD_ID,key,destination,int(message.id),int(row['user_id']))
@@ -158,14 +185,14 @@ async def publish(bot, mongo, row, ctx):
     try:
         loaded = await content.loaded_published_target(bot,GUILD_ID,document,target,int(ctx.interaction.application_id))
         message = await bot.rest.fetch_message(target['channel_id'],target['message_id'])
-        if int(message.author.id) != int(ctx.interaction.application_id) or content.component_shape(message.components) != content.component_shape(await content.baseline(document)) or not content.acknowledgement_id(message.components, document):
+        if int(message.author.id) != int(ctx.interaction.application_id) or not await content.supported_post_shape(document, message.components) or document.acknowledgement and not content.acknowledgement_id(message.components, document):
             raise ValueError('The saved message is no longer a supported bot post.')
         if snapshot(message.components) != values['post']:
             raise ValueError('The Discord post changed. Reload and review before updating.')
         if await content.published_for(mongo,GUILD_ID,key) != target:
             raise ValueError('The active post changed. Reload before updating.')
         acknowledgement = content.acknowledgement_id(message.components,document)
-        rendered = await content.render(document,sections,media=media,action_id=acknowledgement)
+        rendered = await reviewed_render(document, sections, media, mongo, values, action_id=acknowledgement or "public")
         ids = {aid for url in content.media_snapshot(rendered) if (aid:=content.discord_attachment_id(url)) is not None}
         attachments = [attachment for attachment in getattr(message,'attachments',()) if str(attachment.id) in ids]
         await bot.rest.edit_message(target['channel_id'],target['message_id'],components=rendered,attachments=attachments,**content.NO_MENTIONS)
