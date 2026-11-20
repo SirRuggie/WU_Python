@@ -18,7 +18,7 @@ describe("Results and Bonus URL state", () => {
     });
     expect(
       parseResultsState("pool=x&clan=bad&outcome=x&sort=th-asc&step=x"),
-    ).toEqual({});
+    ).toEqual({ pool: "main" });
   });
   it("maps the old step names and keeps the new ones", () => {
     for (const [old, now] of [

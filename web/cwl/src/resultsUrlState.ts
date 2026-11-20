@@ -1,3 +1,4 @@
+import { parsePageParam } from "./pageUrlState";
 import type { Pool } from "./api";
 import type { BonusStep } from "./bonusStatus";
 import type { OutcomeFilter } from "./participationOutcome";
@@ -47,7 +48,9 @@ export function parseResultsState(query: string): ResultsUrlState {
   const clan = params.get("clan") || "";
   const step = value("step", [...steps, ...Object.keys(legacySteps)]);
   return {
-    pool: value("pool", ["main", "lazy"]) as Pool | undefined,
+    pool: params.has("pool")
+      ? (parsePageParam("participation", "pool", query) as Pool)
+      : undefined,
     clan: /^#[0289PYLQGRJCUV]{3,15}$/.test(clan) ? clan : undefined,
     outcome: value("outcome", outcomes) as OutcomeFilter | undefined,
     sort: value("sort", sorts) as ResultsSort | undefined,

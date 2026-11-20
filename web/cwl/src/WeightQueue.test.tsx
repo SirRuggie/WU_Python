@@ -32,7 +32,7 @@ const rows = () => [
 const input = (i = 0) => rows()[i].querySelector<HTMLInputElement>("input")!;
 const button = (text: string, scope: ParentNode = host) =>
   [...scope.querySelectorAll<HTMLButtonElement>("button")].find(
-    (e) => e.textContent === text,
+    (e) => e.textContent === text || e.getAttribute("aria-label") === text,
   )!;
 async function type(element: HTMLInputElement, value: string) {
   await act(async () => {
@@ -231,7 +231,7 @@ it("has the concise header, primitive Refresh icon, no instructions or Back butt
   expect(host.querySelectorAll("p")).toHaveLength(0);
   expect(host.textContent).not.toContain("Back to roster");
   const refresh = button("Refresh weights");
-  expect(refresh.classList.contains("roster-ui-button")).toBe(true);
+  expect(refresh.classList.contains("refresh-icon-button")).toBe(true);
   expect(refresh.querySelector("svg")).not.toBeNull();
   await click(refresh);
   expect(props.onRefresh).toHaveBeenCalledOnce();

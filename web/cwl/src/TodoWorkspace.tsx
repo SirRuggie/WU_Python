@@ -1,6 +1,8 @@
+import EmptyState from "./EmptyState";
+import RefreshControl from "./RefreshControl";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import "./rosterUi/tokens.css";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
 import TodoActivityStatus, { TodoPrivateNote } from "./TodoActivityStatus";
@@ -15,16 +17,7 @@ import PushReminders from "./PushReminders";
 import { readSnapshot, writeSnapshot } from "./snapshotCache";
 import { useEffect, useRef, useState } from "react";
 import { parsePageParam, replacePageParam } from "./pageUrlState";
-import {
-  ArrowRight,
-  ArrowUpRight,
-  ChevronDown,
-  Pause,
-  Play,
-  RefreshCw,
-  Search,
-  X,
-} from "lucide-react";
+import { ArrowRight, ArrowUpRight, ChevronDown, Search, X } from "lucide-react";
 import { ApiError } from "./api";
 import { clanDeepLink } from "./publication";
 import TownHallIcon from "./TownHallIcon";
@@ -168,6 +161,7 @@ export default function TodoWorkspace({
   const [page, setPage] = useJourneyState(`${journeyKey}:page`, 0);
   useJourneyPosition(journeyKey, !!data || !!error);
   const now = useClock();
+  const refreshRead = useRef<() => void>(() => {});
   useEffect(() => {
     let cancelled = false,
       inFlight = false;
@@ -205,20 +199,27 @@ export default function TodoWorkspace({
         if (!cancelled) setLoading(false);
       }
     };
-    void load();
-    const check = () => {
-      if (!paused) void load();
+    refreshRead.current = () => {
+      void load();
     };
+    void load();
+    return () => {
+      cancelled = true;
+      refreshRead.current = () => {};
+    };
+  }, [refresh]);
+  useEffect(() => {
+    if (paused) return;
+    const check = () => refreshRead.current();
     const timer = window.setInterval(check, 60000);
     document.addEventListener("visibilitychange", check);
     window.addEventListener("online", check);
     return () => {
-      cancelled = true;
       clearInterval(timer);
       document.removeEventListener("visibilitychange", check);
       window.removeEventListener("online", check);
     };
-  }, [paused, refresh]);
+  }, [paused]);
   const previousFilters = useRef([tab, selected, search, sort]);
   useEffect(() => {
     const next = [tab, selected, search, sort];
@@ -261,48 +262,41 @@ export default function TodoWorkspace({
   return (
     <div className="todo-workspace roster-ui">
       <CwlPageHeader title={<h1>Tasks</h1>}>
-        <button
-          className="todo-check"
-          aria-busy={loading || undefined}
-          onClick={() => setRefresh((value) => value + 1)}
-          disabled={loading}
-        >
-          <RefreshCw aria-hidden="true" size={16} />
-          {loading ? "Checking…" : "Refresh"}
-        </button>
+        <RefreshControl
+          updatedAt={data?.checked_at}
+          busy={loading}
+          onRefresh={() => setRefresh((value) => value + 1)}
+          intervalSeconds={60}
+          paused={paused}
+          onPauseChange={(next) => {
+            setPaused(next);
+            if (!next) refreshRead.current();
+          }}
+          showRefresh={!error}
+        />
       </CwlPageHeader>
       <div className="todo-refresh">
-        <span role="status" className="todo-status">
-          <span
-            className={`status-dot ${data && !error && !gaps && !loading && !paused ? "active" : ""}`}
-          />
-          {cached
-            ? error
-              ? "Showing saved data · refresh failed"
-              : "Showing saved data · checking for updates…"
-            : loading
-              ? "Checking linked accounts and clan activity…"
-              : error
-                ? "Refresh needs attention"
-                : gaps
-                  ? "Some activity could not be checked · try again shortly"
-                  : data
-                    ? `${paused ? "Paused · checked" : "Checked"} ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                    : "Loading your activity…"}
-        </span>
-        <button
-          className="todo-icon-button"
-          aria-pressed={paused}
-          aria-label="Pause auto-refresh"
-          title="Pause auto-refresh"
-          onClick={() => setPaused((value) => !value)}
-        >
-          {paused ? (
-            <Play aria-hidden="true" size={16} />
-          ) : (
-            <Pause aria-hidden="true" size={16} />
-          )}
-        </button>
+        {(cached || loading || error || gaps || !data) && (
+          <span role="status" className="todo-status">
+            <span
+              className={`status-dot ${data && !error && !gaps && !loading && !paused ? "active" : ""}`}
+            />
+            {cached
+              ? error
+                ? "Showing saved data · refresh failed"
+                : "Showing saved data · checking for updates…"
+              : loading
+                ? "Checking linked accounts and clan activity…"
+                : error
+                  ? "Refresh needs attention"
+                  : gaps
+                    ? "Some activity could not be checked · try again shortly"
+                    : data
+                      ? `${paused ? "Paused · checked" : "Checked"} ${new Date(data.checked_at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                      : "Loading your activity…"}
+          </span>
+        )}
+
         {onWars && (
           <button
             className="todo-wars-link"
@@ -318,6 +312,7 @@ export default function TodoWorkspace({
           data ? "Showing your last update. It may be out of date." : undefined
         }
         onRetry={() => setRefresh((value) => value + 1)}
+        busy={loading}
       />
       {!data && !error && (
         <div className="card todo-loading" role="status">
@@ -328,6 +323,7 @@ export default function TodoWorkspace({
       {data && (
         <>
           <SectionTabs
+            id="task-activity"
             className="todo-tabs section-tabs--flow"
             label="Activity types"
             items={todoTabs.map((item) => {
@@ -370,266 +366,270 @@ export default function TodoWorkspace({
             }}
             revealSelection
           />
-          <h2 className="todo-visually-hidden">{config.label}</h2>
-          <div className="todo-toolbar">
-            <button
-              type="button"
-              className="todo-chip"
-              aria-expanded={pickerOpen}
-              aria-controls="todo-account-panel"
-              ref={accountsChip}
-              onClick={() => setPickerOpen((open) => !open)}
-            >
-              {selected === null
-                ? data.linked_account_count &&
-                  accounts.length < data.linked_account_count
-                  ? `${accounts.length} of ${data.linked_account_count} accounts`
-                  : "All accounts"
-                : countLabel(selectedCount, "account")}
-              <ChevronDown aria-hidden="true" size={16} />
-            </button>
-            {canFilter && (
-              <label className="todo-chip todo-sort">
-                <span className="todo-visually-hidden">Sort tasks</span>
-                <select
-                  name="todo-sort"
-                  value={sort}
-                  onChange={(event) => setSort(event.target.value)}
-                >
-                  <option value="deadline">Ends soonest</option>
-                  <option value="th">Highest TH</option>
-                  <option value="name">Name A–Z</option>
-                </select>
-              </label>
-            )}
-            {(canFilter || searchVisible) && (
+          <SectionTabPanel id="task-activity" value={tab}>
+            <h2 className="todo-visually-hidden">{config.label}</h2>
+            <div className="todo-toolbar">
               <button
                 type="button"
-                className="todo-icon-button"
-                aria-label="Search tasks"
-                aria-expanded={searchVisible}
-                aria-controls={searchVisible ? "todo-search" : undefined}
-                ref={searchButton}
-                onClick={openSearch}
+                className="todo-chip"
+                aria-expanded={pickerOpen}
+                aria-controls="todo-account-panel"
+                ref={accountsChip}
+                onClick={() => setPickerOpen((open) => !open)}
               >
-                <Search aria-hidden="true" size={16} />
+                {selected === null
+                  ? data.linked_account_count &&
+                    accounts.length < data.linked_account_count
+                    ? `${accounts.length} of ${data.linked_account_count} accounts`
+                    : "All accounts"
+                  : countLabel(selectedCount, "account")}
+                <ChevronDown aria-hidden="true" size={16} />
               </button>
-            )}
-          </div>
-          {searchVisible && (
-            <div className="todo-search-row" id="todo-search">
-              <label className="todo-search">
-                <span className="todo-visually-hidden">Search tasks</span>
-                <Search aria-hidden="true" size={16} />
-                <input
-                  ref={searchInput}
-                  type="search"
-                  name="todo-search"
-                  autoComplete="off"
-                  spellCheck={false}
-                  value={search}
-                  onFocus={() => setSearchOpen(true)}
-                  onChange={(event) => {
-                    setSearchOpen(true);
-                    setSearch(event.target.value);
-                  }}
-                  onKeyDown={(event) => {
-                    if (event.key === "Escape") closeSearch();
-                  }}
-                  placeholder="Account, tag or clan…"
-                />
-              </label>
-              <button
-                type="button"
-                className="todo-icon-button"
-                aria-label="Clear and close search"
-                onClick={closeSearch}
-              >
-                <X aria-hidden="true" size={16} />
-              </button>
-            </div>
-          )}
-          <div
-            id="todo-account-panel"
-            className="todo-account-picker"
-            hidden={!pickerOpen}
-          >
-            <div className="todo-picker-tools">
-              <label>
-                Find linked accounts
-                <input
-                  type="search"
-                  value={accountSearch}
-                  onChange={(event) => setAccountSearch(event.target.value)}
-                  placeholder="Account or clan name…"
-                />
-              </label>
-              <button onClick={() => setSelected(null)}>All accounts</button>
-              <button onClick={() => setSelected([])}>Clear</button>
-            </div>
-            <div className="todo-picker-list">
-              {filteredAccounts.map((account) => (
-                <label key={account.tag}>
-                  <input
-                    type="checkbox"
-                    checked={
-                      selected === null || selected.includes(account.tag)
-                    }
-                    onChange={(event) =>
-                      setSelected((current) => {
-                        const previous =
-                          current === null
-                            ? accounts.map((item) => item.tag)
-                            : current;
-                        return event.target.checked
-                          ? [...new Set([...previous, account.tag])]
-                          : previous.filter((tag) => tag !== account.tag);
-                      })
-                    }
-                  />
-                  <TownHallIcon level={account.town_hall} />
-                  <span>
-                    <strong>{account.name}</strong>
-                    <small>{account.tag}</small>
-                  </span>
+              {canFilter && (
+                <label className="todo-chip todo-sort">
+                  <span className="todo-visually-hidden">Sort tasks</span>
+                  <select
+                    name="todo-sort"
+                    value={sort}
+                    onChange={(event) => setSort(event.target.value)}
+                  >
+                    <option value="deadline">Ends soonest</option>
+                    <option value="th">Highest TH</option>
+                    <option value="name">Name A–Z</option>
+                  </select>
                 </label>
-              ))}
-              {!filteredAccounts.length && <p>No matching linked accounts.</p>}
+              )}
+              {(canFilter || searchVisible) && (
+                <button
+                  type="button"
+                  className="todo-icon-button"
+                  aria-label="Search tasks"
+                  aria-expanded={searchVisible}
+                  aria-controls={searchVisible ? "todo-search" : undefined}
+                  ref={searchButton}
+                  onClick={openSearch}
+                >
+                  <Search aria-hidden="true" size={16} />
+                </button>
+              )}
             </div>
-          </div>
-          {tab === "cwl" && (
-            <p className="todo-tab-note">
-              Live CWL wars, separate from season signups.
-            </p>
-          )}
-          {tab === "games" && view?.season ? (
-            <ClanGamesSummary view={view} now={now} />
-          ) : (
-            (tab === "raid" ||
-              tab === "games" ||
-              (tab === "cwl" && rows.length === 0)) && (
-              <TaskEventTimer kind={tab} now={now} />
-            )
-          )}
-          {view && (
-            <>
-              <TodoActivityStatus
-                view={view}
-                hasRows={rows.length > 0}
-                unreadable={tab === "war" ? unreadableRows.length : 0}
-                onAffected={() => setTab("private")}
-              />
-              {view.loading ? (
-                <div className="card todo-loading" role="status">
-                  <strong>Checking {config.label.toLowerCase()}…</strong>
-                  <p>
-                    You can view other activities while this check finishes.
-                  </p>
-                </div>
-              ) : !rows.length &&
-                (!view.ok || !!view.incomplete) ? null : !accounts.length ? (
-                <div className="card empty">
-                  <h3>No linked accounts to show</h3>
-                  <p>
-                    Use ClashKing’s /link command in Discord, then check again.
-                  </p>
-                </div>
-              ) : !rows.length ? (
-                <div className="card empty">
-                  <h3>
-                    {!view.ok || view.incomplete
-                      ? "Check in-game"
-                      : selectedCount === 0
-                        ? "Select accounts to see their tasks"
-                        : "Nothing to show here"}
-                  </h3>
-                  <p>
-                    {todoEmptyText(view, tab, selected !== null || !!search)}
-                  </p>
-                </div>
-              ) : (
-                <div className="todo-clan-list">
-                  {[...groups.entries()].map(([key, members]) => (
-                    <section className="todo-clan" key={key}>
-                      <header>
-                        <Badge url={members[0].badge_url} />
-                        <div>
-                          <h3>{clanLabel(members[0])}</h3>
-                          {tab === "war" && members[0].fwa_outcome && (
-                            <div
-                              className={`todo-fwa ${members[0].fwa_outcome.status}`}
-                            >
-                              <strong>
-                                {
-                                  {
-                                    win: "FWA WIN",
-                                    lose: "FWA LOSE",
-                                    blacklisted: "BLACKLISTED",
-                                    unknown: "FWA Unknown",
-                                  }[members[0].fwa_outcome.status]
-                                }
-                              </strong>
-                              {members[0].fwa_outcome.opponent && (
-                                <span>
-                                  vs {members[0].fwa_outcome.opponent}
-                                </span>
-                              )}
-                            </div>
-                          )}
-                        </div>
-                        {key !== "none" && (
-                          <a
-                            href={clanDeepLink(key)}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            aria-label={`Open ${clanLabel(members[0])} in Clash of Clans`}
-                          >
-                            Open <ArrowUpRight size={16} aria-hidden="true" />
-                          </a>
-                        )}
-                      </header>
-                      {members.map((row, index) => (
-                        <TodoTaskCard
-                          key={`${row.tag}-${index}`}
-                          row={row}
-                          kind={tab}
-                          now={now}
-                        />
-                      ))}
-                    </section>
-                  ))}
-                </div>
-              )}
-              {lastPage > 0 && (
-                <nav className="todo-pagination" aria-label="Activity pages">
-                  <button
-                    disabled={currentPage === 0}
-                    onClick={() => setPage(currentPage - 1)}
-                  >
-                    ← Previous
-                  </button>
-                  <span>
-                    {currentPage + 1} / {lastPage + 1}
-                  </span>
-                  <button
-                    disabled={currentPage === lastPage}
-                    onClick={() => setPage(currentPage + 1)}
-                  >
-                    Next <ArrowRight size={16} aria-hidden="true" />
-                  </button>
-                </nav>
-              )}
-              {tab === "war" && !view.loading && unreadableRows.length > 0 && (
-                <TodoPrivateNote
-                  rows={unreadableRows}
-                  onView={() => setTab("private")}
+            {searchVisible && (
+              <div className="todo-search-row" id="todo-search">
+                <label className="todo-search">
+                  <span className="todo-visually-hidden">Search tasks</span>
+                  <Search aria-hidden="true" size={16} />
+                  <input
+                    ref={searchInput}
+                    type="search"
+                    name="todo-search"
+                    autoComplete="off"
+                    spellCheck={false}
+                    value={search}
+                    onFocus={() => setSearchOpen(true)}
+                    onChange={(event) => {
+                      setSearchOpen(true);
+                      setSearch(event.target.value);
+                    }}
+                    onKeyDown={(event) => {
+                      if (event.key === "Escape") closeSearch();
+                    }}
+                    placeholder="Account, tag or clan…"
+                  />
+                </label>
+                <button
+                  type="button"
+                  className="todo-icon-button"
+                  aria-label="Clear and close search"
+                  onClick={closeSearch}
+                >
+                  <X aria-hidden="true" size={16} />
+                </button>
+              </div>
+            )}
+            <div
+              id="todo-account-panel"
+              className="todo-account-picker"
+              hidden={!pickerOpen}
+            >
+              <div className="todo-picker-tools">
+                <label>
+                  Find linked accounts
+                  <input
+                    type="search"
+                    value={accountSearch}
+                    onChange={(event) => setAccountSearch(event.target.value)}
+                    placeholder="Account or clan name…"
+                  />
+                </label>
+                <button onClick={() => setSelected(null)}>All accounts</button>
+                <button onClick={() => setSelected([])}>Clear</button>
+              </div>
+              <div className="todo-picker-list">
+                {filteredAccounts.map((account) => (
+                  <label key={account.tag}>
+                    <input
+                      type="checkbox"
+                      checked={
+                        selected === null || selected.includes(account.tag)
+                      }
+                      onChange={(event) =>
+                        setSelected((current) => {
+                          const previous =
+                            current === null
+                              ? accounts.map((item) => item.tag)
+                              : current;
+                          return event.target.checked
+                            ? [...new Set([...previous, account.tag])]
+                            : previous.filter((tag) => tag !== account.tag);
+                        })
+                      }
+                    />
+                    <TownHallIcon level={account.town_hall} />
+                    <span>
+                      <strong>{account.name}</strong>
+                      <small>{account.tag}</small>
+                    </span>
+                  </label>
+                ))}
+                {!filteredAccounts.length && (
+                  <p>No matching linked accounts.</p>
+                )}
+              </div>
+            </div>
+            {tab === "cwl" && (
+              <p className="todo-tab-note">
+                Live CWL wars, separate from season signups.
+              </p>
+            )}
+            {tab === "games" && view?.season ? (
+              <ClanGamesSummary view={view} now={now} />
+            ) : (
+              (tab === "raid" ||
+                tab === "games" ||
+                (tab === "cwl" && rows.length === 0)) && (
+                <TaskEventTimer kind={tab} now={now} />
+              )
+            )}
+            {view && (
+              <>
+                <TodoActivityStatus
+                  view={view}
+                  hasRows={rows.length > 0}
+                  unreadable={tab === "war" ? unreadableRows.length : 0}
+                  onAffected={() => setTab("private")}
                 />
-              )}
-            </>
-          )}
-          {tab === "cwl" && rows.length > 0 && (
-            <TaskEventTimer kind="cwl" now={now} />
-          )}
+                {view.loading ? (
+                  <div className="card todo-loading" role="status">
+                    <strong>Checking {config.label.toLowerCase()}…</strong>
+                    <p>
+                      You can view other activities while this check finishes.
+                    </p>
+                  </div>
+                ) : !rows.length &&
+                  (!view.ok || !!view.incomplete) ? null : !accounts.length ? (
+                  <EmptyState
+                    title="No linked accounts"
+                    line="Use ClashKing’s /link command in Discord, then check again."
+                  />
+                ) : !rows.length ? (
+                  <EmptyState
+                    title={
+                      selectedCount === 0
+                        ? "No accounts selected"
+                        : "No tasks to show"
+                    }
+                    line={todoEmptyText(
+                      view,
+                      tab,
+                      selected !== null || !!search,
+                    )}
+                  />
+                ) : (
+                  <div className="todo-clan-list">
+                    {[...groups.entries()].map(([key, members]) => (
+                      <section className="todo-clan" key={key}>
+                        <header>
+                          <Badge url={members[0].badge_url} />
+                          <div>
+                            <h3>{clanLabel(members[0])}</h3>
+                            {tab === "war" && members[0].fwa_outcome && (
+                              <div
+                                className={`todo-fwa ${members[0].fwa_outcome.status}`}
+                              >
+                                <strong>
+                                  {
+                                    {
+                                      win: "FWA WIN",
+                                      lose: "FWA LOSE",
+                                      blacklisted: "BLACKLISTED",
+                                      unknown: "FWA Unknown",
+                                    }[members[0].fwa_outcome.status]
+                                  }
+                                </strong>
+                                {members[0].fwa_outcome.opponent && (
+                                  <span>
+                                    vs {members[0].fwa_outcome.opponent}
+                                  </span>
+                                )}
+                              </div>
+                            )}
+                          </div>
+                          {key !== "none" && (
+                            <a
+                              href={clanDeepLink(key)}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              aria-label={`Open ${clanLabel(members[0])} in Clash of Clans`}
+                            >
+                              Open <ArrowUpRight size={16} aria-hidden="true" />
+                            </a>
+                          )}
+                        </header>
+                        {members.map((row, index) => (
+                          <TodoTaskCard
+                            key={`${row.tag}-${index}`}
+                            row={row}
+                            kind={tab}
+                            now={now}
+                          />
+                        ))}
+                      </section>
+                    ))}
+                  </div>
+                )}
+                {lastPage > 0 && (
+                  <nav className="todo-pagination" aria-label="Activity pages">
+                    <button
+                      disabled={currentPage === 0}
+                      onClick={() => setPage(currentPage - 1)}
+                    >
+                      ← Previous
+                    </button>
+                    <span>
+                      {currentPage + 1} / {lastPage + 1}
+                    </span>
+                    <button
+                      disabled={currentPage === lastPage}
+                      onClick={() => setPage(currentPage + 1)}
+                    >
+                      Next <ArrowRight size={16} aria-hidden="true" />
+                    </button>
+                  </nav>
+                )}
+                {tab === "war" &&
+                  !view.loading &&
+                  unreadableRows.length > 0 && (
+                    <TodoPrivateNote
+                      rows={unreadableRows}
+                      onView={() => setTab("private")}
+                    />
+                  )}
+              </>
+            )}
+            {tab === "cwl" && rows.length > 0 && (
+              <TaskEventTimer kind="cwl" now={now} />
+            )}
+          </SectionTabPanel>
         </>
       )}
       <p className="todo-freshness">

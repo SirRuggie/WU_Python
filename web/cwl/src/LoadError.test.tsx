@@ -62,7 +62,7 @@ it("disables Try again while busy", async () => {
   const host = await render(<LoadError message="x" onRetry={() => {}} busy />);
   const button = host.querySelector("button")!;
   expect(button.disabled).toBe(true);
-  expect(button.textContent).toBe("Checking…");
+  expect(button.textContent).toBe("Try again");
 });
 
 it("copies the reference and reports a failed copy", async () => {
@@ -119,4 +119,27 @@ it("keeps every Reference copyable when several messages share one block", async
       (b) => b.textContent === "Try again",
     ),
   ).toHaveLength(1);
+});
+
+it("keeps one visible retry label with context and blocks duplicate pending retry", async () => {
+  let finish!: () => void;
+  const retry = vi.fn(
+    () =>
+      new Promise<void>((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const host = await render(
+    <LoadError message="Offline" retryContext="member roles" onRetry={retry} />,
+  );
+  const button = host.querySelector("button")!;
+  expect(host.querySelectorAll("button")).toHaveLength(1);
+  expect(button.textContent).toBe("Try again");
+  expect(button.getAttribute("aria-label")).toBe("Try again: member roles");
+  await act(async () => {
+    button.click();
+    button.click();
+  });
+  expect(retry).toHaveBeenCalledTimes(1);
+  await act(async () => finish());
 });

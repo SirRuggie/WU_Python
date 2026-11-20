@@ -487,8 +487,8 @@ it("Clear selection remains available after a refreshed directory loses a select
   );
   departed = true;
   const refresh = [
-    ...host.querySelectorAll<HTMLButtonElement>(".members-actions button"),
-  ].find((button) => button.textContent === "Refresh members")!;
+    ...host.querySelectorAll<HTMLButtonElement>(".cwl-page-header button"),
+  ].find((button) => button.getAttribute("aria-label") === "Refresh")!;
   expect(refresh).toBeTruthy();
   await act(async () => refresh.click());
   const clear = button("Select none");
@@ -560,8 +560,8 @@ it("manual refresh accepts the server TTL and retains visible members", async ()
   await render();
   expect(host.textContent).toContain("Recent member list");
   const refresh = [
-    ...host.querySelectorAll<HTMLButtonElement>(".members-actions button"),
-  ].find((button) => button.textContent === "Refresh members")!;
+    ...host.querySelectorAll<HTMLButtonElement>(".cwl-page-header button"),
+  ].find((button) => button.getAttribute("aria-label") === "Refresh")!;
   await act(async () => refresh.click());
   expect(host.textContent).toContain("Updating member list…");
   expect(host.textContent).toContain("Person 0");
@@ -574,4 +574,16 @@ it("manual refresh accepts the server TTL and retains visible members", async ()
   ).toBe(true);
   await act(async () => finish(original));
   expect(host.textContent).not.toContain("Updating member list…");
+});
+
+it("shows one actionable directory error when both independent reads lack Discord configuration", async () => {
+  vi.mocked(api).mockRejectedValue(new Error("Discord is not configured."));
+  await render();
+  expect(host.querySelectorAll('[role="alert"]')).toHaveLength(1);
+  expect(host.textContent?.match(/Discord is not configured/g)).toHaveLength(1);
+  expect(
+    [...host.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Try again",
+    ),
+  ).toHaveLength(1);
 });

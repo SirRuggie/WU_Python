@@ -189,15 +189,7 @@
 .activity-toolbar input {
   width: 100%;
 }
-.activity-refresh {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: var(--wu-space-3);
-  margin: var(--wu-space-4) 0;
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-md);
-}
+
 .raid-totals {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));

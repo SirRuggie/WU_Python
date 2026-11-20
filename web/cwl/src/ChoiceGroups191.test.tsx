@@ -47,7 +47,7 @@ it("retains rich section labels, caller refs, own edge-fade state and per-option
       />,
     ),
   );
-  const group = host.querySelector('[role="group"]')!;
+  const group = host.querySelector('[role="tablist"]')!;
   expect(ref).toHaveBeenCalledWith(group);
   // Fade state is measured by SectionTabs itself; a caller value cannot override it.
   expect(group.getAttribute("data-fade-right")).toBe("false");
@@ -203,10 +203,10 @@ it("reveals a restored selection in its strip without moving the document", () =
       ),
     );
   render("e");
-  const row = host.querySelector<HTMLElement>('[role="group"]')!;
+  const row = host.querySelector<HTMLElement>('[role="tablist"]')!;
   const selected = () =>
     row
-      .querySelector<HTMLElement>('[aria-pressed="true"]')!
+      .querySelector<HTMLElement>('[aria-selected="true"]')!
       .getBoundingClientRect();
   expect(selected().left).toBeGreaterThanOrEqual(10);
   expect(selected().right).toBeLessThanOrEqual(210);

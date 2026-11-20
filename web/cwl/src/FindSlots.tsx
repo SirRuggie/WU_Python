@@ -1,3 +1,4 @@
+import EmptyState from "./EmptyState";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
 import RosterFilterOptions from "./RosterFilterOptions";
 import StrikeRecruitSelect from "./StrikeRecruitSelect";
@@ -379,9 +380,10 @@ export default function FindSlots({
         ) : (
           !busy &&
           !requestError && (
-            <div className="empty">
-              <p>Enter weights or select a member to find slots.</p>
-            </div>
+            <EmptyState
+              title="No weights selected"
+              line="Enter weights or select a member to find slots."
+            />
           )
         )}
       </div>

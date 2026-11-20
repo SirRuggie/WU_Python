@@ -74,7 +74,12 @@ it.each(["send", "resend"])(
     const root = createRoot(host);
     async function click(label: string) {
       const button = [...document.querySelectorAll("button")]
-        .filter((b) => b.textContent?.trim() === label)
+        .filter(
+          (b) =>
+            b.textContent?.trim() === label ||
+            b.getAttribute("aria-label") ===
+              (label === "Refresh status" ? "Refresh" : label),
+        )
         .at(-1);
       expect(button, label).toBeTruthy();
       await act(async () => button!.click());

@@ -1384,7 +1384,7 @@ describe("Results & bonuses page: clan steps half", () => {
     const dialog = document.querySelector(".confirm-dialog")!;
     expect(dialog).not.toBeNull();
     await act(async () => button("Cancel", dialog).click());
-    expect(poolTab("Lazy CWL").getAttribute("aria-pressed")).toBe("true");
+    expect(poolTab("Lazy CWL").getAttribute("aria-selected")).toBe("true");
     expect(urlState).not.toHaveBeenCalled();
     expect(writes()).toHaveLength(0);
   });

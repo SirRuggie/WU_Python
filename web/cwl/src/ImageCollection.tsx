@@ -1,3 +1,8 @@
+import type { ReactNode } from "react";
+import RefreshControl, {
+  RefreshButton,
+  useRefreshTime,
+} from "./RefreshControl";
 import LoadError from "./LoadError";
 import useConfirmDialog from "./useConfirmDialog";
 import {
@@ -71,7 +76,9 @@ export default function ImageCollection({
   onChoose,
   onDirty,
   onGuard,
+  pageHeader,
 }: {
+  pageHeader?: (control: ReactNode) => ReactNode;
   onChoose?: (url: string) => void;
   onDirty?: (value: boolean) => void;
   onGuard?: (guard: () => Promise<boolean>) => void;
@@ -353,361 +360,382 @@ export default function ImageCollection({
     setNotice("");
     void load();
   }
+  const updatedAt = useRefreshTime(
+    loading,
+    !loadFailed,
+    loadFailed ? error : "",
+  );
   const pages = Math.max(1, Math.ceil(matches.length / 24)),
     current = Math.min(page, pages - 1);
   return (
-    <div className="image-collection">
-      {dialog}
-      <div className="gallery-toolbar">
-        <button
-          className="primary"
+    <>
+      {pageHeader?.(
+        <RefreshControl
+          updatedAt={updatedAt}
+          busy={loading}
           disabled={busy}
-          onClick={async () => {
-            if (!(await guard())) return;
-            setEditing(null);
-            setLink("");
-            setFiles([]);
-            setUploadCategory(folder === "*" ? "" : folder);
-            setAdding(!adding);
-          }}
-        >
-          {adding ? "Cancel adding" : "+ Add images"}
-        </button>
-        <button
-          disabled={busy || loading}
-          onClick={() => void refreshGallery()}
-        >
-          Refresh gallery
-        </button>
-      </div>
-      <LoadError
-        message={error}
-        onRetry={loadFailed ? () => void refreshGallery() : undefined}
-        busy={loading}
-        disabled={busy}
-      />
-      {notice && <p role="status">{notice}</p>}
-      {adding && (
-        <section className="gallery-upload" aria-label="Add images">
+          onRefresh={refreshGallery}
+          showRefresh={!loadFailed || !error}
+        />,
+      )}
+      <div className="image-collection">
+        {dialog}
+        <div className="gallery-toolbar">
+          <button
+            className="primary"
+            disabled={busy}
+            onClick={async () => {
+              if (!(await guard())) return;
+              setEditing(null);
+              setLink("");
+              setFiles([]);
+              setUploadCategory(folder === "*" ? "" : folder);
+              setAdding(!adding);
+            }}
+          >
+            {adding ? "Cancel adding" : "+ Add images"}
+          </button>
+          {!pageHeader && (!loadFailed || !error) && (
+            <RefreshButton
+              busy={loading}
+              disabled={busy}
+              onRefresh={refreshGallery}
+              label="Refresh gallery"
+            />
+          )}
+        </div>
+        <LoadError
+          message={error}
+          onRetry={loadFailed ? () => void refreshGallery() : undefined}
+          busy={loading}
+          disabled={busy}
+        />
+        {notice && <p role="status">{notice}</p>}
+        {adding && (
+          <section className="gallery-upload" aria-label="Add images">
+            <label>
+              Category
+              <input
+                disabled={busy}
+                list="gallery-folder-options"
+                maxLength={120}
+                value={uploadCategory}
+                onChange={(e) => setUploadCategory(e.target.value)}
+                placeholder="Unsorted"
+              />
+            </label>
+            <label>
+              Select files
+              <input
+                type="file"
+                multiple
+                disabled={busy || !!link.trim()}
+                accept="image/png,image/jpeg,image/gif,image/webp"
+                onChange={(e) => {
+                  setFiles(Array.from(e.target.files || []));
+                  e.target.value = "";
+                }}
+              />
+            </label>
+            {files.length > 0 && (
+              <p>
+                {files.length} selected ·{" "}
+                {files.map((file) => file.name).join(", ")}
+              </p>
+            )}
+            <label>
+              Or paste an image link
+              <input
+                type="url"
+                disabled={busy || files.length > 0}
+                value={link}
+                onChange={(e) => setLink(e.target.value)}
+                placeholder="https://…"
+              />
+            </label>
+            <small>
+              PNG, JPG, GIF or WebP · up to 10 MB each. Images are added when
+              you save.
+            </small>
+            <button
+              aria-busy={busy || undefined}
+              disabled={busy || (!files.length && !link.trim())}
+              onClick={() => void upload()}
+            >
+              {busy ? "Adding…" : "Save images"}
+            </button>
+          </section>
+        )}
+        <div className="gallery-filters">
+          <label>
+            Find an image
+            <input
+              type="search"
+              value={query}
+              onChange={async (e) => {
+                const value = e.currentTarget.value;
+                if (!(await guard())) return;
+                setEditing(null);
+                setQuery(value);
+              }}
+              placeholder="Name, category or command"
+            />
+          </label>
           <label>
             Category
-            <input
+            <select
               disabled={busy}
-              list="gallery-folder-options"
-              maxLength={120}
-              value={uploadCategory}
-              onChange={(e) => setUploadCategory(e.target.value)}
-              placeholder="Unsorted"
-            />
-          </label>
-          <label>
-            Select files
-            <input
-              type="file"
-              multiple
-              disabled={busy || !!link.trim()}
-              accept="image/png,image/jpeg,image/gif,image/webp"
-              onChange={(e) => {
-                setFiles(Array.from(e.target.files || []));
-                e.target.value = "";
+              value={folder}
+              onChange={async (e) => {
+                const value = e.currentTarget.value;
+                if (!(await guard())) return;
+                setEditing(null);
+                setFolder(value);
+                setSelected([]);
               }}
-            />
+            >
+              <option value="*">All images</option>
+              {folders.map((value) => (
+                <option key={value}>{value}</option>
+              ))}
+              <option value="">Unsorted</option>
+            </select>
           </label>
-          {files.length > 0 && (
-            <p>
-              {files.length} selected ·{" "}
-              {files.map((file) => file.name).join(", ")}
-            </p>
-          )}
           <label>
-            Or paste an image link
-            <input
-              type="url"
-              disabled={busy || files.length > 0}
-              value={link}
-              onChange={(e) => setLink(e.target.value)}
-              placeholder="https://…"
-            />
-          </label>
-          <small>
-            PNG, JPG, GIF or WebP · up to 10 MB each. Images are added when you
-            save.
-          </small>
-          <button
-            aria-busy={busy || undefined}
-            disabled={busy || (!files.length && !link.trim())}
-            onClick={() => void upload()}
-          >
-            {busy ? "Adding…" : "Save images"}
-          </button>
-        </section>
-      )}
-      <div className="gallery-filters">
-        <label>
-          Find an image
-          <input
-            type="search"
-            value={query}
-            onChange={async (e) => {
-              const value = e.currentTarget.value;
-              if (!(await guard())) return;
-              setEditing(null);
-              setQuery(value);
-            }}
-            placeholder="Name, category or command"
-          />
-        </label>
-        <label>
-          Category
-          <select
-            disabled={busy}
-            value={folder}
-            onChange={async (e) => {
-              const value = e.currentTarget.value;
-              if (!(await guard())) return;
-              setEditing(null);
-              setFolder(value);
-              setSelected([]);
-            }}
-          >
-            <option value="*">All images</option>
-            {folders.map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-            <option value="">Unsorted</option>
-          </select>
-        </label>
-        <label>
-          Status
-          <select
-            disabled={busy}
-            value={filter}
-            onChange={async (e) => {
-              const value = e.currentTarget.value;
-              if (!(await guard())) return;
-              setEditing(null);
-              setFilter(value);
-              setSelected([]);
-            }}
-          >
-            <option value="active">Available</option>
-            <option value="used">Used by commands</option>
-            <option value="unused">No command use</option>
-            <option value="archived">Archived</option>
-          </select>
-        </label>
-      </div>
-      {selected.length > 0 && (
-        <section className="gallery-bulk" aria-label="Move selected images">
-          <strong>{selected.length} selected</strong>
-          <label>
-            Move to category
-            <input
+            Status
+            <select
               disabled={busy}
-              value={destination}
-              list="gallery-folder-options"
-              maxLength={120}
-              onChange={(e) => setDestination(e.target.value)}
-            />
+              value={filter}
+              onChange={async (e) => {
+                const value = e.currentTarget.value;
+                if (!(await guard())) return;
+                setEditing(null);
+                setFilter(value);
+                setSelected([]);
+              }}
+            >
+              <option value="active">Available</option>
+              <option value="used">Used by commands</option>
+              <option value="unused">No command use</option>
+              <option value="archived">Archived</option>
+            </select>
           </label>
-          <button
-            disabled={busy || !destination.trim()}
-            onClick={() => void moveSelected()}
-          >
-            Move images
-          </button>
-          <button disabled={busy} onClick={() => setSelected([])}>
-            Clear selection
-          </button>
-        </section>
-      )}
-      {loading ? (
-        <p role="status">Loading images…</p>
-      ) : (
-        <>
-          <p className="small">
-            {matches.length} images · {selected.length} selected
-          </p>
-          <div className="command-image-grid">
-            {matches.slice(current * 24, (current + 1) * 24).map((item) => (
-              <article key={item.url}>
-                <label className="gallery-select">
-                  <input
-                    type="checkbox"
-                    disabled={busy}
-                    checked={selected.includes(item.url)}
-                    onChange={(e) =>
-                      setSelected((rows) =>
-                        e.target.checked
-                          ? [...rows, item.url]
-                          : rows.filter((url) => url !== item.url),
-                      )
-                    }
-                  />
-                  <strong>{item.name}</strong>
-                </label>
-                {failed.includes(item.url) ? (
-                  <div className="image-unavailable">Preview unavailable</div>
-                ) : (
-                  <a
-                    href={item.url}
-                    target="_blank"
-                    rel="noreferrer"
-                    aria-label={`Open ${item.name}`}
-                  >
-                    <img
-                      width={300}
-                      height={150}
-                      loading="lazy"
-                      src={item.url}
-                      alt={item.name}
-                      onError={() => setFailed((rows) => [...rows, item.url])}
+        </div>
+        {selected.length > 0 && (
+          <section className="gallery-bulk" aria-label="Move selected images">
+            <strong>{selected.length} selected</strong>
+            <label>
+              Move to category
+              <input
+                disabled={busy}
+                value={destination}
+                list="gallery-folder-options"
+                maxLength={120}
+                onChange={(e) => setDestination(e.target.value)}
+              />
+            </label>
+            <button
+              disabled={busy || !destination.trim()}
+              onClick={() => void moveSelected()}
+            >
+              Move images
+            </button>
+            <button disabled={busy} onClick={() => setSelected([])}>
+              Clear selection
+            </button>
+          </section>
+        )}
+        {loading ? (
+          <p role="status">Loading images…</p>
+        ) : (
+          <>
+            <p className="small">
+              {matches.length} images · {selected.length} selected
+            </p>
+            <div className="command-image-grid">
+              {matches.slice(current * 24, (current + 1) * 24).map((item) => (
+                <article key={item.url}>
+                  <label className="gallery-select">
+                    <input
+                      type="checkbox"
+                      disabled={busy}
+                      checked={selected.includes(item.url)}
+                      onChange={(e) =>
+                        setSelected((rows) =>
+                          e.target.checked
+                            ? [...rows, item.url]
+                            : rows.filter((url) => url !== item.url),
+                        )
+                      }
                     />
-                  </a>
-                )}
-                <small>
-                  {imageCategory(item.folder) || "Unsorted"} ·{" "}
-                  {item.commands.length} command
-                  {item.commands.length === 1 ? "" : "s"}
-                </small>
-                <div className="gallery-card-actions">
-                  {onChoose && (
+                    <strong>{item.name}</strong>
+                  </label>
+                  {failed.includes(item.url) ? (
+                    <div className="image-unavailable">Preview unavailable</div>
+                  ) : (
+                    <a
+                      href={item.url}
+                      target="_blank"
+                      rel="noreferrer"
+                      aria-label={`Open ${item.name}`}
+                    >
+                      <img
+                        width={300}
+                        height={150}
+                        loading="lazy"
+                        src={item.url}
+                        alt={item.name}
+                        onError={() => setFailed((rows) => [...rows, item.url])}
+                      />
+                    </a>
+                  )}
+                  <small>
+                    {imageCategory(item.folder) || "Unsorted"} ·{" "}
+                    {item.commands.length} command
+                    {item.commands.length === 1 ? "" : "s"}
+                  </small>
+                  <div className="gallery-card-actions">
+                    {onChoose && (
+                      <button
+                        className="primary"
+                        disabled={busy || item.archived}
+                        onClick={async () => {
+                          if (await guard()) onChoose(item.url);
+                        }}
+                      >
+                        Use image
+                      </button>
+                    )}
+                    {!onChoose && (
+                      <button
+                        onClick={async () => {
+                          try {
+                            await navigator.clipboard.writeText(item.url);
+                            setCopied(item.url);
+                          } catch {
+                            setLoadFailed(false);
+                            setError("Open the image and copy its address.");
+                          }
+                        }}
+                      >
+                        {copied === item.url ? "Copied" : "Copy link"}
+                      </button>
+                    )}
                     <button
-                      className="primary"
-                      disabled={busy || item.archived}
+                      disabled={busy}
+                      aria-expanded={editing?.url === item.url}
                       onClick={async () => {
-                        if (await guard()) onChoose(item.url);
+                        if (!(await guard())) return;
+                        setEditing(editing?.url === item.url ? null : item);
+                        setName(item.name);
+                        setCategory(imageCategory(item.folder));
                       }}
                     >
-                      Use image
-                    </button>
-                  )}
-                  {!onChoose && (
-                    <button
-                      onClick={async () => {
-                        try {
-                          await navigator.clipboard.writeText(item.url);
-                          setCopied(item.url);
-                        } catch {
-                          setLoadFailed(false);
-                          setError("Open the image and copy its address.");
-                        }
-                      }}
-                    >
-                      {copied === item.url ? "Copied" : "Copy link"}
-                    </button>
-                  )}
-                  <button
-                    disabled={busy}
-                    aria-expanded={editing?.url === item.url}
-                    onClick={async () => {
-                      if (!(await guard())) return;
-                      setEditing(editing?.url === item.url ? null : item);
-                      setName(item.name);
-                      setCategory(imageCategory(item.folder));
-                    }}
-                  >
-                    Details
-                  </button>
-                </div>
-                {editing?.url === item.url && (
-                  <div className="gallery-edit">
-                    <label>
-                      Name
-                      <input
-                        disabled={busy}
-                        maxLength={120}
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                      />
-                    </label>
-                    <label>
-                      Category
-                      <input
-                        disabled={busy}
-                        maxLength={120}
-                        list="gallery-folder-options"
-                        value={category}
-                        onChange={(e) => setCategory(e.target.value)}
-                      />
-                    </label>
-                    <p>
-                      {item.commands.length
-                        ? `Commands: ${item.commands.join(", ")}`
-                        : "No command use found. This image may be used elsewhere."}
-                    </p>
-                    <p>
-                      Names and categories keep the same link. Archiving hides
-                      the image without breaking existing messages.
-                    </p>
-                    <button
-                      disabled={busy || !name.trim() || !dirty}
-                      onClick={() => void saveDetails(item)}
-                    >
-                      Save details
-                    </button>
-                    <button disabled={busy} onClick={() => void archive(item)}>
-                      {item.archived ? "Restore image" : "Archive image"}
+                      Details
                     </button>
                   </div>
-                )}
-              </article>
-            ))}
-          </div>
-          {!matches.length && !error && (
-            <p>No images match. Change filters or add an image.</p>
-          )}
-          {pages > 1 && (
-            <nav className="gallery-pages" aria-label="Image pages">
-              <button
-                disabled={busy || current === 0}
-                onClick={async () => {
-                  if (await guard()) {
-                    setEditing(null);
-                    setPage(current - 1);
-                  }
-                }}
-              >
-                Previous
-              </button>
-              <span>
-                Page {current + 1} of {pages}
-              </span>
-              <button
-                disabled={busy || current === pages - 1}
-                onClick={async () => {
-                  if (await guard()) {
-                    setEditing(null);
-                    setPage(current + 1);
-                  }
-                }}
-              >
-                Next
-              </button>
-            </nav>
-          )}
-        </>
-      )}
-      <details className="gallery-storage">
-        <summary>Storage tools</summary>
-        <p>
-          Look for images added outside this gallery. Existing names and
-          categories are kept.
-        </p>
-        <button
-          disabled={busy || loading}
-          onClick={async () => {
-            if (await guard()) void sync();
-          }}
-        >
-          Check storage for images
-        </button>
-      </details>
-      <datalist id="gallery-folder-options">
-        {folders.map((value) => (
-          <option key={value} value={value} />
-        ))}
-      </datalist>
-    </div>
+                  {editing?.url === item.url && (
+                    <div className="gallery-edit">
+                      <label>
+                        Name
+                        <input
+                          disabled={busy}
+                          maxLength={120}
+                          value={name}
+                          onChange={(e) => setName(e.target.value)}
+                        />
+                      </label>
+                      <label>
+                        Category
+                        <input
+                          disabled={busy}
+                          maxLength={120}
+                          list="gallery-folder-options"
+                          value={category}
+                          onChange={(e) => setCategory(e.target.value)}
+                        />
+                      </label>
+                      <p>
+                        {item.commands.length
+                          ? `Commands: ${item.commands.join(", ")}`
+                          : "No command use found. This image may be used elsewhere."}
+                      </p>
+                      <p>
+                        Names and categories keep the same link. Archiving hides
+                        the image without breaking existing messages.
+                      </p>
+                      <button
+                        disabled={busy || !name.trim() || !dirty}
+                        onClick={() => void saveDetails(item)}
+                      >
+                        Save details
+                      </button>
+                      <button
+                        disabled={busy}
+                        onClick={() => void archive(item)}
+                      >
+                        {item.archived ? "Restore image" : "Archive image"}
+                      </button>
+                    </div>
+                  )}
+                </article>
+              ))}
+            </div>
+            {!matches.length && !error && (
+              <p>No images match. Change filters or add an image.</p>
+            )}
+            {pages > 1 && (
+              <nav className="gallery-pages" aria-label="Image pages">
+                <button
+                  disabled={busy || current === 0}
+                  onClick={async () => {
+                    if (await guard()) {
+                      setEditing(null);
+                      setPage(current - 1);
+                    }
+                  }}
+                >
+                  Previous
+                </button>
+                <span>
+                  Page {current + 1} of {pages}
+                </span>
+                <button
+                  disabled={busy || current === pages - 1}
+                  onClick={async () => {
+                    if (await guard()) {
+                      setEditing(null);
+                      setPage(current + 1);
+                    }
+                  }}
+                >
+                  Next
+                </button>
+              </nav>
+            )}
+          </>
+        )}
+        <details className="gallery-storage">
+          <summary>Storage tools</summary>
+          <p>
+            Look for images added outside this gallery. Existing names and
+            categories are kept.
+          </p>
+          <button
+            disabled={busy || loading}
+            onClick={async () => {
+              if (await guard()) void sync();
+            }}
+          >
+            Check storage for images
+          </button>
+        </details>
+        <datalist id="gallery-folder-options">
+          {folders.map((value) => (
+            <option key={value} value={value} />
+          ))}
+        </datalist>
+      </div>
+    </>
   );
 }

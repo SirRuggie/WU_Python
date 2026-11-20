@@ -1,6 +1,8 @@
+import EmptyState from "./EmptyState";
 import { formatDateTime } from "./format";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
+import RefreshControl, { useRefreshTime } from "./RefreshControl";
 import { ArrowRight } from "lucide-react";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
@@ -102,6 +104,7 @@ export default function TicketBrowser() {
       alive = false;
     };
   }, [selected, status, kind, flag, query, from, to, page, reload]);
+  const updatedAt = useRefreshTime(busy, true, error);
   const extraFilters = Number(flag !== "all") + Number(!!from) + Number(!!to);
   const clearFilters = () => {
     setSearch("");
@@ -136,9 +139,12 @@ export default function TicketBrowser() {
         }
         description="Review applications and conversations. Reply or make decisions in Discord."
       >
-        <button disabled={busy} onClick={() => setReload((n) => n + 1)}>
-          Refresh
-        </button>
+        <RefreshControl
+          updatedAt={updatedAt}
+          busy={busy}
+          showRefresh={!error}
+          onRefresh={() => setReload((n) => n + 1)}
+        />
       </CwlPageHeader>
       <div className="ticket-filters">
         <label>
@@ -254,11 +260,11 @@ export default function TicketBrowser() {
       {busy ? (
         <p role="status">Loading tickets…</p>
       ) : !error && !tickets.length ? (
-        <div className="card empty">
-          <h2>No tickets found</h2>
-          <p>Try another name, status or date.</p>
-          <button onClick={clearFilters}>Clear filters</button>
-        </div>
+        <EmptyState
+          title="No tickets found"
+          line="Try another name, status or date."
+          action={<button onClick={clearFilters}>Clear filters</button>}
+        />
       ) : (
         <div className="ticket-list">
           {tickets.map((t) => (

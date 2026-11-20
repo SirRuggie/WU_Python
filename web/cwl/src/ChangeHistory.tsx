@@ -2,6 +2,8 @@ import {
   isTownHallHistoryTarget,
   townHallHistoryValue,
 } from "./townHallHistory";
+import { RefreshButton } from "./RefreshControl";
+import LoadError from "./LoadError";
 import { formatDateTime } from "./format";
 import { visibleRefresh } from "./visibleRefresh";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
@@ -170,7 +172,13 @@ export default function ChangeHistory({
           here. Restoring does not publish a Discord post.
         </p>
         {loading && <p role="status">Loading history…</p>}
-        {error && <p role="alert">{error}</p>}
+        <LoadError
+          message={error}
+          onRetry={load}
+          busy={loading}
+          disabled={busy || !!pending}
+          retryContext="saved history"
+        />
         {notice && <p role="status">{notice}</p>}
         {!loading && !entries.length && !error && <p>No saved changes yet.</p>}
         {entries.length > 0 && (
@@ -278,12 +286,14 @@ export default function ChangeHistory({
         {pending && (
           <button onClick={() => void check()}>Check restore status</button>
         )}
-        <button
-          disabled={loading || busy || !!pending}
-          onClick={() => void load()}
-        >
-          Refresh history
-        </button>
+        {!error && (
+          <RefreshButton
+            busy={loading}
+            disabled={busy || !!pending}
+            onRefresh={load}
+            label="Refresh history"
+          />
+        )}
       </details>
       {confirmSide && (
         <ConfirmDialog

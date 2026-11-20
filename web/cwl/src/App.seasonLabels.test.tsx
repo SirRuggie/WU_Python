@@ -193,6 +193,7 @@ it.each(["reminders", "declaration"])(
     if (view === "reminders")
       expect(picker.options[0].text).toBe("Select a season");
     expect(picker.value).toBe("4");
+    picker.focus();
     expect(location.search).toBe("?season=4");
     await act(async () => {
       picker.value = "3";
@@ -200,6 +201,8 @@ it.each(["reminders", "declaration"])(
     });
     await settle();
     expect(picker.value).toBe("3");
+    expect(host.querySelector('select[aria-label="Season"]')).toBe(picker);
+    expect(document.activeElement).toBe(picker);
     await act(async () => {
       history.replaceState({ wuDashboardIndex: 0 }, "", `${path}?season=4`);
       window.dispatchEvent(

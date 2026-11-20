@@ -85,11 +85,13 @@ it("filters the real Compare view to league Y then sorts without losing chosen l
       ),
     );
     const refresh = host.querySelector<HTMLButtonElement>(
-      '.compare-toolbar button[aria-busy="true"]',
+      '.compare-header button[aria-label="Refresh"][aria-busy="true"]',
     )!;
-    expect(host.querySelector('[aria-label="Sort: Weight: high to low"]')).not.toBeNull();
+    expect(
+      host.querySelector('[aria-label="Sort: Weight: high to low"]'),
+    ).not.toBeNull();
     expect(refresh).not.toBeNull();
-    expect(refresh.disabled).toBe(false);
+    expect(refresh.disabled).toBe(true);
     await act(async () => button("Filters").click());
     const checkbox = [
       ...document.querySelectorAll('input[type="checkbox"]'),
@@ -109,14 +111,22 @@ it("filters the real Compare view to league Y then sorts without losing chosen l
       JSON.parse(localStorage.getItem("wu-compare-clans:1:main")!),
     ).toEqual(["B", "A"]);
     await act(async () =>
-      (host.querySelector('[aria-label="Sort: Weight: high to low"]') as HTMLButtonElement).click(),
+      (
+        host.querySelector(
+          '[aria-label="Sort: Weight: high to low"]',
+        ) as HTMLButtonElement
+      ).click(),
     );
     await act(async () =>
-      ([...host.querySelectorAll('[role="menuitem"]')].find((item) =>
-        item.textContent?.includes("Town Hall: high to low"),
-      ) as HTMLElement).click(),
+      (
+        [...host.querySelectorAll('[role="menuitem"]')].find((item) =>
+          item.textContent?.includes("Town Hall: high to low"),
+        ) as HTMLElement
+      ).click(),
     );
-    expect(host.querySelector('[aria-label="Sort: Town Hall: high to low"]')).not.toBeNull();
+    expect(
+      host.querySelector('[aria-label="Sort: Town Hall: high to low"]'),
+    ).not.toBeNull();
     await act(async () =>
       root.render(
         <CompareClans
@@ -129,7 +139,9 @@ it("filters the real Compare view to league Y then sorts without losing chosen l
         />,
       ),
     );
-    expect(host.querySelector('[aria-label="Sort: Weight: high to low"]')).not.toBeNull();
+    expect(
+      host.querySelector('[aria-label="Sort: Weight: high to low"]'),
+    ).not.toBeNull();
   } finally {
     act(() => root.unmount());
     host.remove();

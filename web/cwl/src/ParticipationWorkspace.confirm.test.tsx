@@ -169,3 +169,25 @@ it("season change cancellation and double confirmation preserve callback value a
   expect(change).toHaveBeenCalledExactlyOnceWith("2");
   expect(writes()).toHaveLength(0);
 });
+
+it("links every workflow pool tab to one labelled panel without mounting inactive content", async () => {
+  const tabs = [
+    ...host.querySelectorAll<HTMLButtonElement>(
+      '#participation-pools [role="tab"]',
+    ),
+  ];
+  expect(tabs).toHaveLength(2);
+  for (const tab of tabs) {
+    const panel = document.getElementById(tab.getAttribute("aria-controls")!)!;
+    expect(panel).toBeTruthy();
+    expect(panel.getAttribute("aria-labelledby")).toBe(tab.id);
+    expect(panel.hidden).toBe(tab.getAttribute("aria-selected") !== "true");
+    if (panel.hidden) expect(panel.textContent).toBe("");
+  }
+  expect(
+    host.querySelectorAll('[id^="participation-pools-panel-"]:not([hidden])'),
+  ).toHaveLength(1);
+  expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
+    true,
+  );
+});

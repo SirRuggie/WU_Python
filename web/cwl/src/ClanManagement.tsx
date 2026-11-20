@@ -1,7 +1,9 @@
+import { parsePageParam, replacePageParam } from "./pageUrlState";
+import EmptyState from "./EmptyState";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
 import { Check, X } from "lucide-react";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import "./ChoiceGroupLayout.css";
 import {
   clanSections as sections,
@@ -44,10 +46,12 @@ export default function ClanManagement({
   onDirty: (value: boolean) => void;
   initialRoute?: ClanRoute;
   onWorking?: (busy: boolean) => void;
-  onNavigate?: (route: ClanRoute) => void;
+  onNavigate?: (route: ClanRoute, replace?: boolean) => void;
 }) {
   const [view, setView] = useState<"overview" | "clans" | "history">(
-    initialRoute?.tab || "clans",
+    initialRoute?.tab ||
+      (parsePageParam("clan-management", "tab", location.search) as
+        "clans" | "overview" | "history"),
   );
   const reminderEditor = useRef<ReminderEditor | null>(null);
   const initialClanPending = useRef(initialRoute?.tag);
@@ -393,7 +397,8 @@ export default function ClanManagement({
     if (dirty) setDraft(saved);
     ++editGeneration.current;
     setReminderDirty(false);
-    onNavigate?.({ tab: next });
+    if (onNavigate) onNavigate({ tab: next }, true);
+    else replacePageParam("clan-management", "tab", next);
     setView(next);
     setAdding(false);
   }
@@ -443,6 +448,7 @@ export default function ClanManagement({
         </button>
       </CwlPageHeader>
       <SectionTabs
+        id="family-clan-views"
         className="clan-tabs section-tabs--flow"
         label="Clan management views"
         items={[
@@ -454,315 +460,329 @@ export default function ClanManagement({
         disabled={disabled}
         onChange={(key) => void changeView(key)}
       />
-      <div hidden={view !== "overview"}>
-        <ReminderOverview
-          active={view === "overview"}
-          channels={channels}
-          channelsReady={channelsReady && !choicesError}
-          choicesError={choicesError}
-          onRetryChoices={() => void loadChoices()}
-          onOpen={openReminderClan}
-          returnTag={overviewReturnTag}
-          onAdd={() => {
-            onNavigate?.({ tab: "clans" });
-            setView("clans");
-            setAdding(true);
-          }}
-        />
-      </div>
-      {view === "overview" ? null : view === "history" ? (
-        <ClanHistory onRestored={() => void load()} />
-      ) : (
-        <>
-          <LoadError message={error} />
-          <LoadError
-            message={
-              choicesError && !directoryError
-                ? `Roles and channels could not be loaded: ${choicesError}`
-                : ""
-            }
-            disabled={disabled}
-            onRetry={() => void loadChoices()}
+      <SectionTabPanel id="family-clan-views" value={view}>
+        <div hidden={view !== "overview"}>
+          <ReminderOverview
+            active={view === "overview"}
+            channels={channels}
+            channelsReady={channelsReady && !choicesError}
+            choicesError={choicesError}
+            onRetryChoices={() => void loadChoices()}
+            onOpen={openReminderClan}
+            returnTag={overviewReturnTag}
+            onAdd={() => {
+              onNavigate?.({ tab: "clans" });
+              setView("clans");
+              setAdding(true);
+            }}
           />
-          {notice && (
-            <p className="notice" role="status">
-              {notice}
-            </p>
-          )}
-          {adding && (
-            <AddClan
-              disabled={disabled}
-              onBusy={setBusy}
-              beforeAdd={async () =>
-                !dirty || (await confirmAction("Discard unsaved clan changes?"))
+        </div>
+        {view === "overview" ? null : view === "history" ? (
+          <ClanHistory onRestored={() => void load()} />
+        ) : (
+          <>
+            <LoadError message={error} />
+            <LoadError
+              message={
+                choicesError && !directoryError
+                  ? `Roles and channels could not be loaded: ${choicesError}`
+                  : ""
               }
-              onOpen={(clan, warning) => {
-                void (async () => {
-                  ++editGeneration.current;
-                  setSetupTag(clan.tag);
-                  setSaved(clan);
-                  setDraft({ ...clan });
-                  setReminderDirty(false);
-                  setAdding(false);
-                  setSection("Details");
-                  setSectionCollapsed(false);
-                  setShowDirectory(false);
-                  setNotice(
-                    warning || "Review the setup checklist for this clan.",
-                  );
-                  onNavigate?.({
-                    tab: "clans",
-                    tag: clan.tag,
-                    section: "Details",
-                  });
-                  void load();
-                  requestAnimationFrame(() => headingRef.current?.focus());
-                })();
-              }}
-            />
-          )}
-          <div className={`clan-layout ${draft ? "clan-detail-open" : ""}`}>
-            <ClanDirectory
-              clans={data.clans}
-              types={data.types}
-              selected={saved}
-              query={query}
-              onQuery={setQuery}
-              clanType={clanType}
-              onType={setClanType}
-              expanded={showDirectory}
-              onExpanded={setShowDirectory}
               disabled={disabled}
-              loading={directoryLoading}
-              error={directoryError}
-              onRetry={() => {
-                setDirectoryLoading(true);
-                void load();
-                if (choicesError) void loadChoices();
-              }}
-              onSelect={select}
+              onRetry={() => void loadChoices()}
             />
-            {draft ? (
-              <section className="card clan-editor">
-                <button
-                  className="clan-all-link"
-                  disabled={disabled}
-                  onClick={() => void select(null)}
-                >
-                  ‹ All clans
-                </button>
-                <UsageLinks tag={draft.tag} revision={saved?.revision || ""} />
-                {setupTag === draft.tag && (
-                  <nav aria-label="Clan setup checklist" className="clan-tabs">
-                    {(
-                      [
-                        ["Clan type", "Details", !!draft.type],
-                        ["Leader role", "Roles", !!draft.leader_role_id],
-                        ["Channels", "Channels", !!draft.chat_channel_id],
-                        [
-                          "War reminders",
-                          "War reminders",
-                          reminderSummary.startsWith("On"),
-                        ],
-                      ] as const
-                    ).map(([label, target, complete]) => (
-                      <button
-                        key={label}
-                        disabled={disabled}
-                        onClick={() => {
-                          setSection(target);
-                          setSectionCollapsed(false);
-                          onNavigate?.({
-                            tab: "clans",
-                            tag: draft.tag,
-                            section: target,
-                          });
-                        }}
-                      >
-                        {complete ? (
-                          <Check size={16} aria-hidden="true" />
-                        ) : (
-                          <X size={16} aria-hidden="true" />
-                        )}
-                        {label} <small>{complete ? "Done" : "To do"}</small>
-                      </button>
-                    ))}
-                  </nav>
-                )}
-                <CwlPageHeader
-                  title={
-                    <h2 ref={headingRef} tabIndex={-1}>
-                      {draft.name}
-                    </h2>
-                  }
-                  description={draft.tag}
-                >
-                  <button
-                    disabled={disabled}
-                    onClick={async () => {
-                      if (
-                        !clanDirty ||
-                        (await confirmAction(
-                          "Discard clan details and load current settings? Other section edits stay.",
-                        ))
-                      )
-                        void run(() => load(true));
-                    }}
-                  >
-                    Refresh
-                  </button>
-                </CwlPageHeader>
-                <ClanSettingsNavigation
-                  sections={sections}
-                  value={section}
-                  disabled={disabled}
-                  onChange={(next) => {
+            {notice && (
+              <p className="notice" role="status">
+                {notice}
+              </p>
+            )}
+            {adding && (
+              <AddClan
+                disabled={disabled}
+                onBusy={setBusy}
+                beforeAdd={async () =>
+                  !dirty ||
+                  (await confirmAction("Discard unsaved clan changes?"))
+                }
+                onOpen={(clan, warning) => {
+                  void (async () => {
+                    ++editGeneration.current;
+                    setSetupTag(clan.tag);
+                    setSaved(clan);
+                    setDraft({ ...clan });
+                    setReminderDirty(false);
+                    setAdding(false);
+                    setSection("Details");
+                    setSectionCollapsed(false);
+                    setShowDirectory(false);
+                    setNotice(
+                      warning || "Review the setup checklist for this clan.",
+                    );
                     onNavigate?.({
                       tab: "clans",
-                      tag: draft.tag,
-                      section: next,
+                      tag: clan.tag,
+                      section: "Details",
                     });
-                    setSection(next);
-                    setSectionCollapsed(false);
-                  }}
-                />
-                {sections.map((item, index) => (
-                  <div key={item} className="clan-section-card">
+                    void load();
+                    requestAnimationFrame(() => headingRef.current?.focus());
+                  })();
+                }}
+              />
+            )}
+            <div className={`clan-layout ${draft ? "clan-detail-open" : ""}`}>
+              <ClanDirectory
+                clans={data.clans}
+                types={data.types}
+                selected={saved}
+                query={query}
+                onQuery={setQuery}
+                clanType={clanType}
+                onType={setClanType}
+                expanded={showDirectory}
+                onExpanded={setShowDirectory}
+                disabled={disabled}
+                loading={directoryLoading}
+                error={directoryError}
+                onRetry={() => {
+                  setDirectoryLoading(true);
+                  void load();
+                  if (choicesError) void loadChoices();
+                }}
+                onSelect={select}
+              />
+              {draft ? (
+                <section className="card clan-editor">
+                  <button
+                    className="clan-all-link"
+                    disabled={disabled}
+                    onClick={() => void select(null)}
+                  >
+                    ‹ All clans
+                  </button>
+                  <UsageLinks
+                    tag={draft.tag}
+                    revision={saved?.revision || ""}
+                  />
+                  {setupTag === draft.tag && (
+                    <nav
+                      aria-label="Clan setup checklist"
+                      className="clan-tabs"
+                    >
+                      {(
+                        [
+                          ["Clan type", "Details", !!draft.type],
+                          ["Leader role", "Roles", !!draft.leader_role_id],
+                          ["Channels", "Channels", !!draft.chat_channel_id],
+                          [
+                            "War reminders",
+                            "War reminders",
+                            reminderSummary.startsWith("On"),
+                          ],
+                        ] as const
+                      ).map(([label, target, complete]) => (
+                        <button
+                          key={label}
+                          disabled={disabled}
+                          onClick={() => {
+                            setSection(target);
+                            setSectionCollapsed(false);
+                            onNavigate?.({
+                              tab: "clans",
+                              tag: draft.tag,
+                              section: target,
+                            });
+                          }}
+                        >
+                          {complete ? (
+                            <Check size={16} aria-hidden="true" />
+                          ) : (
+                            <X size={16} aria-hidden="true" />
+                          )}
+                          {label} <small>{complete ? "Done" : "To do"}</small>
+                        </button>
+                      ))}
+                    </nav>
+                  )}
+                  <CwlPageHeader
+                    title={
+                      <h2 ref={headingRef} tabIndex={-1}>
+                        {draft.name}
+                      </h2>
+                    }
+                    description={draft.tag}
+                  >
                     <button
-                      className="clan-section-toggle"
-                      aria-expanded={section === item && !sectionCollapsed}
-                      aria-controls={`clan-panel-${index}`}
                       disabled={disabled}
-                      onClick={() => {
-                        if (item !== section)
-                          onNavigate?.({
-                            tab: "clans",
-                            tag: draft.tag,
-                            section: item,
-                          });
-                        setSection(item);
-                        setSectionCollapsed(
-                          section === item && !sectionCollapsed,
-                        );
+                      onClick={async () => {
+                        if (
+                          !clanDirty ||
+                          (await confirmAction(
+                            "Discard clan details and load current settings? Other section edits stay.",
+                          ))
+                        )
+                          void run(() => load(true));
                       }}
                     >
-                      <strong>{item}</strong>
-                      <span>
-                        {sectionSummary(item, draft, reminderSummary)}
-                      </span>
+                      Refresh
                     </button>
-                    <div
-                      hidden={section !== item || sectionCollapsed}
-                      id={`clan-panel-${index}`}
-                      role="tabpanel"
-                      aria-labelledby={`clan-section-${index}`}
-                    >
-                      {item === "War reminders" ? (
-                        <WarReminders
-                          embedded
-                          active={
-                            section === "War reminders" && !sectionCollapsed
-                          }
-                          key={draft.tag}
-                          tag={draft.tag}
-                          channels={channels}
-                          onDirty={reminderChanged}
-                          onBusy={reminderActivityChanged}
-                          onEditor={receiveEditor}
-                          disabled={busy}
-                        />
-                      ) : (
-                        <ClanFields
-                          section={item}
-                          draft={draft}
-                          saved={saved}
-                          disabled={disabled}
-                          dirty={clanDirty}
-                          data={data}
-                          channels={channels}
-                          roles={roles}
-                          memberQuery={memberQuery}
-                          setMemberQuery={setMemberQuery}
-                          members={members}
-                          memberError={memberError}
-                          change={change}
-                          action={action}
-                          upload={upload}
-                        />
-                      )}
-                    </div>
-                  </div>
-                ))}
-                <div className="clan-actions">
-                  <span role="status">
-                    {Object.keys(draft).filter(
-                      (key) =>
-                        !["tag", "revision"].includes(key) &&
-                        draft[key] !== saved?.[key],
-                    ).length + reminderChanges}{" "}
-                    unsaved changes
-                  </span>
-                  <button
-                    className={dirty ? "primary" : undefined}
-                    disabled={disabled || !dirty}
-                    onClick={() => void save()}
-                  >
-                    Save
-                  </button>
-                  <button
-                    disabled={disabled || !dirty}
-                    onClick={async () => {
-                      if (await confirmAction("Discard unsaved clan changes?"))
-                        discard();
-                    }}
-                  >
-                    Discard
-                  </button>
-                </div>
-                <section className="clan-danger-zone" aria-label="Danger zone">
-                  <h3>Danger zone</h3>
-                  <p>
-                    Remove this family clan. You can restore its settings from
-                    History.
-                  </p>
-                  <button
-                    className="danger-link"
+                  </CwlPageHeader>
+                  <ClanSettingsNavigation
+                    sections={sections}
+                    value={section}
                     disabled={disabled}
-                    onClick={async () => {
-                      if (
-                        !saved ||
-                        !(await confirmAction(
-                          `Remove ${saved.name}? You can restore it from History.`,
-                        ))
-                      )
-                        return;
-                      void run(async () => {
-                        await api(path(saved.tag), "DELETE", {
-                          revision: saved.revision,
-                          confirm_tag: saved.tag,
-                        });
-                        setSaved(null);
-                        setDraft(null);
-                        setReminderDirty(false);
-                        onNavigate?.({ tab: "clans" });
-                        await load();
-                        setNotice("Clan removed from the family directory.");
+                    onChange={(next) => {
+                      onNavigate?.({
+                        tab: "clans",
+                        tag: draft.tag,
+                        section: next,
                       });
+                      setSection(next);
+                      setSectionCollapsed(false);
                     }}
+                  />
+                  {sections.map((item, index) => (
+                    <div key={item} className="clan-section-card">
+                      <button
+                        className="clan-section-toggle"
+                        aria-expanded={section === item && !sectionCollapsed}
+                        aria-controls={`clan-panel-${index}`}
+                        disabled={disabled}
+                        onClick={() => {
+                          if (item !== section)
+                            onNavigate?.({
+                              tab: "clans",
+                              tag: draft.tag,
+                              section: item,
+                            });
+                          setSection(item);
+                          setSectionCollapsed(
+                            section === item && !sectionCollapsed,
+                          );
+                        }}
+                      >
+                        <strong>{item}</strong>
+                        <span>
+                          {sectionSummary(item, draft, reminderSummary)}
+                        </span>
+                      </button>
+                      <div
+                        hidden={section !== item || sectionCollapsed}
+                        id={`clan-panel-${index}`}
+                        role="tabpanel"
+                        aria-labelledby={`clan-section-${index}`}
+                      >
+                        {item === "War reminders" ? (
+                          <WarReminders
+                            embedded
+                            active={
+                              section === "War reminders" && !sectionCollapsed
+                            }
+                            key={draft.tag}
+                            tag={draft.tag}
+                            channels={channels}
+                            onDirty={reminderChanged}
+                            onBusy={reminderActivityChanged}
+                            onEditor={receiveEditor}
+                            disabled={busy}
+                          />
+                        ) : (
+                          <ClanFields
+                            section={item}
+                            draft={draft}
+                            saved={saved}
+                            disabled={disabled}
+                            dirty={clanDirty}
+                            data={data}
+                            channels={channels}
+                            roles={roles}
+                            memberQuery={memberQuery}
+                            setMemberQuery={setMemberQuery}
+                            members={members}
+                            memberError={memberError}
+                            change={change}
+                            action={action}
+                            upload={upload}
+                          />
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                  <div className="clan-actions">
+                    <span role="status">
+                      {Object.keys(draft).filter(
+                        (key) =>
+                          !["tag", "revision"].includes(key) &&
+                          draft[key] !== saved?.[key],
+                      ).length + reminderChanges}{" "}
+                      unsaved changes
+                    </span>
+                    <button
+                      className={dirty ? "primary" : undefined}
+                      disabled={disabled || !dirty}
+                      onClick={() => void save()}
+                    >
+                      Save
+                    </button>
+                    <button
+                      disabled={disabled || !dirty}
+                      onClick={async () => {
+                        if (
+                          await confirmAction("Discard unsaved clan changes?")
+                        )
+                          discard();
+                      }}
+                    >
+                      Discard
+                    </button>
+                  </div>
+                  <section
+                    className="clan-danger-zone"
+                    aria-label="Danger zone"
                   >
-                    Remove clan
-                  </button>
+                    <h3>Danger zone</h3>
+                    <p>
+                      Remove this family clan. You can restore its settings from
+                      History.
+                    </p>
+                    <button
+                      className="danger-link"
+                      disabled={disabled}
+                      onClick={async () => {
+                        if (
+                          !saved ||
+                          !(await confirmAction(
+                            `Remove ${saved.name}? You can restore it from History.`,
+                          ))
+                        )
+                          return;
+                        void run(async () => {
+                          await api(path(saved.tag), "DELETE", {
+                            revision: saved.revision,
+                            confirm_tag: saved.tag,
+                          });
+                          setSaved(null);
+                          setDraft(null);
+                          setReminderDirty(false);
+                          onNavigate?.({ tab: "clans" });
+                          await load();
+                          setNotice("Clan removed from the family directory.");
+                        });
+                      }}
+                    >
+                      Remove clan
+                    </button>
+                  </section>
                 </section>
-              </section>
-            ) : (
-              <section className="card">
-                <h2>Select a clan</h2>
-                <p>Select a family clan or add one by tag.</p>
-              </section>
-            )}
-          </div>
-        </>
-      )}
+              ) : (
+                <EmptyState
+                  title="No clan selected"
+                  line="Select a family clan or add one by tag."
+                />
+              )}
+            </div>
+          </>
+        )}
+      </SectionTabPanel>
       {confirmation && (
         <ConfirmDialog
           text={confirmation.text}

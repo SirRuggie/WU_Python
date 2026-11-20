@@ -1,3 +1,4 @@
+import RefreshControl, { useRefreshTime } from "./RefreshControl";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { api } from "./api";
 import ConfirmDialog from "./ConfirmDialog";
@@ -40,9 +41,7 @@ import {
 import "./ModerationSettings.css";
 
 type DialogState =
-  | { type: "test"; event: ModerationKind }
-  | { type: "reload" }
-  | null;
+  { type: "test"; event: ModerationKind } | { type: "reload" } | null;
 
 /** Keep page-only fields (inventory, previews) that a PUT response omits. */
 function mergeSaved(
@@ -482,6 +481,7 @@ export default function ModerationSettings({
     }
   };
 
+  const updatedAt = useRefreshTime(loading, !!saved, error);
   const testDestination =
     dialog?.type === "test" && saved
       ? effectiveDestination(saved, dialog.event).target
@@ -505,9 +505,13 @@ export default function ModerationSettings({
             : "Select where member and moderation notices appear. History remains available when posting is off."
         }
       >
-        <button type="button" onClick={reloadLatest} disabled={loading || busy}>
-          Refresh settings
-        </button>
+        <RefreshControl
+          updatedAt={updatedAt}
+          busy={loading}
+          disabled={busy}
+          onRefresh={reloadLatest}
+          showRefresh={!error}
+        />
       </CwlPageHeader>
       {otherTabDirty && (
         <p className="moderation-other-tab-dirty" role="status">
@@ -519,8 +523,11 @@ export default function ModerationSettings({
 
       <LoadError
         message={error}
-        disabled={loading}
-        onRetry={saved ? undefined : () => void load()}
+        disabled={busy}
+        busy={loading}
+        onRetry={
+          error.includes("changed since you loaded") ? undefined : reloadLatest
+        }
       />
       {error.includes("changed since you loaded") && (
         <button type="button" disabled={loading || busy} onClick={reloadLatest}>

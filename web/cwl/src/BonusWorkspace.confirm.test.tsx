@@ -194,3 +194,57 @@ it("Escape with unsaved review edits asks before closing and writes nothing", as
   ).toBe(true);
   expect(writes()).toHaveLength(0);
 });
+
+it("links every workflow pool tab to one labelled panel without mounting inactive content", async () => {
+  const tabs = [
+    ...host.querySelectorAll<HTMLButtonElement>('#bonus-pools [role="tab"]'),
+  ];
+  expect(tabs).toHaveLength(2);
+  for (const tab of tabs) {
+    const panel = document.getElementById(tab.getAttribute("aria-controls")!)!;
+    expect(panel).toBeTruthy();
+    expect(panel.getAttribute("aria-labelledby")).toBe(tab.id);
+    expect(panel.hidden).toBe(tab.getAttribute("aria-selected") !== "true");
+    if (panel.hidden) expect(panel.textContent).toBe("");
+  }
+  expect(
+    host.querySelectorAll('[id^="bonus-pools-panel-"]:not([hidden])'),
+  ).toHaveLength(1);
+  expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
+    true,
+  );
+});
+
+it("pool tabs keep a dirty candidate and make no read or write when discard is cancelled", async () => {
+  await act(async () =>
+    host
+      .querySelector<HTMLButtonElement>(
+        ".bonus-account-list .account-card-open",
+      )!
+      .click(),
+  );
+  const input = document.querySelector<HTMLTextAreaElement>(
+    ".bonus-review-editor textarea",
+  )!;
+  await act(async () => {
+    Object.getOwnPropertyDescriptor(
+      HTMLTextAreaElement.prototype,
+      "value",
+    )!.set!.call(input, "Keep this candidate edit");
+    input.dispatchEvent(new Event("input", { bubbles: true }));
+  });
+  const requests = api.mock.calls.length;
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>("#bonus-pools-tab-main")!.click(),
+  );
+  expect(document.querySelector(".confirm-dialog")).toBeTruthy();
+  await act(async () =>
+    button("Cancel", document.querySelector(".confirm-dialog")!).click(),
+  );
+  expect(
+    host.querySelector("#bonus-pools-tab-lazy")?.getAttribute("aria-selected"),
+  ).toBe("true");
+  expect(input.value).toBe("Keep this candidate edit");
+  expect(api.mock.calls.length).toBe(requests);
+  expect(writes()).toHaveLength(0);
+});

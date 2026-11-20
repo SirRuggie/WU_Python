@@ -302,3 +302,26 @@ it("shows a status notice once", () => {
   );
   expect(html.split('role="status">Saved.</p>').length - 1).toBe(1);
 });
+
+it("only preview-supported editors expose linked tab panels", () => {
+  const { html: supported } = renderDraft();
+  expect(supported).toContain('role="tablist"');
+  for (const pane of ["edit", "preview"]) {
+    expect(supported).toContain(
+      `aria-controls="management-editor-panel-${pane}"`,
+    );
+    expect(supported).toContain(`id="management-editor-panel-${pane}"`);
+    expect(supported).toContain(
+      `aria-labelledby="management-editor-tab-${pane}"`,
+    );
+  }
+  hooks.values[3] = { ...document, preview_supported: false };
+  hooks.values[4] = hooks.values[3];
+  hooks.index = 0;
+  const unsupported = renderToStaticMarkup(
+    <ServerManagement area="applications-settings" />,
+  );
+  expect(unsupported).not.toContain('role="tabpanel"');
+  expect(unsupported).not.toContain("management-editor-panel-");
+  expect(unsupported).not.toContain("management-editor-tab-");
+});

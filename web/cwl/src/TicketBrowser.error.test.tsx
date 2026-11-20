@@ -27,7 +27,38 @@ it("shows a failed ticket load once, with Try again", async () => {
     (button) => button.textContent === "Try again",
   )!;
   expect(retry).toBeTruthy();
+  expect(host.querySelector('button[aria-label="Refresh"]')).toBeNull();
   await act(async () => retry.click());
   expect(host.querySelector(".load-error")).toBeNull();
   expect(api).toHaveBeenCalledTimes(2);
+});
+
+it("keeps one icon refresh disabled throughout a pending ticket read", async () => {
+  api.mockResolvedValueOnce({ tickets: [], has_more: false });
+  let resolve!: (value: { tickets: never[]; has_more: boolean }) => void;
+  api.mockImplementationOnce(
+    () =>
+      new Promise((done) => {
+        resolve = done;
+      }),
+  );
+  await act(async () => root.render(<TicketBrowser />));
+  const refresh = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Refresh"]',
+  )!;
+  expect(refresh.textContent).toBe("");
+  expect(refresh.querySelector("svg")).toBeTruthy();
+  expect(host.querySelector(".refresh-control-status")?.textContent).toContain(
+    "Updated",
+  );
+  await act(async () => {
+    refresh.click();
+    refresh.click();
+  });
+  expect(api).toHaveBeenCalledTimes(2);
+  expect(refresh.disabled).toBe(true);
+  await act(async () => refresh.click());
+  expect(api).toHaveBeenCalledTimes(2);
+  await act(async () => resolve({ tickets: [], has_more: false }));
+  expect(refresh.disabled).toBe(false);
 });

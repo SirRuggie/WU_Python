@@ -1,3 +1,5 @@
+import RefreshControl from "./RefreshControl";
+import LoadError from "./LoadError";
 import useCompareRail from "./useCompareRail";
 import type { ComparisonMemory } from "./comparisonMemory";
 import SortTrigger from "./rosterUi/SortTrigger";
@@ -8,12 +10,7 @@ import {
   useState,
   type CSSProperties,
 } from "react";
-import {
-  ArrowLeft,
-  ArrowRight,
-  RotateCw,
-  SlidersHorizontal,
-} from "lucide-react";
+import { ArrowLeft, ArrowRight, SlidersHorizontal } from "lucide-react";
 import RosterMenu from "./rosterUi/Menu";
 import ActionMenu from "./rosterUi/ActionMenu";
 import ActionPanel from "./ActionPanel";
@@ -21,7 +18,6 @@ import { Menu as AriaMenu, MenuItem } from "react-aria-components";
 import { Button } from "./rosterUi/primitives";
 import { type Pool } from "./api";
 import { useComparisonLocations } from "./useComparisonLocations";
-import { comparisonAge } from "./comparisonLocation";
 import { matchesLeague, matchesTownHall } from "./ClanFilters";
 import { sortClans } from "./clanSort";
 import { compareClanAccounts, comparisonOrder } from "./compare";
@@ -264,6 +260,13 @@ export default function CompareClans({
         >
           Select clans ({clans.length})
         </Button>
+        <RefreshControl
+          updatedAt={checkedAt}
+          busy={checking}
+          disabled={busy}
+          onRefresh={refresh}
+          showRefresh={!locationError}
+        />
       </header>
       <div
         className="compare-toolbar"
@@ -284,25 +287,12 @@ export default function CompareClans({
           }
           onClick={(event) => openPanel("sort", event.currentTarget)}
         />
-        <Button
-          icon={RotateCw}
-          label="Refresh locations"
-          disabled={busy}
-          aria-busy={checking}
-          onClick={refresh}
-        >
-          {checking
-            ? "Checking…"
-            : checkedAt
-              ? comparisonAge(new Date(checkedAt).toISOString(), now)
-              : "Refresh"}
-        </Button>
       </div>
-      {locationError && (
-        <p className="compare-toolbar-note" role="status">
-          {locationError}
-        </p>
-      )}
+      <LoadError
+        message={locationError || ""}
+        onRetry={refresh}
+        busy={checking}
+      />
       {roster.clans.some((clan) => !clan.archived && !clan.pool) && (
         <p className="inline-reason">
           Some hosting clans need a Main or Lazy CWL pool in Hosting clans

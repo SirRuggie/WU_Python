@@ -1,4 +1,4 @@
-import { Fragment, useState } from "react";
+import { Fragment, useRef, useState } from "react";
 import "./LoadError.css";
 
 /** Splits "… Reference: ABC123" (added by api.ts) off the message. */
@@ -49,6 +49,7 @@ export default function LoadError({
   busy = false,
   disabled = false,
   retryLabel = "Try again",
+  retryContext,
   className = "",
 }: {
   /** Several messages from one failure share one block; each keeps its own Reference. */
@@ -59,9 +60,11 @@ export default function LoadError({
   busy?: boolean;
   disabled?: boolean;
   retryLabel?: string;
+  retryContext?: string;
   className?: string;
 }) {
   const { copied, copiedRef, copy } = useReferenceCopy();
+  const retrying = useRef(false);
   const parts = (Array.isArray(message) ? message : [message])
     .filter(Boolean)
     .map(splitReference);
@@ -103,9 +106,32 @@ export default function LoadError({
             type="button"
             disabled={busy || disabled}
             aria-busy={busy || undefined}
-            onClick={onRetry}
+            aria-label={
+              retryContext
+                ? `Try again: ${retryContext}`
+                : retryLabel !== "Try again"
+                  ? `Try again: ${retryLabel}`
+                  : undefined
+            }
+            onClick={() => {
+              if (busy || disabled || retrying.current) return;
+              retrying.current = true;
+              try {
+                Promise.resolve(onRetry()).then(
+                  () => {
+                    retrying.current = false;
+                  },
+                  () => {
+                    retrying.current = false;
+                  },
+                );
+              } catch (error) {
+                retrying.current = false;
+                throw error;
+              }
+            }}
           >
-            {busy ? "Checking…" : retryLabel}
+            Try again
           </button>
         )}
       </div>

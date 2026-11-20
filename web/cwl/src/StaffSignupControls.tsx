@@ -1,9 +1,10 @@
+import { RefreshButton } from "./RefreshControl";
 import { countLabel } from "./countLabel";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import useConfirmDialog from "./useConfirmDialog";
 import useSignupAction from "./useSignupAction";
 import { useEffect, useRef, useState } from "react";
-import { Plus, RotateCw, Settings2, X } from "lucide-react";
+import { Plus, Settings2, X } from "lucide-react";
 import ActionPanel from "./ActionPanel";
 import RosterMenu from "./rosterUi/Menu";
 import { Button, Input, StatusPill } from "./rosterUi/primitives";
@@ -360,6 +361,7 @@ export default function StaffSignupControls({
               </Button>
             </div>
             <SectionTabs
+              id="add-signup-method"
               className="workflow-tabs staff-add-modes section-tabs--flow"
               label="How to add signup"
               items={[
@@ -392,226 +394,235 @@ export default function StaffSignupControls({
               disabled={working}
               revealSelection
             />
-            {mode === "tag" ? (
-              <StaffTagSignup
-                seasonId={String(season.id)}
-                onSaved={() => onChanged(true)}
-                onDirty={setTagDirty}
-                onBusy={setTagBusy}
-              />
-            ) : (
-              <>
-                <p>Select a member and their linked accounts.</p>
-                <fieldset disabled={busy || disabled}>
-                  <MemberPicker
-                    label="Member for signup"
-                    value={uid}
-                    onChange={async (value) => {
-                      if (
-                        selected.length &&
-                        !(await confirm(
-                          "Change member and clear selected accounts?",
-                          "Change member",
-                        ))
-                      )
-                        return;
-                      setUid(String(value || ""));
-                      setSelected([]);
-                      setSearch("");
-                    }}
-                    disabled={busy}
-                    endpoint="/staff-signup-members"
-                    showRoles={false}
-                  />
-                  {uid && (
-                    <>
-                      <RosterMenu
-                        label="CWL type"
-                        value={pool}
-                        disabled={busy || disabled}
-                        onValueChange={(value) => setPool(value as Pool | "")}
-                        options={[
-                          { value: "", label: "Select Main or Lazy" },
-                          { value: "main", label: "Main CWL" },
-                          { value: "lazy", label: "Lazy CWL" },
-                        ]}
-                      />
-                      <div className="section-heading">
-                        <h3>Linked accounts</h3>
-                        <Button
-                          icon={RotateCw}
-                          disabled={loading || busy}
-                          onClick={() => setReload((value) => value + 1)}
-                        >
-                          Refresh accounts
-                        </Button>
-                      </div>
-                      {loading ? (
-                        <p role="status">Loading accounts…</p>
-                      ) : !accounts.length ? (
-                        <p>
-                          {error
-                            ? "Could not load accounts. Select Refresh accounts to try again."
-                            : "No linked accounts. Ask this member to use /link in Discord, then reload accounts."}
-                        </p>
-                      ) : (
-                        <>
-                          <Input
-                            label="Find a player or clan"
-                            type="search"
-                            value={search}
-                            onChange={(event) => setSearch(event.target.value)}
-                            placeholder="Find a player or clan"
+            <SectionTabPanel id="add-signup-method" value={mode}>
+              {mode === "tag" ? (
+                <StaffTagSignup
+                  seasonId={String(season.id)}
+                  onSaved={() => onChanged(true)}
+                  onDirty={setTagDirty}
+                  onBusy={setTagBusy}
+                />
+              ) : (
+                <>
+                  <p>Select a member and their linked accounts.</p>
+                  <fieldset disabled={busy || disabled}>
+                    <MemberPicker
+                      label="Member for signup"
+                      value={uid}
+                      onChange={async (value) => {
+                        if (
+                          selected.length &&
+                          !(await confirm(
+                            "Change member and clear selected accounts?",
+                            "Change member",
+                          ))
+                        )
+                          return;
+                        setUid(String(value || ""));
+                        setSelected([]);
+                        setSearch("");
+                      }}
+                      disabled={busy}
+                      endpoint="/staff-signup-members"
+                      showRoles={false}
+                    />
+                    {uid && (
+                      <>
+                        <RosterMenu
+                          label="CWL type"
+                          value={pool}
+                          disabled={busy || disabled}
+                          onValueChange={(value) => setPool(value as Pool | "")}
+                          options={[
+                            { value: "", label: "Select Main or Lazy" },
+                            { value: "main", label: "Main CWL" },
+                            { value: "lazy", label: "Lazy CWL" },
+                          ]}
+                        />
+                        <div className="section-heading">
+                          <h3>Linked accounts</h3>
+                          <RefreshButton
+                            busy={loading}
+                            disabled={busy}
+                            onRefresh={() => setReload((value) => value + 1)}
+                            label="Refresh accounts"
                           />
-                          <div className="staff-signup-list-tools">
-                            <label className="check-label">
-                              <input
-                                type="checkbox"
-                                checked={
-                                  unsigned.length > 0 &&
-                                  unsigned.every((account) =>
-                                    selected.includes(account.tag),
-                                  )
-                                }
-                                ref={(node) => {
-                                  if (node)
-                                    node.indeterminate =
-                                      unsigned.some((account) =>
-                                        selected.includes(account.tag),
-                                      ) &&
-                                      !unsigned.every((account) =>
-                                        selected.includes(account.tag),
-                                      );
-                                }}
-                                disabled={!unsigned.length || loading}
-                                onChange={(event) =>
-                                  setSelected((current) =>
-                                    event.target.checked
-                                      ? [
-                                          ...new Set([
-                                            ...current,
-                                            ...unsigned.map(
-                                              (account) => account.tag,
-                                            ),
-                                          ]),
-                                        ]
-                                      : current.filter(
-                                          (tag) =>
-                                            !unsigned.some(
-                                              (account) => account.tag === tag,
-                                            ),
-                                        ),
-                                  )
-                                }
-                              />
-                              Select all matching accounts ({unsigned.length})
-                            </label>
-                            {selected.length > 0 && (
-                              <Button icon={X} onClick={() => setSelected([])}>
-                                Clear selection
-                              </Button>
+                        </div>
+                        {loading ? (
+                          <p role="status">Loading accounts…</p>
+                        ) : !accounts.length ? (
+                          <p>
+                            {error
+                              ? "Could not load accounts. Select Refresh accounts to try again."
+                              : "No linked accounts. Ask this member to use /link in Discord, then reload accounts."}
+                          </p>
+                        ) : (
+                          <>
+                            <Input
+                              label="Find a player or clan"
+                              type="search"
+                              value={search}
+                              onChange={(event) =>
+                                setSearch(event.target.value)
+                              }
+                              placeholder="Find a player or clan"
+                            />
+                            <div className="staff-signup-list-tools">
+                              <label className="check-label">
+                                <input
+                                  type="checkbox"
+                                  checked={
+                                    unsigned.length > 0 &&
+                                    unsigned.every((account) =>
+                                      selected.includes(account.tag),
+                                    )
+                                  }
+                                  ref={(node) => {
+                                    if (node)
+                                      node.indeterminate =
+                                        unsigned.some((account) =>
+                                          selected.includes(account.tag),
+                                        ) &&
+                                        !unsigned.every((account) =>
+                                          selected.includes(account.tag),
+                                        );
+                                  }}
+                                  disabled={!unsigned.length || loading}
+                                  onChange={(event) =>
+                                    setSelected((current) =>
+                                      event.target.checked
+                                        ? [
+                                            ...new Set([
+                                              ...current,
+                                              ...unsigned.map(
+                                                (account) => account.tag,
+                                              ),
+                                            ]),
+                                          ]
+                                        : current.filter(
+                                            (tag) =>
+                                              !unsigned.some(
+                                                (account) =>
+                                                  account.tag === tag,
+                                              ),
+                                          ),
+                                    )
+                                  }
+                                />
+                                Select all matching accounts ({unsigned.length})
+                              </label>
+                              {selected.length > 0 && (
+                                <Button
+                                  icon={X}
+                                  onClick={() => setSelected([])}
+                                >
+                                  Clear selection
+                                </Button>
+                              )}
+                            </div>
+                            {!matching.length && (
+                              <p>No accounts match your search.</p>
                             )}
-                          </div>
-                          {!matching.length && (
-                            <p>No accounts match your search.</p>
-                          )}
-                          <div className="staff-signup-accounts">
-                            {matching.map((account) => (
-                              <div
-                                className="staff-signup-account"
-                                key={account.tag}
-                              >
-                                <label>
-                                  <input
-                                    type="checkbox"
-                                    disabled={!!account.signed_up_pool || busy}
-                                    checked={selected.includes(account.tag)}
-                                    onChange={(event) =>
-                                      setSelected((current) =>
-                                        event.target.checked
-                                          ? [...current, account.tag]
-                                          : current.filter(
-                                              (tag) => tag !== account.tag,
-                                            ),
-                                      )
-                                    }
-                                  />
-                                  <TownHallIcon level={account.town_hall} />
-                                  <span>
-                                    <strong>{account.name}</strong>
-                                    <small>
-                                      {account.tag} ·{" "}
-                                      {account.current_clan_name || "No clan"}
-                                    </small>
-                                    {account.signed_up_pool && (
+                            <div className="staff-signup-accounts">
+                              {matching.map((account) => (
+                                <div
+                                  className="staff-signup-account"
+                                  key={account.tag}
+                                >
+                                  <label>
+                                    <input
+                                      type="checkbox"
+                                      disabled={
+                                        !!account.signed_up_pool || busy
+                                      }
+                                      checked={selected.includes(account.tag)}
+                                      onChange={(event) =>
+                                        setSelected((current) =>
+                                          event.target.checked
+                                            ? [...current, account.tag]
+                                            : current.filter(
+                                                (tag) => tag !== account.tag,
+                                              ),
+                                        )
+                                      }
+                                    />
+                                    <TownHallIcon level={account.town_hall} />
+                                    <span>
+                                      <strong>{account.name}</strong>
                                       <small>
-                                        Already signed up ·{" "}
-                                        {account.signed_up_pool === "main"
-                                          ? "Main"
-                                          : "Lazy"}{" "}
-                                        CWL
+                                        {account.tag} ·{" "}
+                                        {account.current_clan_name || "No clan"}
                                       </small>
-                                    )}
-                                  </span>
-                                </label>
-                                {account.signed_up_pool && (
-                                  <StaffPlayerButton
-                                    order={matching
-                                      .filter((item) => item.signed_up_pool)
-                                      .map((item) => item.tag)}
-                                    rosterUi
-                                    onDirty={setEditorDirty}
-                                    onBusy={setEditorBusy}
-                                    onOpenChange={setEditorOpen}
-                                    seasonId={String(season.id)}
-                                    tag={account.tag}
-                                    onChanged={async () => {
-                                      setReload((value) => value + 1);
-                                      await onChanged(true);
-                                    }}
-                                  >
-                                    Account details
-                                  </StaffPlayerButton>
-                                )}
-                              </div>
-                            ))}
-                          </div>
-                        </>
-                      )}
-                      <div className="staff-signup-submit">
-                        <strong>
-                          {selected.length} selected
-                          {pool
-                            ? ` · ${pool === "main" ? "Main" : "Lazy"} CWL`
-                            : ""}
-                        </strong>
-                        <Button
-                          variant="primary"
-                          icon={Plus}
-                          disabled={
-                            busy ||
-                            loading ||
-                            !!error ||
-                            !pool ||
-                            !selected.length
-                          }
-                          onClick={() => void add()}
-                        >
-                          {busy
-                            ? "Saving…"
-                            : `Add ${selected.length ? countLabel(selected.length, "account") : "accounts"}`}
-                        </Button>
-                      </div>
-                    </>
-                  )}
-                </fieldset>
-              </>
-            )}
-            {error && (
-              <p className="notice error" role="alert">
-                {error}
-              </p>
-            )}
+                                      {account.signed_up_pool && (
+                                        <small>
+                                          Already signed up ·{" "}
+                                          {account.signed_up_pool === "main"
+                                            ? "Main"
+                                            : "Lazy"}{" "}
+                                          CWL
+                                        </small>
+                                      )}
+                                    </span>
+                                  </label>
+                                  {account.signed_up_pool && (
+                                    <StaffPlayerButton
+                                      order={matching
+                                        .filter((item) => item.signed_up_pool)
+                                        .map((item) => item.tag)}
+                                      rosterUi
+                                      onDirty={setEditorDirty}
+                                      onBusy={setEditorBusy}
+                                      onOpenChange={setEditorOpen}
+                                      seasonId={String(season.id)}
+                                      tag={account.tag}
+                                      onChanged={async () => {
+                                        setReload((value) => value + 1);
+                                        await onChanged(true);
+                                      }}
+                                    >
+                                      Account details
+                                    </StaffPlayerButton>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </>
+                        )}
+                        <div className="staff-signup-submit">
+                          <strong>
+                            {selected.length} selected
+                            {pool
+                              ? ` · ${pool === "main" ? "Main" : "Lazy"} CWL`
+                              : ""}
+                          </strong>
+                          <Button
+                            variant="primary"
+                            icon={Plus}
+                            disabled={
+                              busy ||
+                              loading ||
+                              !!error ||
+                              !pool ||
+                              !selected.length
+                            }
+                            onClick={() => void add()}
+                          >
+                            {busy
+                              ? "Saving…"
+                              : `Add ${selected.length ? countLabel(selected.length, "account") : "accounts"}`}
+                          </Button>
+                        </div>
+                      </>
+                    )}
+                  </fieldset>
+                </>
+              )}
+              {error && (
+                <p className="notice error" role="alert">
+                  {error}
+                </p>
+              )}
+            </SectionTabPanel>
           </div>
         </ActionPanel>
       )}

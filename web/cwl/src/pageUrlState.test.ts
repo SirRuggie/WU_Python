@@ -11,6 +11,12 @@ describe("page tab and filter params", () => {
   beforeEach(() => window.history.replaceState({ keep: 1 }, "", "/"));
 
   it.each([
+    ["roster", "tab", "compare"],
+    ["roster", "tab", "rules"],
+    ["roster", "tab", "weights"],
+    ["participation", "pool", "lazy"],
+    ["clan-management", "tab", "history"],
+    ["clan-management", "tab", "overview"],
     ["moderation", "tab", "invites"],
     ["moderation", "tab", "channels"],
     ["strikes", "tab", "leave"],
@@ -34,6 +40,9 @@ describe("page tab and filter params", () => {
   });
 
   it("falls back to the default for unknown values", () => {
+    expect(parsePageParam("roster", "tab", "?tab=nope")).toBe("assign");
+    expect(parsePageParam("participation", "pool", "?pool=nope")).toBe("main");
+    expect(parsePageParam("clan-management", "tab", "?tab=nope")).toBe("clans");
     expect(parsePageParam("moderation", "tab", "?tab=nope")).toBe("history");
     expect(parsePageParam("strikes", "tab", "?tab=replacements")).toBe(
       "history",
@@ -56,6 +65,16 @@ describe("page tab and filter params", () => {
 
   it("replaces the address without a new history entry", () => {
     const before = window.history.length;
+    for (const [view, key, value] of [
+      ["roster", "tab", "compare"],
+      ["participation", "pool", "lazy"],
+      ["clan-management", "tab", "history"],
+    ] as const) {
+      replacePageParam(view, key, value);
+      expect(new URLSearchParams(location.search).get(key)).toBe(value);
+      expect(window.history.length).toBe(before);
+    }
+    window.history.replaceState({ keep: 1 }, "", "/");
     replacePageParam("tickets", "status", "denied");
     expect(window.location.search).toBe("?status=denied");
     expect(window.history.state).toEqual({ keep: 1 });

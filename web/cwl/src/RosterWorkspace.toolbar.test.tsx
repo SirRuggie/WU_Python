@@ -7,7 +7,6 @@ vi.mock("./api", async (original) => ({
   ...(await original<object>()),
   api: mock.api,
 }));
-vi.mock("./RosterHeader", () => ({ default: () => null }));
 vi.mock("./RosterClanChips", () => ({ default: () => null }));
 vi.mock("./StaffSignupControls", () => ({ default: () => null }));
 vi.mock("./useStaffDetailsPage", () => ({ default: () => {} }));
@@ -15,7 +14,7 @@ vi.mock("./DashboardPermissions", () => ({
   useDashboardPermission: () => true,
 }));
 import RosterWorkspace from "./RosterWorkspace";
-it("keeps a direct toolbar Refresh that actually rereads the roster", async () => {
+it("keeps one header Refresh that actually rereads the roster", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   localStorage.clear();
   vi.spyOn(window, "matchMedia").mockImplementation(
@@ -68,7 +67,7 @@ it("keeps a direct toolbar Refresh that actually rereads the roster", async () =
       ),
     );
     const refresh = host.querySelector<HTMLButtonElement>(
-      '.roster-filters-toolbar button[aria-label="Refresh roster"]',
+      '.roster-header button[aria-label="Refresh"]',
     );
     expect(refresh).not.toBeNull();
     expect(refresh!.disabled).toBe(false);

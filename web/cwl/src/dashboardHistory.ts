@@ -5,7 +5,7 @@ import { dashboardViews, type DashboardView } from "./SidebarNavigation";
 import { cwlPaths } from "./staffLinks";
 import { managementPaths, townHallManagementPath } from "./managementLinks";
 import { parseResultsState, resultsStateQuery } from "./resultsUrlState";
-import { pageParamQuery } from "./pageUrlState";
+import { pageParamQuery, parsePageParam } from "./pageUrlState";
 const staffPaths: Record<string, string> = {
   ...cwlPaths,
   ...managementPaths,
@@ -47,7 +47,20 @@ export function dashboardTarget(
         "/clans/replacements": "/replacements",
       } as Record<string, string>
     )[pathname] || pathname;
-  const family = clanRoute(pathname);
+  const familyPath = clanRoute(pathname);
+  const family =
+    familyPath &&
+    pathname.replace(/\/$/, "") === "/clans" &&
+    new URLSearchParams(search).has("tab")
+      ? {
+          ...familyPath,
+          tab: parsePageParam(
+            "clan-management",
+            "tab",
+            search,
+          ) as ClanRoute["tab"],
+        }
+      : familyPath;
   const townHallPath = townHallManagementPath(pathname);
   const params = new URLSearchParams(search);
   const saved = savedSignupTarget(search, pathname);
@@ -79,7 +92,9 @@ export function dashboardTarget(
     : "home";
   return {
     ...(townHallPath ? { townHallPath } : {}),
-    ...(family && pathname !== "/clans" ? { familyClan: family } : {}),
+    ...(family && (pathname !== "/clans" || family.tab !== "clans")
+      ? { familyClan: family }
+      : {}),
     ...(value === "weight-trial"
       ? {
           weightPlayer: /^#[A-Z0-9]{1,20}$/i.test(params.get("player") || "")
@@ -110,6 +125,9 @@ export function dashboardTarget(
     ...(value === "moderation" && moderationMember ? { moderationMember } : {}),
     ...(saved ? { signupPanel: "saved" as const } : {}),
     view,
+    ...(view === "todo" && /^#[A-Z0-9]{1,20}$/i.test(params.get("filter") || "")
+      ? { activityFilter: params.get("filter")! }
+      : {}),
     ...(value === "publication" &&
     ["review", "announce"].includes(params.get("step") || "")
       ? { step: params.get("step") as "review" | "announce" }
@@ -165,8 +183,15 @@ export function dashboardPath(route: DashboardRoute) {
   )
     return `/server/moderation/member/${route.moderationMember}`;
   if (memberPaths[route.view]) {
-    const query = pageParamQuery(route.view, route.pageState || "");
-    return `${memberPaths[route.view]}${query ? `?${query}` : ""}`;
+    const query = new URLSearchParams(
+      pageParamQuery(route.view, route.pageState || ""),
+    );
+    if (
+      route.view === "todo" &&
+      /^#[A-Z0-9]{1,20}$/i.test(route.activityFilter || "")
+    )
+      query.set("filter", route.activityFilter!);
+    return `${memberPaths[route.view]}${query.size ? `?${query}` : ""}`;
   }
   const path =
     route.view === "member-timezones"
@@ -204,6 +229,7 @@ export function dashboardPath(route: DashboardRoute) {
   }
   if (
     route.pageState &&
+    !(resultsViews.includes(route.view) && route.resultsState) &&
     !(route.view === "moderation" && route.moderationMember)
   )
     new URLSearchParams(pageParamQuery(route.view, route.pageState)).forEach(

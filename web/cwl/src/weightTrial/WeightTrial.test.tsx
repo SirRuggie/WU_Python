@@ -114,14 +114,22 @@ async function openClanPicker() {
 async function click(text: string, scope: ParentNode = document) {
   let target: HTMLElement | undefined = Array.from(
     scope.querySelectorAll<HTMLButtonElement>("button"),
-  ).find((node) => node.textContent?.includes(text));
+  ).find(
+    (node) =>
+      node.textContent?.includes(text) ||
+      node.getAttribute("aria-label") === text,
+  );
   if (!target && scope === document) {
     await openClanPicker();
     target = [
       ...document.querySelectorAll<HTMLElement>(
         '.weight-clan-picker-panel [role="menuitem"]',
       ),
-    ].find((node) => node.textContent?.includes(text));
+    ].find(
+      (node) =>
+        node.textContent?.includes(text) ||
+        node.getAttribute("aria-label") === text,
+    );
   }
   expect(target).toBeTruthy();
   await act(async () => {

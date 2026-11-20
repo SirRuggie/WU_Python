@@ -186,6 +186,6 @@ it("combines season, visible counts and status without an eyebrow or duplicate m
   expect(html).toContain("3 signups · 2 unplaced · 2 no weight");
   expect(html).toContain("Signups open");
   expect(html).toContain('aria-label="Working roster counts"');
-  expect(html).toContain('aria-label="Refresh roster"');
+  expect(html).toContain('aria-label="Refresh"');
   expect(html).not.toContain("More roster actions");
 });

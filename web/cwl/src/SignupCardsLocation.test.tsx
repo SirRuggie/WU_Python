@@ -130,13 +130,13 @@ it("preserves the empty assignment card", async () => {
   await act(async () =>
     root.render(<MemberAssignments seasonId="1" seasons={[season]} />),
   );
-  expect(host.textContent).toContain(
-    "You have not signed up any accounts yet.",
-  );
+  expect(host.textContent).toContain("No accounts signed up");
   expect(host.textContent).not.toContain("Waiting for a clan");
-  expect(host.querySelector(".member-signup-refresh")?.textContent).toBe(
-    "Refresh",
-  );
+  expect(
+    host
+      .querySelector('button[aria-label="Refresh"]')
+      ?.getAttribute("aria-label"),
+  ).toBe("Refresh");
 });
 it.each([true, false])(
   "saved page lists every signup once and gates remaining action, open=%s",
@@ -318,6 +318,8 @@ it("distinguishes a publication with no placements for this member", async () =>
   expect(host.textContent).toContain("2 accounts signed up");
   expect(host.querySelector('a[href="/my-signups"]')).not.toBeNull();
   expect(
-    host.querySelector(".member-unpublished-status button")?.textContent,
+    host
+      .querySelector('button[aria-label="Refresh"]')
+      ?.getAttribute("aria-label"),
   ).toBe("Refresh");
 });

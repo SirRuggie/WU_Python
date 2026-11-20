@@ -26,13 +26,19 @@ export default function CwlPoolTabs({
   value,
   onChange,
   disabled = false,
+  mode = "segmented",
+  id,
 }: {
   value: Pool;
   onChange: (pool: Pool) => void;
   disabled?: boolean;
+  mode?: "tabs" | "segmented";
+  id?: string;
 }) {
   return (
     <SectionTabs
+      mode={mode}
+      id={id}
       className="cwl-pool-tabs section-tabs--flow"
       label="CWL group"
       items={[

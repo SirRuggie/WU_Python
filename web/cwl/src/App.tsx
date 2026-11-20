@@ -1,3 +1,4 @@
+import RefreshControl, { type RefreshControlProps } from "./RefreshControl";
 import {
   defaultStaffSeason,
   monthSeasons,
@@ -174,6 +175,8 @@ function App() {
   const [view, setView] = useState<View>(entryTarget.view);
   const [townHallPath, setTownHallPath] = useState(entryTarget.townHallPath);
   const [rosterBusy, setRosterBusy] = useState(false);
+  const [declarationRefreshControl, setDeclarationRefreshControl] =
+    useState<RefreshControlProps | null>(null);
   const [reminderDirty, setReminderDirty] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const [tourActive, setTourActive] = useState(false);
@@ -893,6 +896,7 @@ function App() {
   const [activitySearch, setActivitySearch] = useState(
     () =>
       activityContext(window.history.state, entryTarget.view).activityFilter ||
+      entryTarget.activityFilter ||
       "",
   );
   const [activityKind, setActivityKind] = useState<"war" | "cwl" | undefined>(
@@ -1693,6 +1697,36 @@ function App() {
         onAnnounce={() => openPublication("announce")}
       />
     );
+  const declarationHeader = () => (
+    <CwlPageHeader
+      className="declaration-page-head"
+      title={<h1>Declaration check</h1>}
+      help={<DeclarationHelp />}
+    >
+      <RosterMenu
+        label="Season"
+        value={seasonId}
+        options={monthSeasons(seasons).map((item) => ({
+          value: String(item.id),
+          label: seasonMonthLabel(item),
+        }))}
+        onValueChange={(id) => {
+          const proceed = () => {
+            if (id !== seasonId)
+              navigation.current?.write(
+                { view: "declaration", season: id },
+                false,
+              );
+            setSeasonId(id);
+          };
+          if (canLeave(proceed)) proceed();
+        }}
+      />
+      {declarationRefreshControl && (
+        <RefreshControl {...declarationRefreshControl} />
+      )}
+    </CwlPageHeader>
+  );
   return (
     <DashboardPermissions.Provider
       value={{
@@ -2045,7 +2079,7 @@ function App() {
                   initialRoute={familyRoute}
                   onWorking={setFamilyWorking}
                   onDirty={setManageDirty}
-                  onNavigate={(route) => {
+                  onNavigate={(route, replace = false) => {
                     setFamilyRoute(route);
                     navigation.current?.write(
                       {
@@ -2053,7 +2087,7 @@ function App() {
                         season: "",
                         familyClan: route,
                       },
-                      true,
+                      !replace,
                     );
                     setActivityVisit(
                       window.history.state?.wuDashboardIndex || 0,
@@ -2477,33 +2511,10 @@ function App() {
               )}
               {view === "declaration" && session.can_edit && (
                 <>
-                  <CwlPageHeader
-                    className="declaration-page-head"
-                    title={<h1>Declaration check</h1>}
-                    help={<DeclarationHelp />}
-                  >
-                    <RosterMenu
-                      label="Season"
-                      value={seasonId}
-                      options={monthSeasons(seasons).map((item) => ({
-                        value: String(item.id),
-                        label: seasonMonthLabel(item),
-                      }))}
-                      onValueChange={(id) => {
-                        const proceed = () => {
-                          if (id !== seasonId)
-                            navigation.current?.write(
-                              { view: "declaration", season: id },
-                              false,
-                            );
-                          setSeasonId(id);
-                        };
-                        if (canLeave(proceed)) proceed();
-                      }}
-                    />
-                  </CwlPageHeader>
+                  {declarationHeader()}
                   {seasonId && (
                     <ArrivalCheck
+                      onRefreshControl={setDeclarationRefreshControl}
                       key={seasonId}
                       seasonId={seasonId}
                       onFinalize={

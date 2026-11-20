@@ -1,3 +1,6 @@
+import EmptyState from "./EmptyState";
+import LoadError from "./LoadError";
+import RefreshControl from "./RefreshControl";
 import CwlPageHeader from "./CwlPageHeader";
 import { visibleRefresh } from "./visibleRefresh";
 import { ArrowRight } from "lucide-react";
@@ -11,7 +14,6 @@ import {
 } from "./accountDisplay";
 import { weightText } from "./roster";
 import AccountLinkHelp from "./AccountLinkHelp";
-import AttentionSummary, { type AttentionItem } from "./AttentionSummary";
 import DashboardIcon from "./DashboardIcon";
 import DashboardLink from "./DashboardLink";
 import { dashboardPath } from "./dashboardHistory";
@@ -233,6 +235,7 @@ export default function DashboardHome(props: Props) {
   const season = data
     ? data.season
     : seasons.find((item) => String(item.id) === seasonId);
+  const refreshRead = useRef<() => unknown | Promise<unknown>>(() => {});
   useEffect(() => {
     const generation = ++readGeneration.current;
     let cancelled = false,
@@ -370,21 +373,26 @@ export default function DashboardHome(props: Props) {
         if (!cancelled) setRefreshing(false);
       }
     };
+    refreshRead.current = load;
     void load();
-    const tick = () => {
-      if (!paused) return load();
+    return () => {
+      cancelled = true;
+      refreshRead.current = () => {};
     };
+  }, [seasonId, seasonsKnown, refreshKey]);
+  useEffect(() => {
+    if (paused) return;
+    const tick = () => refreshRead.current();
     const stopRefresh = visibleRefresh(tick, 30000);
     const online = () => {
       if (!document.hidden) void tick();
     };
     window.addEventListener("online", online);
     return () => {
-      cancelled = true;
       stopRefresh();
       window.removeEventListener("online", online);
     };
-  }, [seasonId, seasonsKnown, refreshKey, paused]);
+  }, [paused]);
   const rows = useMemo(
     () =>
       dashboardRows(
@@ -488,22 +496,6 @@ export default function DashboardHome(props: Props) {
     target.scrollIntoView({ block: "start" });
     target.querySelector("summary")?.focus({ preventScroll: true });
   };
-  const attentionItems: AttentionItem[] = attentionState
-    ? [
-        {
-          title: attentionState.title,
-          detail: attentionState.detail,
-          action:
-            attentionState.kind === "error"
-              ? {
-                  label: attentionState.actionLabel,
-                  onClick: refreshDashboard,
-                  disabled: refreshing,
-                }
-              : { label: attentionState.actionLabel, onClick: openAccountHelp },
-        },
-      ]
-    : [];
   if (!seasonsKnown)
     return (
       <div className="dashboard-home">
@@ -532,57 +524,61 @@ export default function DashboardHome(props: Props) {
           {seasons.find((item) => String(item.id) === seasonId)?.label ||
             (seasonError ? "Season unavailable" : "No CWL season available")}
         </p>
+        <RefreshControl
+          updatedAt={data?.checkedAt}
+          busy={refreshing}
+          onRefresh={refreshDashboard}
+          intervalSeconds={session.can_edit ? 30 : undefined}
+          paused={paused}
+          onPauseChange={
+            session.can_edit
+              ? (next) => {
+                  setPaused(next);
+                  if (!next) void refreshRead.current();
+                }
+              : undefined
+          }
+          showRefresh={!attentionError && !error && !seasonError}
+        />
       </CwlPageHeader>
-      <div className="hub-sync">
-        <span role="status">
-          <span
-            className={`status-dot ${!error && !seasonError && data ? "active" : ""}`}
-          />
-          {cached
-            ? error || seasonError
-              ? "Showing saved data · refresh failed"
-              : "Showing saved data · checking for updates…"
-            : refreshing
-              ? "Refreshing…"
-              : error || seasonError
-                ? "Refresh needs attention"
-                : data
-                  ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
-                  : "Loading your accounts…"}
-        </span>
-        <div>
-          {session.can_edit && (
-            <>
-              <small>
-                {paused
-                  ? "Auto-refresh paused"
-                  : "Auto-refresh every 30 seconds"}
-              </small>
-              <button
-                onClick={() => setPaused((value) => !value)}
-                aria-pressed={paused}
-              >
-                {paused ? "Resume" : "Pause"}
-              </button>
-            </>
-          )}
-          <button disabled={refreshing} onClick={refreshDashboard}>
-            <span aria-hidden="true">↻</span> Refresh
-          </button>
+      {(cached || refreshing || error || seasonError || !data) && (
+        <div className="hub-sync">
+          <span role="status">
+            <span
+              className={`status-dot ${!error && !seasonError && data ? "active" : ""}`}
+            />
+            {cached
+              ? error || seasonError
+                ? "Showing saved data · refresh failed"
+                : "Showing saved data · checking for updates…"
+              : refreshing
+                ? "Refreshing…"
+                : error || seasonError
+                  ? "Refresh needs attention"
+                  : data
+                    ? `Updated ${new Date(data.checkedAt).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}`
+                    : "Loading your accounts…"}
+          </span>
         </div>
-      </div>
-      {!!data && attentionError && (
-        <p role="status">
-          Could not refresh. Showing last update.{" "}
-          <button disabled={refreshing} onClick={refreshDashboard}>
-            Retry
-          </button>
-        </p>
       )}
-      <AttentionSummary
-        items={attentionItems}
-        urgent={attentionState?.kind === "error"}
+      <LoadError
+        message={data && attentionError ? "Could not refresh." : attentionError}
+        note={data ? "Showing the last update." : undefined}
+        onRetry={refreshDashboard}
+        busy={refreshing}
+        retryContext="dashboard"
       />
+      {attentionState?.kind === "empty" && (
+        <EmptyState
+          title={attentionState.title}
+          line={attentionState.detail}
+          action={
+            <button onClick={openAccountHelp}>
+              {attentionState.actionLabel}
+            </button>
+          }
+        />
+      )}
       {!attentionState && complete && data && season ? (
         <MemberSignupStatus
           signups={data.signups.map((signup) => ({
@@ -608,17 +604,22 @@ export default function DashboardHome(props: Props) {
               <p>{nextStep.detail}</p>
             </div>
             {nextStep.destination === "signup" && (
-              <button className="primary" onClick={() => onNavigate("signup")}>
+              <DashboardLink
+                className="button primary"
+                href={dashboardPath({ view: "signup", season: "" })}
+                onNavigate={() => onNavigate("signup")}
+              >
                 Go to signups →
-              </button>
+              </DashboardLink>
             )}
             {nextStep.destination === "assignments" && (
-              <button
-                className="primary"
-                onClick={() => onNavigate("assignments")}
+              <DashboardLink
+                className="button primary"
+                href={dashboardPath({ view: "assignments", season: "" })}
+                onNavigate={() => onNavigate("assignments")}
               >
                 My clan assignments →
-              </button>
+              </DashboardLink>
             )}
           </section>
         )
@@ -632,26 +633,39 @@ export default function DashboardHome(props: Props) {
             accounts.
           </p>
         </div>
-        <button onClick={() => onNavigate("todo")}>
+        <DashboardLink
+          className="button"
+          href={dashboardPath({ view: "todo", season: "" })}
+          onNavigate={() => onNavigate("todo")}
+        >
           Open tasks <ArrowRight size={16} aria-hidden="true" />
-        </button>
+        </DashboardLink>
       </section>
       <div className="home-quick-links">
-        <button
-          className="home-search-entry"
-          onClick={() => onNavigate("search")}
+        <DashboardLink
+          className="button home-search-entry"
+          href={dashboardPath({ view: "search", season: "" })}
+          onNavigate={() => onNavigate("search")}
         >
           <DashboardIcon name="search" />
           <span>Search your players and clans</span>
           <kbd>Ctrl / ⌘ K</kbd>
-        </button>
+        </DashboardLink>
         <nav className="home-activity-links" aria-label="Activity">
-          <button onClick={() => onNavigate("wars")}>
+          <DashboardLink
+            className="button"
+            href={dashboardPath({ view: "wars", season: "" })}
+            onNavigate={() => onNavigate("wars")}
+          >
             <DashboardIcon name="war" /> Wars
-          </button>
-          <button onClick={() => onNavigate("events")}>
+          </DashboardLink>
+          <DashboardLink
+            className="button"
+            href={dashboardPath({ view: "events", season: "" })}
+            onNavigate={() => onNavigate("events")}
+          >
             <DashboardIcon name="calendar" /> Events
-          </button>
+          </DashboardLink>
         </nav>
       </div>
       {(rows.length > 0 || !attentionState) && (
@@ -714,9 +728,13 @@ export default function DashboardHome(props: Props) {
                   : "Your linked accounts, saved signups, and clan assignments."}
               </p>
             </div>
-            <button onClick={() => onNavigate("assignments")}>
+            <DashboardLink
+              className="button"
+              href={dashboardPath({ view: "assignments", season: "" })}
+              onNavigate={() => onNavigate("assignments")}
+            >
               My clan assignments ↗
-            </button>
+            </DashboardLink>
           </div>
           <div className="hub-toolbar">
             <label>
@@ -778,18 +796,20 @@ export default function DashboardHome(props: Props) {
               {!rows.length && refreshing ? (
                 <p role="status">Loading account details…</p>
               ) : !rows.length ? null : !visible.length ? (
-                <div className="card empty">
-                  <h3>No accounts match</h3>
-                  <p>Try another name or select All accounts.</p>
-                  <button
-                    onClick={() => {
-                      setSearch("");
-                      setFilter("all");
-                    }}
-                  >
-                    Show all accounts
-                  </button>
-                </div>
+                <EmptyState
+                  title="No matching accounts"
+                  line="Try another name or select All accounts."
+                  action={
+                    <button
+                      onClick={() => {
+                        setSearch("");
+                        setFilter("all");
+                      }}
+                    >
+                      Show all accounts
+                    </button>
+                  }
+                />
               ) : (
                 <div className="hub-clans">
                   {[...groups.entries()].map(([key, members]) => (
@@ -971,7 +991,17 @@ export default function DashboardHome(props: Props) {
           <summary>Link an account</summary>
           <AccountLinkHelp busy={refreshing} onRefresh={refreshDashboard} />
           <p>To move or withdraw a signup, go to My signups.</p>
-          <button onClick={() => onNavigate("saved")}>Open My signups →</button>
+          <DashboardLink
+            className="button"
+            href={dashboardPath({
+              view: "signup",
+              signupPanel: "saved",
+              season: "",
+            })}
+            onNavigate={() => onNavigate("saved")}
+          >
+            Open My signups →
+          </DashboardLink>
         </details>
         {session.can_edit && (
           <section className="hub-staff">

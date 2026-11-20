@@ -1,7 +1,7 @@
 import TownHallRecords from "./TownHallRecords";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
 import ServerSettingsIndex from "./ServerSettingsIndex";
 import { bandStatusWarning } from "./BandStatusSummary";
 import ApplicationSettingsIndex from "./ApplicationSettingsIndex";
@@ -642,6 +642,7 @@ export default function ServerManagement({
           )}
           {document.preview_supported && (
             <SectionTabs
+              id="management-editor"
               className="manage-preview-toggle section-tabs--flow"
               label="Message editor view"
               items={[
@@ -666,7 +667,10 @@ export default function ServerManagement({
               revealSelection
             />
           )}
-          <div
+          <SectionTabPanel
+            id="management-editor"
+            value={mobilePane}
+            enabled={document.preview_supported}
             className={
               document.preview_supported
                 ? `manage-editor-layout mobile-${mobilePane}`
@@ -696,7 +700,7 @@ export default function ServerManagement({
             {document.preview_supported && previewVisible && (
               <DiscordPreview parts={preview || []} status={previewStatus} />
             )}
-          </div>
+          </SectionTabPanel>
           {publishDirty && (
             <p className="manage-notice">
               Save or cancel the posting channel change before saving the

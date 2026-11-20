@@ -62,7 +62,7 @@ async function editBoth() {
     name.dispatchEvent(new Event("input", { bubbles: true }));
   });
   await act(async () =>
-    [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    [...host.querySelectorAll<HTMLButtonElement>('#clan-settings [role="tab"]')]
       .find((b) => b.textContent === "War reminders")!
       .click(),
   );
@@ -146,7 +146,7 @@ afterEach(() => {
 });
 it("defaults to Clans, exposes collapsible sections and one save for both revisions", async () => {
   await open();
-  expect(button("Clans").getAttribute("aria-pressed")).toBe("true");
+  expect(button("Clans").getAttribute("aria-selected")).toBe("true");
   expect(host.querySelectorAll(".clan-section-toggle")).toHaveLength(5);
   await editBoth();
   expect(host.querySelector(".clan-actions")!.textContent).toContain(
@@ -258,11 +258,12 @@ it("restores a shared clan section link and emits section navigation", async () 
     ),
   );
   expect(
-    host.querySelector('[role="tab"][aria-selected="true"]')!.textContent,
+    host.querySelector('#clan-settings [role="tab"][aria-selected="true"]')!
+      .textContent,
   ).toBe("Channels");
   expect(host.querySelector(".clan-editor h2")!.textContent).toBe("Test clan");
   await act(async () =>
-    [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    [...host.querySelectorAll<HTMLButtonElement>('#clan-settings [role="tab"]')]
       .find((b) => b.textContent === "Roles")!
       .click(),
   );
@@ -287,7 +288,11 @@ it.each([
   async (type, size) => {
     await open();
     await act(async () =>
-      [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+      [
+        ...host.querySelectorAll<HTMLButtonElement>(
+          '#clan-settings [role="tab"]',
+        ),
+      ]
         .find((button) => button.textContent === "Artwork")!
         .click(),
     );
@@ -406,7 +411,7 @@ it("reminder summary pluralizes saved times while off", async () => {
   await open();
   expect(host.textContent).toContain("Off · 1 time saved");
   await act(async () =>
-    [...host.querySelectorAll<HTMLButtonElement>('[role="tab"]')]
+    [...host.querySelectorAll<HTMLButtonElement>('#clan-settings [role="tab"]')]
       .find((b) => b.textContent === "War reminders")!
       .click(),
   );

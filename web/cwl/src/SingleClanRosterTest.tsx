@@ -1,8 +1,9 @@
+import { RefreshButton } from "./RefreshControl";
 import useAnnouncementTestChannel from "./useAnnouncementTestChannel";
 import TestChannelDefault from "./TestChannelDefault";
 import ConfirmDialog from "./ConfirmDialog";
 import { Button } from "./rosterUi/primitives";
-import { ArrowUpRight, RefreshCw, Send } from "lucide-react";
+import { ArrowUpRight, Send } from "lucide-react";
 import { useDashboardPermission } from "./DashboardPermissions";
 import { useEffect, useRef, useState } from "react";
 import { api } from "./api";
@@ -137,13 +138,12 @@ export default function SingleClanRosterTest({
     <section className="clan-roster-images roster-ui">
       <div className="card-heading">
         <h3>Single-clan test</h3>
-        <Button
-          icon={RefreshCw}
-          disabled={!canManage || busy || disabled}
-          onClick={() => setRefresh((n) => n + 1)}
-        >
-          Refresh images
-        </Button>
+        <RefreshButton
+          busy={busy}
+          disabled={!canManage || disabled}
+          onRefresh={() => setRefresh((n) => n + 1)}
+          label="Refresh images"
+        />
       </div>
       <p>Select a clan, preview its finalized roster, then send a test.</p>
       {!version ? (

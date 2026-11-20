@@ -91,6 +91,11 @@ async function render(
   );
 }
 function button(label: string, node: ParentNode = host) {
+  if (label === "Refresh draft")
+    return (node.querySelector('button[aria-label="Refresh"]') ||
+      [...node.querySelectorAll("button")].find(
+        (button) => button.textContent === "Try again",
+      )) as HTMLButtonElement;
   return [...node.querySelectorAll<HTMLButtonElement>("button, a")].find(
     (e) => e.textContent === label,
   )!;
@@ -324,7 +329,7 @@ it("makes the single Refresh reachable after a failed direct Announcements load"
   expect(button("Refresh draft").closest("[hidden]")).toBeNull();
   expect(
     [...host.querySelectorAll("button")].filter(
-      (b) => b.textContent === "Refresh draft",
+      (b) => b.textContent === "Try again",
     ),
   ).toHaveLength(1);
   api.mockResolvedValue(base());
@@ -432,7 +437,11 @@ it("shows only one refresh instruction for a rejected publish conflict", async (
     button("Publish roster", document.querySelector("dialog")!).click(),
   );
   const alert = host.querySelector('[role="alert"]')!;
-  expect(alert.textContent?.match(/Refresh draft/g)).toHaveLength(1);
+  expect(
+    [...alert.querySelectorAll("button")].filter(
+      (button) => button.textContent === "Try again",
+    ),
+  ).toHaveLength(1);
   expect(alert.textContent).toContain("Roster changed");
 });
 
@@ -440,7 +449,7 @@ it("shows exactly one visible Refresh draft with a loaded review draft", async (
   await render();
   expect(host.querySelector("textarea")).not.toBeNull();
   const refresh = [...host.querySelectorAll("button")].filter(
-    (b) => b.textContent === "Refresh draft" && !b.closest("[hidden]"),
+    (b) => b.getAttribute("aria-label") === "Refresh" && !b.closest("[hidden]"),
   );
   expect(refresh).toHaveLength(1);
   expect(refresh[0].disabled).toBe(false);

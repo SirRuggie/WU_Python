@@ -1,0 +1,41 @@
+.refresh-control {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--wu-space-2);
+  flex-wrap: wrap;
+}
+.refresh-control-status {
+  color: var(--wu-text-muted);
+  font-size: var(--wu-text-sm);
+  font-variant-numeric: tabular-nums;
+}
+.refresh-control .refresh-icon-button,
+.shell .refresh-icon-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 44px;
+  min-height: 44px;
+  padding: var(--wu-space-2);
+  flex-shrink: 0;
+}
+.refresh-icon-button .is-refreshing {
+  animation: refresh-control-spin 900ms linear infinite;
+}
+@keyframes refresh-control-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 650px) {
+  .refresh-status-prefix,
+  .refresh-interval {
+    display: none;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .refresh-icon-button .is-refreshing {
+    animation: none;
+  }
+}

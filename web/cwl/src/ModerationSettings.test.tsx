@@ -172,7 +172,10 @@ const health = vi.hoisted(() => vi.fn());
 let root: Root, host: HTMLDivElement;
 const button = (label: string) =>
   [...host.querySelectorAll("button")].find(
-    (item) => item.textContent?.trim() === label,
+    (item) =>
+      item.textContent?.trim() === label ||
+      item.getAttribute("aria-label") ===
+        (label === "Refresh settings" ? "Refresh" : label),
   )!;
 const settle = async () => {
   await act(async () => {
@@ -1327,3 +1330,35 @@ it.each([
     expect(JSON.stringify(writes[0][2])).toBe(JSON.stringify(expected));
   },
 );
+
+it("uses one header refresh and keeps its error retry busy without a second read", async () => {
+  transport.mockRejectedValueOnce(new Error("Settings offline"));
+  await act(async () => button("Refresh settings").click());
+  await settle();
+  expect(
+    host.querySelector('.cwl-page-header button[aria-label="Refresh"]'),
+  ).toBeNull();
+  const retry = [...host.querySelectorAll("button")].find(
+    (button) => button.textContent === "Try again",
+  )!;
+  let finish!: (value: SettingsResponse) => void;
+  transport.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  const reads = transport.mock.calls.length;
+  await act(async () => retry.click());
+  const pendingRefresh = host.querySelector<HTMLButtonElement>(
+    'button[aria-label="Refresh"]',
+  )!;
+  expect(pendingRefresh.disabled).toBe(true);
+  await act(async () => {
+    pendingRefresh.click();
+    await Promise.resolve();
+    pendingRefresh.click();
+  });
+  expect(transport.mock.calls.length).toBe(reads + 1);
+  await act(async () => finish(structuredClone(fixture)));
+});
