@@ -1,14 +1,16 @@
-import { numericInputProps } from "../inputProps";
+import ReminderNumberField from "./ReminderNumberField";
 import type { Timing } from "../reminderCampaign";
 
 export default function TimingEditor({
   value,
   onChange,
   deadline = false,
+  onInvalidChange,
 }: {
   value: Timing | string;
   onChange: (value: Timing) => void;
   deadline?: boolean;
+  onInvalidChange?: (field: string, invalid: boolean) => void;
 }) {
   const rule: Timing = typeof value === "string" ? { at: value } : value;
   const mode = deadline
@@ -67,7 +69,6 @@ export default function TimingEditor({
             value={(rule.at || "").slice(0, 16)}
             onChange={(event) => update({ at: event.target.value })}
           />
-          <small>Uses the schedule timezone.</small>
         </label>
       )}
       {mode === "monthly" && (
@@ -92,25 +93,27 @@ export default function TimingEditor({
               <option value="end">Days before month ends</option>
             </select>
           </label>
-          <label>
-            {rule.month_end_offset_days !== undefined
-              ? "Days before month ends"
-              : "Day of month"}
-            <input
-              {...numericInputProps}
-              type="number"
-              min={rule.month_end_offset_days !== undefined ? 0 : 1}
-              max={rule.month_end_offset_days !== undefined ? 27 : 31}
-              value={rule.month_end_offset_days ?? rule.day ?? 1}
-              onChange={(event) =>
-                update({
-                  [rule.month_end_offset_days !== undefined
-                    ? "month_end_offset_days"
-                    : "day"]: Number(event.target.value),
-                })
-              }
-            />
-          </label>
+          <ReminderNumberField
+            key={rule.month_end_offset_days !== undefined ? "end" : "day"}
+            label={
+              rule.month_end_offset_days !== undefined
+                ? "Days before month ends"
+                : "Day of month"
+            }
+            min={rule.month_end_offset_days !== undefined ? 0 : 1}
+            max={rule.month_end_offset_days !== undefined ? 27 : 31}
+            value={rule.month_end_offset_days ?? rule.day ?? 1}
+            onInvalidChange={(invalid) =>
+              onInvalidChange?.("monthly-day", invalid)
+            }
+            onChange={(number) =>
+              update({
+                [rule.month_end_offset_days !== undefined
+                  ? "month_end_offset_days"
+                  : "day"]: number,
+              })
+            }
+          />
           <label>
             Time
             <input
@@ -127,21 +130,18 @@ export default function TimingEditor({
         </>
       )}
       {["after_open", "before_close", "legacy_chain"].includes(mode) && (
-        <label>
-          Offset in minutes
-          <input
-            {...numericInputProps}
-            type="number"
+        <div>
+          <ReminderNumberField
+            label="Offset in minutes"
             min={0}
             value={rule.offset_minutes ?? 1440}
-            onChange={(event) =>
-              update({ offset_minutes: Number(event.target.value) })
-            }
+            onChange={(number) => update({ offset_minutes: number })}
+            onInvalidChange={(invalid) => onInvalidChange?.("offset", invalid)}
           />
           {mode === "legacy_chain" && (
             <small>After {rule.after || "previous reminder"}.</small>
           )}
-        </label>
+        </div>
       )}
     </div>
   );

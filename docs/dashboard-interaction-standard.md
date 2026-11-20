@@ -463,7 +463,7 @@ were changed. Existing bundle-size/import and aiohttp AppKey warnings remain.
 
 ### Reminder workspace hierarchy and attached actions
 
-Signup reminders now open on Schedule. Messages, Schedule and Delivery history
+Historical pre-260 layout opened Signup reminders on Schedule. Messages, Schedule and Delivery history
 share the gold underline rail; it scrolls horizontally on narrow screens rather
 than wrapping into disconnected rows. Refresh and Pause/Resume are grouped inside
 the status bar. Review/Save share one action group, shown only for unsaved changes.
@@ -1393,3 +1393,11 @@ release-review limitation for this workflow.
 ## Discord object wording (247)
 
 Deleted Discord objects show "Unknown channel" / "Deleted role" / "Unknown member", never an ID.
+
+Signup reminders follows rule #10: title, one compact status line,
+Messages/Schedule/History tabs, one shared toolbar row, then the message list.
+Occasional filters and sorting use ActionPanel; selecting a row reveals the editor
+without an additional page heading or an Edit button on each row. The save row
+appears only for unsaved work or a save error and stays hidden on History. Its
+preview is directly above it. Narrow/wide fixture review and the limits of any
+unexecuted browser checks are recorded in the batch's review artifact.
