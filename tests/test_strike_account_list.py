@@ -42,7 +42,7 @@ class Profiles:
     def __init__(self, rows):
         self.rows = rows
 
-    def find(self, query):
+    def find(self, query, projection=None, **kwargs):
         return Cursor([row for row in self.rows if row['player_tag'] in query['player_tag']['$in']])
 
 
