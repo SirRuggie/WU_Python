@@ -46,7 +46,7 @@ def test_home_warns_only_for_real_text_or_media_edits_and_reverts(monkeypatch):
     # Home-menu permission lookups are covered by management access tests.
     monkeypatch.setattr(manage, "_can_access", AsyncMock(return_value=False))
     document = content.DOCUMENTS["about-us"]
-    sections = [node.content for node in content.text_nodes(run(content.baseline(document)))]
+    sections = [node.content for node in content.editable_text_nodes(document, run(content.baseline(document)))]
     state = {
         "_id": "draft", "user_id": 1, "guild_id": 2, "view": "document",
         "document": "about-us", "sections": sections, "media": {},
@@ -58,19 +58,19 @@ def test_home_warns_only_for_real_text_or_media_edits_and_reverts(monkeypatch):
     monkeypatch.setattr(content, "load", AsyncMock(return_value=(state, None)))
     home_state = {"_id": "home-token", "view": "home", "user_id": 1, "guild_id": 2}
     monkeypatch.setattr(manage, "get_state", AsyncMock(return_value=home_state))
-    clean = run(content.manage_review(ctx=context(), action_id="draft", mongo=object()))
+    clean = run(content.manage_review(ctx=context(), action_id="draft", mongo=object(), bot=object()))
     assert "Server Management" in str(clean[0].build())
     assert manage.get_state.await_count == 1
     manage.get_state.return_value = dict(home_state, user_id=99)
-    denied_home = run(content.manage_review(ctx=context(), action_id="draft", mongo=object()))
+    denied_home = run(content.manage_review(ctx=context(), action_id="draft", mongo=object(), bot=object()))
     assert "Open your own" in str(denied_home[0].build())
 
     changed = copy.deepcopy(state)
     changed["sections"][0] += " changed"
     monkeypatch.setattr(content, "load", AsyncMock(return_value=(changed, None)))
-    warning = run(content.manage_review(ctx=context(), action_id="draft", mongo=object()))
+    warning = run(content.manage_review(ctx=context(), action_id="draft", mongo=object(), bot=object()))
     assert "Unsaved edits" in str(warning[0].build())
-    back_warning = run(content.back_to_root(ctx=context(), action_id="draft", mongo=object()))
+    back_warning = run(content.back_to_root(ctx=context(), action_id="draft", mongo=object(), bot=object()))
     assert "Leave without saving" in str(back_warning[0].build())
     assert manage.get_state.await_count == 2
     changed["sections"][0] = sections[0]
@@ -87,7 +87,7 @@ def test_home_warns_only_for_real_text_or_media_edits_and_reverts(monkeypatch):
 
 def test_successful_save_refreshes_snapshot_and_old_draft_warns(monkeypatch):
     document = content.DOCUMENTS["about-us"]
-    sections = [node.content for node in content.text_nodes(run(content.baseline(document)))]
+    sections = [node.content for node in content.editable_text_nodes(document, run(content.baseline(document)))]
     state = {
         "_id": "draft", "user_id": 1, "guild_id": 2, "view": "document",
         "document": "about-us", "sections": sections, "media": {},
@@ -100,11 +100,11 @@ def test_successful_save_refreshes_snapshot_and_old_draft_warns(monkeypatch):
     monkeypatch.setattr(content, "load", AsyncMock(return_value=(state, None)))
     monkeypatch.setattr(content, "_save", AsyncMock(return_value=False))
     monkeypatch.setattr(content, "new_draft", AsyncMock(side_effect=lambda _db, row: dict(row, _id="saved")))
-    run(content.save(ctx=context(), action_id="draft", mongo=object()))
+    run(content.save(ctx=context(), action_id="draft", mongo=object(), bot=object()))
     content.new_draft.assert_not_awaited()
     assert content.has_unsaved_edits(state)
     content._save.return_value = True
-    run(content.save(ctx=context(), action_id="draft", mongo=object()))
+    run(content.save(ctx=context(), action_id="draft", mongo=object(), bot=object()))
     saved = content.new_draft.await_args.args[1]
     assert saved["revision"] == 1
     assert saved["saved_snapshot"] == content.draft_snapshot(saved)
