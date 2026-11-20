@@ -197,12 +197,14 @@ it("opens with progress list, collapsed help and no member fanout", async () => 
 it("filters real missing rows, keeps gaps out of counts, and moves Next focus", async () => {
   await render();
   await click("Needs work");
-  expect(host.textContent).toContain("2 missing · 1 to check");
+  expect(host.textContent).toContain("Missing 2");
+  expect(host.textContent).toContain("Check 1");
+  expect(host.textContent).not.toContain("2 missing · 1 to check");
   expect(host.textContent).toContain(
     "3 · Departed · War player details unavailable",
   );
   expect(host.querySelector(".weight-trial-gap input")).toBeNull();
-  await click("Missing (2)");
+  await click("Missing 2");
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(2);
   expect(host.querySelector(".weight-trial-gap")).toBeNull();
   const inputs = host.querySelectorAll<HTMLInputElement>(
@@ -217,7 +219,7 @@ it("filters real missing rows, keeps gaps out of counts, and moves Next focus", 
     );
   });
   expect(document.activeElement).toBe(inputs[1]);
-  await click("Check (1)");
+  await click("Check 1");
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(1);
   expect(host.textContent).toContain("this can sometimes be correct");
 });
@@ -287,18 +289,19 @@ it("shows honest export checklist, missing-loot action and real clipboard failur
 });
 it("searches saved players and labels unknown location neutrally", async () => {
   await render();
+  await click("Find any player");
   await input(
-    host.querySelector<HTMLInputElement>(".weight-saved-search input")!,
+    document.querySelector<HTMLInputElement>(".weight-saved-search input")!,
     "Saved",
   );
   await act(async () =>
-    host
+    document
       .querySelector(".weight-saved-search form")!
       .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
   );
-  expect(host.textContent).toContain("Last saved in Old clan");
-  expect(host.textContent).toContain("Current clan unavailable");
-  expect(host.textContent).not.toContain("now not in a family clan");
+  expect(document.body.textContent).toContain("Last saved in Old clan");
+  expect(document.body.textContent).toContain("Current clan unavailable");
+  expect(document.body.textContent).not.toContain("now not in a family clan");
 });
 
 it("Next missing focuses an empty visible Loot box and nameless gaps stay excluded", async () => {
@@ -330,7 +333,7 @@ it("Next missing focuses an empty visible Loot box and nameless gaps stay exclud
 it("retains Missing entry and focus through every character until explicit save", async () => {
   await render();
   await click("Needs work");
-  await click("Missing (2)");
+  await click("Missing 2");
   const loot = host.querySelector<HTMLInputElement>(
     ".weight-trial-loot input",
   )!;
@@ -340,7 +343,7 @@ it("retains Missing entry and focus through every character until explicit save"
     expect(loot.isConnected).toBe(true);
     expect(document.activeElement).toBe(loot);
     expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(2);
-    expect(host.textContent).toContain("Missing (2)");
+    expect(host.textContent).toContain("Missing 2");
   }
   expect(host.querySelector(".weight-trial-phone-full")?.textContent).toBe(
     "Full 179k",
@@ -365,13 +368,13 @@ it("retains Missing entry and focus through every character until explicit save"
   );
   await click("Save weights");
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(1);
-  expect(host.textContent).toContain("Missing (1)");
+  expect(host.textContent).toContain("Missing 1");
 });
 
 it("retains a Check row while edits resolve its warning", async () => {
   await render();
   await click("Needs work");
-  await click("Check (1)");
+  await click("Check 1");
   const loot = host.querySelector<HTMLInputElement>(
     ".weight-trial-loot input",
   )!;
@@ -381,7 +384,9 @@ it("retains a Check row while edits resolve its warning", async () => {
     expect(loot.isConnected).toBe(true);
     expect(document.activeElement).toBe(loot);
   }
-  expect(host.textContent).toContain("0 to check");
+  expect(
+    host.querySelector('[aria-label="Weight rows"]')?.textContent,
+  ).toContain("Check 0");
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(1);
 });
 
@@ -709,13 +714,40 @@ it("edits departed war players, defaults newest, switches wars and copies select
     "Left clan",
   );
   expect(host.querySelector('[data-player="#J2Y"]')).toBeNull();
-  const war = host.querySelector<HTMLSelectElement>(
-    ".weight-trial-war-picker select",
+  const war = host.querySelector<HTMLButtonElement>(
+    ".weight-trial-war-row .roster-menu-trigger",
   )!;
-  expect(war.value).toBe(newest.end_time);
+  expect(war.textContent).toContain("Current war");
+  await act(async () => war.click());
+  const previousOption = [
+    ...document.querySelectorAll<HTMLElement>(
+      '.weight-war-menu-panel [role="menuitem"]',
+    ),
+  ].find((n) => n.textContent?.includes("Previous"))!;
   await act(async () => {
-    war.value = previous.end_time;
-    war.dispatchEvent(new Event("change", { bubbles: true }));
+    previousOption.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    previousOption.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+    );
+    previousOption.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    previousOption.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0 }),
+    );
+    previousOption.click();
   });
   const departed = host.querySelector('[data-player="#J2Y"]')!;
   expect(departed.textContent).toContain(
@@ -736,7 +768,7 @@ it("edits departed war players, defaults newest, switches wars and copies select
   expect(write).toHaveBeenCalledExactlyOnceWith({
     changes: [{ tag: "#J2Y", revision: 0, weight: 140000, storages: 4 }],
   });
-  expect(war.value).toBe(previous.end_time);
+  expect(war.textContent).toContain("Previous");
   await click("Copy loot for FWA column F");
   expect(copied).toHaveBeenCalledExactlyOnceWith("35000");
 });
@@ -808,16 +840,43 @@ it("keeps departed edits when switching wars is canceled and renders saved names
     row.querySelector<HTMLInputElement>(".weight-trial-loot input")!,
     "30000",
   );
-  const war = host.querySelector<HTMLSelectElement>(
-    ".weight-trial-war-picker select",
+  const war = host.querySelector<HTMLButtonElement>(
+    ".weight-trial-war-row .roster-menu-trigger",
   )!;
+  await act(async () => war.click());
+  const previousOption = [
+    ...document.querySelectorAll<HTMLElement>(
+      '.weight-war-menu-panel [role="menuitem"]',
+    ),
+  ].find((n) => n.textContent?.includes("Previous"))!;
   await act(async () => {
-    war.value = previous.end_time;
-    war.dispatchEvent(new Event("change", { bubbles: true }));
+    previousOption.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    previousOption.dispatchEvent(
+      new MouseEvent("mousedown", { bubbles: true, button: 0 }),
+    );
+    previousOption.dispatchEvent(
+      new PointerEvent("pointerup", {
+        bubbles: true,
+        pointerType: "mouse",
+        pointerId: 1,
+        button: 0,
+      }),
+    );
+    previousOption.dispatchEvent(
+      new MouseEvent("mouseup", { bubbles: true, button: 0 }),
+    );
+    previousOption.click();
   });
   expect(document.body.textContent).toContain("Unsaved changes");
   await click("Keep editing");
-  expect(war.value).toBe(newest.end_time);
+  expect(war.textContent).toContain("Current war");
   expect(
     row
       .querySelector<HTMLInputElement>(".weight-trial-loot input")!
@@ -832,14 +891,15 @@ it("clears clan summaries and an opened saved-player search when member access i
   const original = vi.mocked(api).getMockImplementation()!;
   await render();
   await click("Needs work");
+  await click("Find any player");
   await input(
-    host.querySelector<HTMLInputElement>(
+    document.querySelector<HTMLInputElement>(
       '.weight-saved-search input[type="search"]',
     )!,
     "Saved",
   );
   await click("Search saved players");
-  expect(host.textContent).toContain("Saved outside");
+  expect(document.body.textContent).toContain("Saved outside");
   const { ApiError } = await import("../api");
   const denied = new ApiError("Access revoked", 403);
   denied.status = 403;
@@ -849,13 +909,13 @@ it("clears clan summaries and an opened saved-player search when member access i
   });
   await click("Refresh members");
   expect(host.textContent).toContain("Access revoked");
-  expect(host.textContent).not.toContain("Saved outside");
+  expect(document.body.textContent).not.toContain("Saved outside");
   expect(host.textContent).not.toContain("2/4 weighed");
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(0);
   vi.mocked(api).mockImplementation(original);
   await click("Retry clans");
   expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(4);
-  expect(host.textContent).not.toContain("Saved outside");
+  expect(document.body.textContent).not.toContain("Saved outside");
 });
 
 it("does not restore protected clan counts from a stale success after access denial", async () => {
@@ -1068,4 +1128,259 @@ it("guards unsaved edits when changing clans through the picker", async () => {
   expect(
     vi.mocked(api).mock.calls.some(([path]) => path.includes("%23J2Y")),
   ).toBe(true);
+});
+
+async function findSavedPlayer() {
+  await click("Find any player");
+  await input(
+    document.querySelector<HTMLInputElement>(
+      '.weight-saved-search input[type="search"]',
+    )!,
+    "Saved",
+  );
+  await act(async () =>
+    document
+      .querySelector(".weight-saved-search form")!
+      .dispatchEvent(new Event("submit", { bubbles: true, cancelable: true })),
+  );
+  return document.querySelector<HTMLInputElement>(
+    ".weight-saved-search .weight-trial-loot input",
+  )!;
+}
+function dismissSavedPanel(kind: string) {
+  const panel = document.querySelector<HTMLDialogElement>(
+    ".weight-saved-panel",
+  )!;
+  if (kind === "close")
+    panel
+      .querySelector<HTMLButtonElement>('[aria-label="Close panel"]')!
+      .click();
+  else if (kind === "escape")
+    panel.dispatchEvent(new Event("cancel", { cancelable: true }));
+  else if (kind === "back")
+    window.dispatchEvent(new PopStateEvent("popstate", { state: null }));
+  else {
+    panel.dispatchEvent(
+      new PointerEvent("pointerdown", {
+        bubbles: true,
+        pointerId: 1,
+        pointerType: "mouse",
+      }),
+    );
+    panel.click();
+  }
+}
+for (const kind of ["close", "escape", "back", "backdrop"]) {
+  it(`guards same-act saved-player edit and ${kind}, retains Keep editing, then Discard closes`, async () => {
+    await render();
+    expect(document.querySelector(".weight-saved-search")).toBeNull();
+    expect(
+      vi
+        .mocked(api)
+        .mock.calls.some(([path]) =>
+          path.startsWith("/weight-trial/saved-players"),
+        ),
+    ).toBe(false);
+    const loot = await findSavedPlayer();
+    expect(loot).not.toBeNull();
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(loot, "35000");
+      loot.dispatchEvent(new Event("input", { bubbles: true }));
+      dismissSavedPanel(kind);
+    });
+    expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+      "Unsaved changes",
+    );
+    expect(document.querySelector(".weight-saved-panel")).not.toBeNull();
+    await click("Keep editing");
+    expect(
+      document.querySelector(".weight-saved-search .weight-trial-loot input"),
+    ).toBe(loot);
+    expect(loot.value.replace(/,/g, "")).toBe("35000");
+    expect(onDirty).toHaveBeenLastCalledWith(true);
+    await act(async () => dismissSavedPanel("close"));
+    await click("Discard");
+    expect(document.querySelector(".weight-saved-panel")).toBeNull();
+    expect(onDirty).toHaveBeenLastCalledWith(false);
+    expect(
+      vi.mocked(api).mock.calls.filter(([, method]) => method === "PUT"),
+    ).toHaveLength(0);
+  });
+  it(`blocks same-act saved-player save-start and ${kind} without a discard or duplicate write`, async () => {
+    const original = vi.mocked(api).getMockImplementation()!;
+    let finish!: (value: unknown) => void;
+    vi.mocked(api).mockImplementation((path, method, ...args) =>
+      method === "PUT" && path.startsWith("/weight-trial/saved-players/")
+        ? new Promise((resolve) => {
+            finish = resolve;
+          })
+        : original(path, method, ...args),
+    );
+    await render();
+    const loot = await findSavedPlayer();
+    await input(loot, "35000");
+    const save = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        ".weight-saved-search button",
+      ),
+    ].find((b) => b.textContent === "Save Saved outside")!;
+    await act(async () => {
+      save.click();
+      dismissSavedPanel(kind);
+    });
+    expect(document.querySelector(".weight-saved-panel")).not.toBeNull();
+    expect(document.querySelector(".confirm-dialog")).toBeNull();
+    expect(
+      document.querySelector<HTMLButtonElement>(
+        '.weight-saved-panel [aria-label="Close panel"]',
+      )!.disabled,
+    ).toBe(true);
+    expect(
+      vi.mocked(api).mock.calls.filter(([, method]) => method === "PUT"),
+    ).toHaveLength(1);
+    const beforeunload = new Event("beforeunload", { cancelable: true });
+    window.dispatchEvent(beforeunload);
+    expect(beforeunload.defaultPrevented).toBe(true);
+    await act(async () =>
+      finish({
+        player: {
+          ...rows[0],
+          name: "Saved outside",
+          weight: 175000,
+          storages: 5,
+          revision: 2,
+          last_saved_clan_name: "Old clan",
+          last_saved_clan_tag: "#R2Y",
+          updated_at: "2026-10-30T12:00:00Z",
+        },
+      }),
+    );
+    await act(async () => dismissSavedPanel("close"));
+    expect(document.querySelector(".weight-saved-panel")).toBeNull();
+  });
+}
+it("opens a target-only saved-player link with its existing prefill and no clan read", async () => {
+  await act(async () =>
+    root.render(<WeightTrial onDirty={onDirty} targetPlayer="#P2Y" />),
+  );
+  expect(document.querySelector(".weight-saved-panel")).not.toBeNull();
+  expect(
+    document.querySelector<HTMLInputElement>(".weight-saved-search input")!
+      .value,
+  ).toBe("#P2Y");
+  expect(
+    vi
+      .mocked(api)
+      .mock.calls.some(([path]) =>
+        path.startsWith("/weight-trial/saved-players?q=%23P2Y"),
+      ),
+  ).toBe(true);
+  expect(
+    vi.mocked(api).mock.calls.filter(([path]) => path.includes("/clans/")),
+  ).toHaveLength(0);
+});
+it("keeps the combined page dirty guard after a clean panel reopen and does not revive abandoned search", async () => {
+  await render();
+  const first = await findSavedPlayer();
+  await act(async () => dismissSavedPanel("close"));
+  expect(first.isConnected).toBe(false);
+  const next = await findSavedPlayer();
+  await input(next, "35000");
+  expect(onDirty).toHaveBeenLastCalledWith(true);
+  expect(
+    document.querySelector(".weight-saved-search .weight-trial-loot input"),
+  ).toBe(next);
+});
+it("moves intro and full saved details into help and keeps one plain saved meta line", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation((path, ...args) =>
+    path.includes("/clans/")
+      ? Promise.resolve({
+          ...roster,
+          last_saved: {
+            at: "2026-10-21T12:00:00Z",
+            name: "Sir Ruggie",
+            discord_id: "123456789123456789",
+            imported: true,
+          },
+        })
+      : original(path, ...args),
+  );
+  await render();
+  await click("Needs work");
+  expect(
+    host.querySelector('.weight-trial-header [aria-label="Refresh members"]'),
+  ).not.toBeNull();
+  expect(host.querySelector(".weight-trial-meta")?.textContent).toContain(
+    "Saved Oct 21 by Sir Ruggie",
+  );
+  expect(host.querySelector(".weight-trial-meta .discord-identity")).toBeNull();
+  expect(host.textContent).not.toContain("Type each player's loot");
+  expect(host.textContent).not.toContain("current members");
+  expect(host.textContent).not.toContain("Spreadsheet import");
+  await click("How weights are used");
+  const help = document.querySelector(".weight-help-panel")!;
+  expect(help.textContent).toContain(
+    "Type each player's loot. Full weight = loot × storages.",
+  );
+  expect(help.textContent).toContain("This clan");
+  expect(help.textContent).toContain("4 current members · 4 weight rows");
+  expect(help.textContent).toContain("Spreadsheet import");
+});
+it("retains two saved-player edits in one React batch and reports both before close", async () => {
+  const original = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation((path, ...args) =>
+    path.startsWith("/weight-trial/saved-players")
+      ? Promise.resolve({
+          players: [rows[0], rows[3]].map((row, i) => ({
+            ...row,
+            name: `Saved ${i + 1}`,
+            last_saved_clan_tag: "#R2Y",
+            last_saved_clan_name: "Old clan",
+            updated_at: "2026-10-29T12:00:00Z",
+          })),
+          total: 2,
+        })
+      : original(path, ...args),
+  );
+  await render();
+  await findSavedPlayer();
+  const inputs = [
+    ...document.querySelectorAll<HTMLInputElement>(
+      ".weight-saved-search .weight-trial-loot input",
+    ),
+  ];
+  expect(inputs).toHaveLength(2);
+  await act(async () => {
+    const setter = Object.getOwnPropertyDescriptor(
+      HTMLInputElement.prototype,
+      "value",
+    )!.set!;
+    setter.call(inputs[0], "35000");
+    inputs[0].dispatchEvent(new Event("input", { bubbles: true }));
+    setter.call(inputs[1], "34000");
+    inputs[1].dispatchEvent(new Event("input", { bubbles: true }));
+    dismissSavedPanel("close");
+  });
+  expect(document.querySelector(".confirm-dialog")?.textContent).toContain(
+    "2 unsaved weights",
+  );
+  await click("Keep editing");
+  expect(inputs.map((input) => input.value.replace(/,/g, ""))).toEqual([
+    "35000",
+    "34000",
+  ]);
+  expect(
+    [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        ".weight-saved-search button",
+      ),
+    ]
+      .filter((button) => button.textContent?.startsWith("Save Saved"))
+      .every((button) => !button.disabled),
+  ).toBe(true);
+  expect(onDirty).toHaveBeenLastCalledWith(true);
 });

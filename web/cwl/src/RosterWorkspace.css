@@ -234,16 +234,16 @@ body:has(.roster-workspace)
     flex: 1 0 100%;
   }
   .shell .roster-workspace .roster-list-pool-tabs {
-    flex: 0 0 132px;
-    width: 132px;
+    flex: 1 1 auto;
+    width: 0;
+    min-width: 0;
     min-height: 44px;
     border: 0;
     box-shadow: inset 0 0 0 1px var(--roster-border);
   }
   .shell .roster-workspace .roster-list-pool-tabs > button {
     box-sizing: border-box;
-    flex: 0 0 44px;
-    width: 44px;
+    flex: 1 1 0;
     min-width: 44px;
     height: 44px;
     padding: 0;
@@ -312,5 +312,96 @@ body:has(.roster-workspace)
     width: calc(100% + 28px);
     margin-inline: -14px;
     gap: 4px 1px;
+  }
+}
+
+.roster-count-sort {
+  display: none;
+}
+@media (max-width: 650px) {
+  .roster-list-count-text {
+    white-space: normal;
+  }
+  .roster-count-sort {
+    display: inline;
+  }
+  .roster-count-sort > button {
+    min-width: 44px;
+    min-height: 44px;
+    padding: 0 2px;
+    border: 0;
+    background: transparent;
+    color: var(--wu-accent);
+    font-size: inherit;
+    line-height: inherit;
+    text-align: left;
+    cursor: pointer;
+    vertical-align: middle;
+  }
+  .roster-count-sort > button:focus-visible {
+    outline: 2px solid var(--wu-focus);
+    outline-offset: 2px;
+  }
+}
+
+/* Fit the frequent phone controls without sacrificing their 44px targets. */
+@media (max-width: 650px) {
+  .roster-workspace .roster-list-heading {
+    padding-inline: 8px;
+    font-size: var(--wu-text-xs);
+  }
+  .roster-workspace .roster-quick-select .roster-action-trigger {
+    padding: 4px;
+    gap: 4px;
+    font-size: var(--wu-text-xs);
+  }
+  .roster-workspace .roster-count-sort > button {
+    max-width: 80px;
+    white-space: normal;
+  }
+  .roster-workspace .roster-member-heading {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    padding: 0 8px;
+  }
+  .roster-workspace .roster-member-heading > .roster-discord-identity {
+    flex: 1 1 0;
+    flex-wrap: nowrap;
+    gap: 6px;
+  }
+  .roster-workspace
+    .roster-member-heading
+    .roster-discord-identity
+    > .user-avatar {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+  .roster-workspace
+    .roster-member-heading
+    .roster-discord-person
+    :is(strong, small) {
+    font-size: var(--wu-text-xs);
+    line-height: 1.25;
+  }
+  .roster-workspace .roster-member-heading .discord-contact {
+    flex: 0 0 auto;
+    min-width: 44px;
+    min-height: 44px;
+    padding: 4px;
+    font-size: var(--wu-text-xs);
+  }
+  .roster-workspace .roster-member-heading > small {
+    flex: none;
+    margin: 0;
+    font-size: var(--wu-text-xs);
+    line-height: 1.25;
+  }
+}
+@media (max-width: 340px) {
+  .roster-workspace .roster-filters-toolbar {
+    column-gap: 2px;
   }
 }

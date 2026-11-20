@@ -19,7 +19,9 @@ export default function SavedPlayers({
   resetToken,
   externalBusy = false,
   onDenied,
+  showHeading = true,
 }: {
+  showHeading?: boolean;
   resetToken: number;
   externalBusy?: boolean;
   onDenied?: (message: string) => void;
@@ -29,7 +31,18 @@ export default function SavedPlayers({
 }) {
   const [query, setQuery] = useState(target || "");
   const [rows, setRows] = useState<SavedPlayer[]>([]);
-  const [values, setValues] = useState<Record<string, Draft>>({});
+  const [values, setValuesState] = useState<Record<string, Draft>>({});
+  const valuesRef = useRef<Record<string, Draft>>({});
+  const setValues = (
+    update:
+      | Record<string, Draft>
+      | ((current: Record<string, Draft>) => Record<string, Draft>),
+  ) => {
+    const next =
+      typeof update === "function" ? update(valuesRef.current) : update;
+    valuesRef.current = next;
+    setValuesState(next);
+  };
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [loading, setLoading] = useState(false);
@@ -108,6 +121,7 @@ export default function SavedPlayers({
     }
     saving.current = true;
     setBusy(true);
+    onState(changed.length, true);
     setError("");
     setNotice("");
     const id = request.current;
@@ -144,7 +158,7 @@ export default function SavedPlayers({
   }
   return (
     <section className="weight-saved-search" aria-label="Find any player">
-      <h2>Find any player</h2>
+      {showHeading && <h2>Find any player</h2>}
       <p className="small">
         Search every saved weight, including players who have left.
       </p>
@@ -191,9 +205,18 @@ export default function SavedPlayers({
             draft={values[row.tag] || draftFor(row)}
             busy={busy || externalBusy}
             last
-            onChange={(draft) =>
-              setValues((current) => ({ ...current, [row.tag]: draft }))
-            }
+            onChange={(draft) => {
+              const next = { ...valuesRef.current, [row.tag]: draft };
+              setValues(next);
+              onState(
+                rows.filter(
+                  (item) =>
+                    JSON.stringify(next[item.tag]) !==
+                    JSON.stringify(draftFor(item)),
+                ).length,
+                saving.current,
+              );
+            }}
             inputRef={() => () => {}}
             onKey={() => {}}
           />

@@ -147,7 +147,7 @@
 @media (max-width: 650px) {
   .shell .roster-header .cwl-page-header {
     display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(100px, 132px) 44px;
+    grid-template-columns: minmax(0, 1fr) max-content 44px;
     gap: 6px;
   }
   .shell .roster-header .cwl-page-header-title {
@@ -196,5 +196,22 @@
     height: 1px;
     overflow: hidden;
     clip-path: inset(50%);
+  }
+}
+
+@media (max-width: 650px) {
+  .roster-header-season .roster-menu-current {
+    white-space: nowrap;
+  }
+  .shell .roster-header .cwl-page-header > .roster-header-season {
+    width: auto;
+  }
+}
+@media (max-width: 340px) {
+  .shell .roster-header .cwl-page-header {
+    grid-template-columns: minmax(0, 1fr) 44px;
+  }
+  .roster-header .cwl-page-header-title {
+    grid-column: 1 / -1;
   }
 }

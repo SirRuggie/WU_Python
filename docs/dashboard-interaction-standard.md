@@ -81,6 +81,25 @@ a 24 px slide/fade over 180 ms ease-out; reduced motion changes instantly.
     attention or selection, never the sole status signal. Avoid adding cards,
     switches, warnings, and explanatory paragraphs without a specific user need.
 
+## Clan weights phone hierarchy (255)
+
+Clan weights follows rule10 with its title/help, Find any player icon and
+RefreshControl first; the clan menu keeps its full-width phone row. One muted
+saved-date/name line supports the segmented All/Missing/Check filter and Next
+missing icon. The shared War menu follows only when multiple saved lineups exist;
+desktop column headings sit immediately above the rows. Intro, member/row counts,
+full saved time and import details live in help. Errors/Retry, notices, loading,
+outside-family weight guidance and the previous-war note stay discoverable.
+
+Occasional saved-player search opens the existing content in ActionPanel. It does
+not read while closed, except a target-only link opens and prefills that panel.
+All dismiss paths use the existing combined unsaved guard before unmounting;
+pending saves block dismissal. The same parent state still drives page navigation
+and beforeunload protection. War selection uses the existing guard before changing
+the lineup/drafts/filter. Save endpoints, request bodies and revisions are unchanged.
+This is frontend-only implementation pending regression and isolated fixture review;
+it is not physical-device, assistive-technology or live-provider verification.
+
 ## Review before shipping
 
 ### Phone inputs, formats and menu motion (252)

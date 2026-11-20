@@ -21,7 +21,13 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
       await page
         .getByRole("button", { name: "Open local test session" })
         .click();
-      await page.locator(".weight-trial-clan-list button").first().click();
+      await page
+        .getByRole("button", { name: "Select a clan", exact: true })
+        .click();
+      await page
+        .locator(".weight-clan-picker-panel [role=menuitem]")
+        .first()
+        .click();
       await page.waitForFunction(
         () => document.querySelectorAll(".weight-trial-row").length === 52,
       );
@@ -42,6 +48,17 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
         return {
           width: document.documentElement.scrollWidth,
           height: document.documentElement.scrollHeight,
+          firstRowY: root
+            .querySelector(".weight-trial-editor .weight-trial-row")
+            .getBoundingClientRect().y,
+          filterButtons: [
+            ...root.querySelectorAll(".weight-trial-filters button"),
+          ].map((e) => ({
+            y: e.getBoundingClientRect().y,
+            width: e.getBoundingClientRect().width,
+            scroll: e.scrollWidth,
+            client: e.clientWidth,
+          })),
           rows: [...root.querySelectorAll(".weight-trial-row")].map(
             (n) => n.getBoundingClientRect().height,
           ),
@@ -64,6 +81,23 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
       });
       assert.equal(geometry.width, width, "horizontal overflow");
       assert.equal(geometry.rows.length, 52);
+      if (width === 360)
+        assert(
+          geometry.firstRowY <= 450,
+          `First weight row y=${geometry.firstRowY} exceeds450`,
+        );
+      assert(
+        Math.max(...geometry.filterButtons.map((b) => b.y)) -
+          Math.min(...geometry.filterButtons.map((b) => b.y)) <=
+          2,
+        "Filters and Next missing share one row",
+      );
+      assert(
+        geometry.filterButtons.every(
+          (b) => b.width >= 44 && b.scroll <= b.client + 1,
+        ),
+        "Filter labels remain visible in44px targets",
+      );
       assert.deepEqual(geometry.small, []);
       assert.deepEqual(geometry.short, []);
       assert(geometry.rows[0] <= (width < 800 ? 110 : 80), "normal row height");
@@ -85,8 +119,10 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
           ),
         );
       }
-      const warSelector = page.locator(".weight-trial-war-picker select");
-      assert.equal(await warSelector.inputValue(), "20261102T070000.000Z");
+      const warSelector = page.locator(
+        ".weight-trial-war-row .roster-menu-trigger",
+      );
+      assert((await warSelector.textContent()).includes("Current war"));
       assert(
         await page
           .locator('[data-player="#V2Y"] .weight-trial-loot input')
@@ -101,14 +137,22 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
         await page.locator('[data-player="#U2Y"] select').inputValue(),
         "",
       );
-      await warSelector.selectOption("20261031T070000.000Z");
+      await warSelector.click();
+      await page
+        .locator('.weight-war-menu-panel [role="menuitem"]')
+        .filter({ hasText: "Previous" })
+        .click();
       assert(
         await page
           .locator('[data-player="#Y2Y"] .weight-trial-loot input')
           .isEnabled(),
       );
       assert.equal(await page.locator('[data-player="#U2Y"]').count(), 0);
-      await warSelector.selectOption("20261102T070000.000Z");
+      await warSelector.click();
+      await page
+        .locator('.weight-war-menu-panel [role="menuitem"]')
+        .filter({ hasText: "Current war" })
+        .click();
       const cdp = await page.context().newCDPSession(page);
       for (const pointer of ["fine", "coarse"]) {
         if (pointer === "coarse")
@@ -133,10 +177,10 @@ const origin = `http://127.0.0.1:${Number(process.argv[2])}`;
         );
       }
       await page
-        .getByRole("button", { name: "Missing (3)", exact: true })
+        .getByRole("button", { name: "Missing 3", exact: true })
         .click();
       await page
-        .getByRole("button", { name: "Next missing ›", exact: true })
+        .getByRole("button", { name: "Next missing", exact: true })
         .click();
       await page.waitForFunction(() =>
         document.activeElement?.matches(".weight-trial-loot input"),

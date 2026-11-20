@@ -26,6 +26,19 @@ it("keeps one header Refresh that actually rereads the roster", async () => {
       }) as any,
   );
   Element.prototype.scrollIntoView = vi.fn();
+  HTMLDialogElement.prototype.showModal = function () {
+    this.open = true;
+  };
+  HTMLDialogElement.prototype.close = function () {
+    this.open = false;
+  };
+  vi.spyOn(HTMLElement.prototype, "getClientRects").mockImplementation(
+    function (this: HTMLElement) {
+      return this.isConnected
+        ? ([new DOMRect(0, 0, 44, 44)] as unknown as DOMRectList)
+        : ([] as unknown as DOMRectList);
+    },
+  );
   const snapshot = {
     revision: 1,
     undo: null,
@@ -91,6 +104,54 @@ it("keeps one header Refresh that actually rereads the roster", async () => {
     )!;
     await act(async () => all.click());
     expect(host.textContent).toContain("1 matching");
+    const icon = host.querySelector<HTMLButtonElement>(".roster-sort-trigger")!;
+    await act(async () => icon.click());
+    const highest = [
+      ...document.querySelectorAll<HTMLButtonElement>(
+        ".roster-sort-options button",
+      ),
+    ].find((b) => b.textContent === "Weight: highest first")!;
+    await act(async () => highest.click());
+    const countSort = host.querySelector<HTMLButtonElement>(
+      ".roster-count-sort > button",
+    )!;
+    expect(countSort.textContent).toBe("Weight ↓");
+    expect(countSort.getAttribute("aria-label")).toBe(
+      icon.getAttribute("aria-label"),
+    );
+    await act(async () => countSort.click());
+    expect(document.querySelector(".action-panel")?.textContent).toContain(
+      "Sort accounts",
+    );
+    const group = document.querySelector<HTMLInputElement>(
+      ".roster-group-toggle input",
+    )!;
+    await act(async () => group.click());
+    expect(countSort.textContent).toBe("Weight ↓ · Grouped");
+    expect(countSort.getAttribute("aria-label")).toBe(
+      "Sort: Weight: highest first, grouped by Discord user",
+    );
+    await act(async () =>
+      document
+        .querySelector("dialog.action-panel")!
+        .dispatchEvent(new Event("cancel", { cancelable: true })),
+    );
+    await act(
+      async () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+    expect(document.activeElement).toBe(countSort);
+    await act(async () => icon.click());
+    await act(async () =>
+      document
+        .querySelector("dialog.action-panel")!
+        .dispatchEvent(new Event("cancel", { cancelable: true })),
+    );
+    await act(
+      async () =>
+        new Promise<void>((resolve) => requestAnimationFrame(() => resolve())),
+    );
+    expect(document.activeElement).toBe(icon);
     const refresh = host.querySelector<HTMLButtonElement>(
       '.roster-header button[aria-label="Refresh"]',
     );

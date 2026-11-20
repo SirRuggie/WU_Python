@@ -153,3 +153,22 @@ it("records successful read completion and retains it after a failure", async ()
   );
   expect(host.textContent).toBe("1234");
 });
+it("keeps a caller's specific refresh accessible name without changing defaults", async () => {
+  const read = vi.fn();
+  await act(async () =>
+    root.render(
+      <RefreshControl
+        updatedAt={0}
+        busy={false}
+        onRefresh={read}
+        refreshLabel="Refresh members"
+      />,
+    ),
+  );
+  const button = host.querySelector<HTMLButtonElement>(
+    '[aria-label="Refresh members"]',
+  )!;
+  expect(button.title).toBe("Refresh members");
+  await act(async () => button.click());
+  expect(read).toHaveBeenCalledOnce();
+});
