@@ -1,4 +1,4 @@
-import { shortReminderTime } from "./SignupReminderOverview";
+import { shortReminderTime } from "./reminderFormat";
 import {
   reminderHistoryDetail,
   reminderHistoryStatus,

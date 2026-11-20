@@ -2059,3 +2059,26 @@ real-phone, full assistive-technology or live Discord/provider proof inferred.
 
 Later: sort on Declaration check; sort on Tickets (backend); toolbar row on
 Missing weights and Return reminders. Existing Later work remains unchanged.
+
+## Signup reminders S1–S7 — 2026-11-20 (batch 260)
+
+Status: implemented for isolated review; not merged or released by this record.
+S1 merges Overview/Messages into a message list and editor using the merged B-6
+ListToolbar. S2 resets scope to All on mount and opens the sole error pool, otherwise
+Main. S3 uses All messages/Main CWL/Lazy CWL labels with phone extras visually hidden.
+S4 records Ruggie's revision: “Nothing says they need editing really, we edit them
+when we want to change them. BUT the error thing you show looks good.” Only send
+errors have red marks; there is no needs-editing/difference state, amber, or header
+count. Off/Unsaved are grey. Has error/Off filters preserve hidden draft edits.
+S5 uses Messages/Schedule/History and read-only send times. S6 uses whole rows,
+phone Back/Previous/Next and a desktop list/editor split, with explicit global and
+per-pool switches. S7 compacts status, moves Refresh to the toolbar, hides Pause
+when Off, explains its dirty restriction, removes repeated notes and raw role-ID
+editing, and limits the save bar to unsaved work/save errors. Existing confirmed
+Save/Pause bodies, generation, acting and dirty guards stay intact.
+
+Verification status and actual frontend/checker/mutation/native results belong to
+the review artifact; a mocked fixture is not proof of live Discord delivery.
+
+Later: backend “bot” wording in reminder responses (`sync_note`); tab/pool/message
+in the URL; rendered title line for custom emoji tokens in the Title field.

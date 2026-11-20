@@ -1,9 +1,12 @@
+// Optional local browser regression. Execute only with explicit browser authorization.
 const { chromium } = require("playwright");
 const fs = require("node:fs");
 const path = require("node:path");
 (async () => {
   const origin = process.argv[2] || "http://127.0.0.1:33917";
-  const output = process.argv[3] || ".local/p134-layout";
+  if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(origin))
+    throw Error("Isolated loopback fixture only");
+  const output = process.argv[3] || ".local/260-layout";
   fs.mkdirSync(output, { recursive: true });
   const browser = await chromium.launch({
     executablePath: "/usr/bin/google-chrome",
@@ -12,18 +15,18 @@ const path = require("node:path");
   });
   const proof = [];
   try {
-    for (const width of [360, 1440])
+    for (const width of [320, 360, 1440])
       for (const mode of [
         "",
         "different",
+        "errors",
         "paused",
         "off",
         "pending",
         "offline",
       ]) {
-        const page = await browser.newPage({
-          viewport: { width, height: 900 },
-        });
+        const height = width === 1440 ? 1000 : 800;
+        const page = await browser.newPage({ viewport: { width, height } });
         const errors = [];
         page.on("pageerror", (error) => errors.push(String(error)));
         await page.route("**/*", (route) =>
@@ -31,117 +34,112 @@ const path = require("node:path");
             ? route.continue()
             : route.abort(),
         );
-        await page.goto(`${origin}/signup-reminders-preview.html?${mode}`);
-        await page
-          .getByRole("heading", { name: "Messages for December 2026 CWL" })
-          .waitFor();
-        const announcement = page.getByRole("link", {
-          name: "Announcements ›",
-          exact: true,
-        });
-        const announcementUrl = new URL(
-          await announcement.getAttribute("href"),
-          origin,
+        await page.goto(
+          `${origin}/tests/fixtures/signup-reminders-preview.html?${mode}`,
         );
-        if (
-          announcementUrl.searchParams.get("step") !== "announce" ||
-          announcementUrl.searchParams.get("season") !== "42"
-        )
-          throw Error("Wrong roster announcement route");
-        const rows = page.locator(".signup-reminder-row");
-        if ((await rows.count()) !== 6) throw Error("Missing reminder row");
-        if (mode === "off") {
-          const text = (await rows.allTextContents()).join("\n");
-          if (/\bOn\b|No upcoming send|Nov 22/.test(text))
-            throw Error("Inactive rows imply a send");
-          if ((await rows.getByText("Not scheduled", { exact: false }).count()) < 6)
-            throw Error("Inactive scheduling state missing");
-        }
-        if (mode === "different") {
-          await page
-            .getByText("Destination: Different destination", { exact: true })
-            .waitFor();
-          await page
-            .getByText("Notify: Different notify", { exact: true })
-            .waitFor();
-          if (!(await page.getByText("Disabled", { exact: true }).count()))
-            throw Error("Disabled hidden");
-        }
-        if (mode === "pending")
-          await page
-            .getByText("Waiting for the bot to load changes", { exact: true })
-            .waitFor();
-        else if (mode === "offline")
-          await page.getByText("Bot offline", { exact: true }).waitFor();
-        else if (
-          await page
-            .getByText("Waiting for the bot to load changes", { exact: true })
-            .count()
-        )
-          throw Error("False warning");
+        const rows = page.locator(".reminder-message-row");
+        await rows.nth(5).waitFor();
+        if ((await rows.count()) !== 6) throw Error("Missing message row");
         if (
           await page.evaluate(
             () => document.documentElement.scrollWidth > innerWidth,
           )
         )
-          throw Error("Overflow");
+          throw Error("Horizontal overflow");
+        const tabs = await page
+          .locator('[aria-label="Reminder sections"] button')
+          .evaluateAll((nodes) =>
+            nodes.map((node) => ({
+              label: node.textContent,
+              clipped: node.scrollWidth > node.clientWidth,
+            })),
+          );
+        if (tabs.some((tab) => tab.clipped)) throw Error("Clipped tab label");
+        const row6 = await rows.nth(5).boundingBox();
+        const toolbar = await page
+          .locator(".reminder-list-toolbar > *")
+          .evaluateAll((nodes) =>
+            nodes.map((node) => node.getBoundingClientRect().top),
+          );
+        if (Math.max(...toolbar) - Math.min(...toolbar) > 3)
+          throw Error("Toolbar wraps");
+        if (width === 360 && !mode && row6.y + row6.height > 800)
+          throw Error(`Sixth row bottom ${row6.y + row6.height}`);
+        if (mode === "errors") {
+          await page
+            .getByText("2 messages have an error", { exact: true })
+            .waitFor();
+          if ((await page.locator(".reminder-row-error").count()) !== 2)
+            throw Error("Wrong per-pool error marks");
+        }
+        if (mode === "off") {
+          if (
+            await page
+              .getByRole("button", { name: "Pause reminders", exact: true })
+              .count()
+          )
+            throw Error("Off shows Pause");
+          if (
+            (await rows.getByText("Not scheduled", { exact: true }).count()) !==
+            6
+          )
+            throw Error("Off implies a send");
+        }
+        if (mode === "different") {
+          await page
+            .getByText("Lazy: Different destination", { exact: true })
+            .waitFor();
+          await page.getByText("Lazy: Off", { exact: true }).waitFor();
+        }
+        if (mode === "pending")
+          await page.getByText("Loading changes…", { exact: true }).waitFor();
+        if (mode === "offline")
+          await page.getByText("Reminders offline", { exact: true }).waitFor();
+        if (width === 1440) {
+          const list = await rows.first().boundingBox(),
+            editor = await page.locator(".reminder-editor").boundingBox();
+          if (editor.x <= list.x + list.width)
+            throw Error("Desktop editor is not beside list");
+        }
         await page.screenshot({
-          path: path.join(output, `${width}-${mode || "matching"}.png`),
+          path: path.join(output, `${width}-${mode || "base"}.png`),
           fullPage: true,
         });
+        if (!mode) {
+          await rows.first().click();
+          await page
+            .getByLabel("Title", { exact: true })
+            .fill("Kept fixture edit");
+          if (width < 1100) {
+            await page
+              .getByRole("button", { name: "Back to messages", exact: true })
+              .click();
+            await rows.first().click();
+            if (
+              (await page.getByLabel("Title", { exact: true }).inputValue()) !==
+              "Kept fixture edit"
+            )
+              throw Error("Back dropped draft");
+            await page.goBack();
+            if (await page.locator(".reminder-editor").count())
+              throw Error("Browser Back did not close editor");
+          }
+        }
+        const calls = await page.evaluate(() => window.reminderFixture.calls);
+        if (calls.some((call) => call.method !== "GET"))
+          throw Error("Unexpected fixture write");
         proof.push({
           width,
-          mode: mode || "matching",
-          rows: await rows.count(),
+          height,
+          mode: mode || "base",
+          row6Y: row6.y,
+          row6Bottom: row6.y + row6.height,
+          tabs,
+          toolbar,
+          calls,
           errors,
         });
         if (errors.length) throw Error(errors.join("\n"));
-        if (!mode) {
-          const edits = await rows.locator("button").count();
-          for (let index = 0; index < edits; index++) {
-            const label = await rows.locator("button").nth(index).textContent();
-            await rows.locator("button").nth(index).click();
-            const selected = await page
-              .locator("label")
-              .filter({ hasText: "Message to edit" })
-              .locator("select")
-              .inputValue();
-            const pool = index % 2 ? "lazy" : "main";
-            if (!label.includes(pool === "main" ? "Main" : "Lazy"))
-              throw Error("Wrong Edit label");
-            const audience = page
-              .getByRole("group", { name: "Message audience" })
-              .getByRole("button", {
-                name: pool === "main" ? "Main" : "Lazy",
-                exact: true,
-              });
-            if ((await audience.getAttribute("aria-pressed")) !== "true")
-              throw Error("Wrong pool");
-            proof.push({ width, edit: index, message: selected, pool });
-            await page
-              .getByRole("group", { name: "Reminder sections" })
-              .getByRole("button", { name: "Overview", exact: true })
-              .click();
-          }
-          await page
-            .getByRole("button", { name: "Pause reminders", exact: true })
-            .click();
-          await page.getByRole("dialog").waitFor();
-          await page
-            .getByRole("dialog")
-            .getByRole("button", { name: "Pause reminders", exact: true })
-            .click();
-          await page
-            .getByRole("button", { name: "Resume reminders", exact: true })
-            .waitFor();
-          const writes = await page.evaluate(() =>
-            window.reminderFixture.calls.filter(
-              (call) => call.method !== "GET",
-            ),
-          );
-          if (writes.length !== 1 || !writes[0].path.endsWith("/pause"))
-            throw Error("Unexpected writes");
-        }
         await page.close();
       }
     fs.writeFileSync(

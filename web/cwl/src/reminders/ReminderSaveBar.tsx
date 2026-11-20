@@ -63,7 +63,7 @@ export default function ReminderSaveBar({
                 await api<CampaignState>(base + "/preview", "POST", body),
               );
               setNotice(
-                "Preview ready. Review the schedule below before saving.",
+                "Preview ready. Review the schedule above before saving.",
               );
             })
           }

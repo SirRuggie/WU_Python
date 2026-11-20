@@ -1,5 +1,5 @@
 import type { Campaign, CampaignState, Occurrence } from "../reminderCampaign";
-import { shortReminderTime } from "./SignupReminderOverview";
+import { shortReminderTime, reminderStatusLabel } from "./reminderFormat";
 
 export default function ReminderSchedulePanel({
   draft,
@@ -7,12 +7,14 @@ export default function ReminderSchedulePanel({
   schedule,
   sentOccurrences,
   skipped,
+  timeZone,
 }: {
   draft: Campaign;
   preview: CampaignState | null;
   schedule: Occurrence[];
   sentOccurrences: string[] | undefined;
   skipped: string[] | undefined;
+  timeZone?: string;
 }) {
   return (
     <details
@@ -23,10 +25,6 @@ export default function ReminderSchedulePanel({
       <summary>
         {preview ? "Review schedule changes" : "View saved schedule"}
       </summary>
-      <p>
-        Times below use your browser timezone. Schedule timezone:{" "}
-        {draft.timezone}.
-      </p>
       {(preview?.protected_sent?.length || 0) > 0 && (
         <p className="notice">Already sent messages will not be sent again.</p>
       )}
@@ -39,18 +37,20 @@ export default function ReminderSchedulePanel({
                 {draft.messages[item.message_id]?.label || item.message_id}
               </strong>
               <span>{item.variant === "main" ? "Main" : "Lazy"}</span>
-              <time>{shortReminderTime(item.run_at)}</time>
+              <time>{shortReminderTime(item.run_at, timeZone)}</time>
               <small>
-                {item.status ||
-                  (sentOccurrences?.includes(item.id)
-                    ? "Sent"
-                    : skipped?.includes(item.id)
-                      ? "Skipped"
-                      : draft.paused
-                        ? "Paused"
-                        : item.run_at && new Date(item.run_at) > new Date()
-                          ? "Upcoming"
-                          : "Check delivery history")}
+                {reminderStatusLabel(
+                  item.status ||
+                    (sentOccurrences?.includes(item.id)
+                      ? "sent"
+                      : skipped?.includes(item.id)
+                        ? "skipped"
+                        : draft.paused
+                          ? "paused"
+                          : item.run_at && new Date(item.run_at) > new Date()
+                            ? "pending"
+                            : "uncertain"),
+                )}
               </small>
             </div>
           ))}

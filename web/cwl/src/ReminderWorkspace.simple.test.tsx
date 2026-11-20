@@ -40,7 +40,7 @@ it("keeps six editable rows and directs roster posts to season Announcements wit
         <ReminderWorkspace seasonId="42" archived={false} onDirty={() => {}} />,
       ),
     );
-    expect(host.querySelectorAll(".signup-reminder-row")).toHaveLength(6);
+    expect(host.querySelectorAll(".reminder-message-row")).toHaveLength(6);
     const link = [...host.querySelectorAll("a")].find(
       (link) => link.textContent === "Announcements ›",
     )!;
@@ -56,7 +56,9 @@ it("keeps six editable rows and directs roster posts to season Announcements wit
     });
     expect(host.textContent).not.toContain("Waiting for changes to load");
 
-    expect(host.textContent).toContain("Messages for December 2026 CWL");
+    expect(
+      host.querySelector('[role="tab"][aria-selected="true"]')?.textContent,
+    ).toBe("Messages");
     await act(async () =>
       [...host.querySelectorAll("button")]
         .find((button) => button.textContent === "Messages")!
@@ -66,12 +68,12 @@ it("keeps six editable rows and directs roster posts to season Announcements wit
       [...host.querySelectorAll("button")].some(
         (button) => button.textContent === "Save changes",
       ),
-    ).toBe(true);
+    ).toBe(false);
     expect(
       [...host.querySelectorAll("button")].some(
         (button) => button.textContent === "Preview schedule",
       ),
-    ).toBe(true);
+    ).toBe(false);
   } finally {
     await act(async () => root.unmount());
     host.remove();
@@ -106,10 +108,13 @@ it.each([500, 403])(
       fail = true;
       await act(async () => {
         [...host.querySelectorAll("button")]
-          .find((button) => button.textContent === "Refresh")!
+          .find(
+            (button) =>
+              button.getAttribute("aria-label") === "Refresh reminders",
+          )!
           .click();
       });
-      expect(host.querySelectorAll(".signup-reminder-row")).toHaveLength(
+      expect(host.querySelectorAll(".reminder-message-row")).toHaveLength(
         status === 500 ? 6 : 0,
       );
       expect(host.querySelector('[role="alert"]')).toBeTruthy();
@@ -188,7 +193,11 @@ it.each([
           />,
         ),
       );
-      await act(async () => button("Messages").click());
+      await act(async () =>
+        host
+          .querySelector<HTMLButtonElement>('[data-reminder-message="signup"]')!
+          .click(),
+      );
       const title = [...host.querySelectorAll("label")]
         .find((label) => label.firstChild?.textContent === "Title")!
         .querySelector("input")!;
@@ -284,17 +293,22 @@ it("renders deleted channel and role names without exposing their Discord IDs", 
       ),
     );
     expect(host.textContent).toContain("Unknown channel");
-    expect(host.textContent).toContain("Deleted role");
+    expect(host.textContent).toContain("Unknown role");
     expect(host.textContent).not.toMatch(/\b\d{17,20}\b/);
     await act(async () =>
       [...host.querySelectorAll("button")]
         .find((button) => button.textContent === "Messages")!
         .click(),
     );
-    expect(host.textContent).toContain("Deleted role");
+    expect(host.textContent).toContain("Unknown role");
     expect(host.textContent).not.toMatch(/\b\d{17,20}\b/);
+    await act(async () =>
+      host
+        .querySelector<HTMLButtonElement>('[data-reminder-message="signup"]')!
+        .click(),
+    );
     expect(
-      host.querySelector('button[aria-label="Remove deleted role"]'),
+      host.querySelector('button[aria-label="Remove unknown role"]'),
     ).toBeTruthy();
     expect(
       vi

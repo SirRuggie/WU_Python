@@ -8,6 +8,20 @@ import "../../src/workflowControls.css";
 import "../../src/accessibility.css";
 const query = new URLSearchParams(location.search);
 let campaign = structuredClone(initial) as Campaign;
+// Fixture-only assets and text are local; no Discord/CDN loads or live data.
+for (const message of Object.values(campaign.messages))
+  for (const variant of Object.values(message.variants)) {
+    variant.media_url = "";
+    variant.title = variant.title.replace(/<:[^:>]+:\d+>/g, "CWL");
+    variant.body = variant.body
+      .replace(/<#\d+>/g, "#help")
+      .replace(/<@&\d+>/g, "members");
+  }
+if (query.has("errors")) {
+  campaign.messages["reminder:3"].variants.lazy.destination_channel_id =
+    "missing-channel";
+  campaign.messages["reminder:4"].variants.main.title = "";
+}
 if (query.has("different")) {
   campaign.messages["reminder:3"].variants.lazy.destination_channel_id =
     "channel-special";
@@ -84,7 +98,28 @@ window.fetch = async (input, options) => {
     campaign.paused = body.paused;
     revision++;
   } else if (method === "PATCH") {
-    campaign = { ...campaign, ...body.patch };
+    if (String(body.generation) !== String(revision))
+      return Response.json(
+        { error: "Saved reminders changed. Refresh before saving." },
+        { status: 409 },
+      );
+    const merge = (
+      target: Record<string, unknown>,
+      patch: Record<string, unknown>,
+    ) => {
+      for (const [key, value] of Object.entries(patch)) {
+        if (value && typeof value === "object" && !Array.isArray(value)) {
+          const next =
+            target[key] && typeof target[key] === "object" ? target[key] : {};
+          target[key] = next;
+          merge(
+            next as Record<string, unknown>,
+            value as Record<string, unknown>,
+          );
+        } else target[key] = value;
+      }
+    };
+    merge(campaign as unknown as Record<string, unknown>, body.patch);
     revision++;
   }
   return Response.json(state());

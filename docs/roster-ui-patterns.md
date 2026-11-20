@@ -335,12 +335,12 @@ Every group of choices on the dashboard uses one of four patterns. Prompt 191
 introduced A and B; B-6 added C. Prompt258 adds D under Ruggie's R1 amendment
 (2026-11-20).
 
-| Pattern             | Use                                                                                                                                                                                  | Component                                                                               | Selected look                                                       |
-| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
-| A. Section tabs     | Switch views inside one page (Strikes, Tasks, Tickets, Moderation, Clan settings, roster views)                                                                                      | `SectionTabs`, or `section-tabs section-tabs--flow` on a custom rail                    | Gold text, gold underline                                           |
-| B. Filter chips     | Filter one list (clan type, Town Hall, search kinds)                                                                                                                                 | `FilterChips`, `variant="pill"` for pills                                               | Gold outline, gold text                                             |
-| C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look                                                           | `nav-list` class (`navList.css`)                                                        | Gold edge, 3px gold left bar, gold bold text                        |
-| D. List toolbar     | Optional segmented list scope (All/Main/Lazy, Main/Lazy, All/Main/FWA), Filters and optional Sort in one row; Build roster, Results, Strikes, Members, Declaration check and Tickets | `rosterUi/ListToolbar`, `FiltersTrigger`, `SectionTabs mode="segmented"`, `SortTrigger` | Existing segmented scope treatment; normal Filters and Sort buttons |
+| Pattern             | Use                                                                                                                                                                                                    | Component                                                                               | Selected look                                                       |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------- | ------------------------------------------------------------------- |
+| A. Section tabs     | Switch views inside one page (Strikes, Tasks, Tickets, Moderation, Clan settings, roster views)                                                                                                        | `SectionTabs`, or `section-tabs section-tabs--flow` on a custom rail                    | Gold text, gold underline                                           |
+| B. Filter chips     | Filter one list (clan type, Town Hall, search kinds)                                                                                                                                                   | `FilterChips`, `variant="pill"` for pills                                               | Gold outline, gold text                                             |
+| C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look                                                                             | `nav-list` class (`navList.css`)                                                        | Gold edge, 3px gold left bar, gold bold text                        |
+| D. List toolbar     | Optional segmented list scope (All/Main/Lazy, Main/Lazy, All/Main/FWA), Filters and optional Sort in one row; Build roster, Results, Strikes, Members, Declaration check, Tickets and Signup reminders | `rosterUi/ListToolbar`, `FiltersTrigger`, `SectionTabs mode="segmented"`, `SortTrigger` | Existing segmented scope treatment; normal Filters and Sort buttons |
 
 - No solid-gold selected state. Segmented control only as the scope control in pattern D. Unselected navigation items keep the normal button look.
 - Pattern D keeps full-width search above the controls where the page uses a search field. Results keeps Main/Lazy as underline tabs because the pool changes whole content. Strikes keeps its phone View select and existing search-icon row. Optional slots do not introduce a sort where none exists.
@@ -1098,3 +1098,22 @@ Phone search occupies the first toolbar row; the second gives All/Main/Lazy equa
 The one confirmation round covers 220 UI cells: 26/65/125 accounts, 320/360/390/1024/1280/1440 widths, All/Main/Lazy, draft/published and zero/some unplaced, plus closed/hidden signup cases. All 14 root-owned case commands exited zero. Every UI cell has unchanged protected fixture state and season/member settings, no document overflow, no browser/HTTP/external errors and no application write except synthetic fixture login. The two unchanged D6 mock JPEGs are reused; they were rendered from the approved HTML because the original PNG files were unavailable. Builder Header regressions (18), independent frontend tests (2,803 in 404 files), type, Vite, scoped format and diff checks pass. The 1,066 Python files match the earlier 9,370-pass backend/war-gate snapshot; those suites were not repeated for the CSS correction.
 
 The initial layout failures, earlier test failures and two exit143 interruptions of unknown cause remain in the self-contained report. One incomplete image without a post-cell proof remains failed/noncanonical and was explicitly completed once by the parent. Evidence is isolated fixture review, not live Discord delivery, physical-device, assistive-technology or all-page verification.
+
+### Signup reminders: message list + editor (S1–S7, 2026-11-20)
+
+Signup reminders uses B-6 pattern D, the shared `ListToolbar`: local scope
+All/Main/Lazy, Filters (Has error/Off), Sort (Send time/Name), and Refresh.
+All is the default on each page mount. At phone widths, extra scope words remain
+available to screen readers. Each whole message row shows its next send time and
+the destinations for the visible pools. Selecting it opens an editor in place
+below 1100 px, with Back and Previous/Next; desktop keeps the list beside it.
+Navigation and filtering preserve the single campaign draft.
+
+Error marks are red only: missing/unknown channel, unknown role, empty title or
+message for an enabled version. There is no needs-editing state or amber difference
+mark. Failed/loading name lookups suppress unknown-name errors and show grey Names
+unavailable; Off and Unsaved are grey. Errors do not block Save. Empty numeric
+buffers do block Preview/Save and retain unsaved-navigation protection until
+corrected or explicitly discarded. The global message switch names both pools;
+the version switch changes only the edited pool. The existing confirmed writes
+and generation checks remain the storage contract.
