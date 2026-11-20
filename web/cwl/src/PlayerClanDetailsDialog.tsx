@@ -7,6 +7,7 @@ import {
 } from "react";
 import { createPortal } from "react-dom";
 import type { Account, Clan, Session } from "./api";
+import type { GameResult } from "./dashboardSearch";
 import DashboardIcon from "./DashboardIcon";
 import DiscordIdentity from "./DiscordIdentity";
 import { clanDeepLink } from "./publication";
@@ -17,6 +18,7 @@ import "./PlayerClanDetailsDialog.css";
 type Freshness = "current" | "partial" | "saved" | "unavailable";
 
 type CommonProps = {
+  publicData?: GameResult;
   freshness: Freshness;
   loadedAt?: string | null;
   onClose: () => void;
@@ -142,6 +144,7 @@ export default function PlayerClanDetailsDialog(props: PlayerClanDetailsProps) {
     }
   }
 
+  const publicView = props.publicData?.source === "clash";
   const player = props.kind === "player" ? props.account : null;
   const clanMembers =
     props.kind === "clan"
@@ -171,13 +174,25 @@ export default function PlayerClanDetailsDialog(props: PlayerClanDetailsProps) {
           {player ? (
             <TownHallIcon level={player.town_hall} />
           ) : badgeUrl ? (
-            <img src={badgeUrl} alt="" width={40} height={40} referrerPolicy="no-referrer" />
+            <img
+              src={badgeUrl}
+              alt=""
+              width={40}
+              height={40}
+              referrerPolicy="no-referrer"
+            />
           ) : (
             <DashboardIcon name="shield" />
           )}
         </div>
         <div className="player-clan-details-identity">
-          <p className="eyebrow">{player ? "Linked player" : "Clan"}</p>
+          <p className="eyebrow">
+            {player
+              ? props.publicData?.source === "clash"
+                ? "Player"
+                : "Linked player"
+              : "Clan"}
+          </p>
           <h2 id={titleId}>{name}</h2>
           <span>{tag}</span>
         </div>
@@ -202,14 +217,22 @@ export default function PlayerClanDetailsDialog(props: PlayerClanDetailsProps) {
                 {player.town_hall == null ? "Unavailable" : player.town_hall}
               </dd>
             </div>
-            <div title="Roster weight; not a measure of player skill">
-              <dt>Roster weight</dt>
-              <dd>
-                {player.war_weight == null
-                  ? "Unavailable"
-                  : weightText(player.war_weight)}
-              </dd>
-            </div>
+            {!publicView && (
+              <div title="Roster weight; not a measure of player skill">
+                <dt>Roster weight</dt>
+                <dd>
+                  {player.war_weight == null
+                    ? "Unavailable"
+                    : weightText(player.war_weight)}
+                </dd>
+              </div>
+            )}
+            {props.publicData?.trophies != null && (
+              <div>
+                <dt>Trophies</dt>
+                <dd>{props.publicData.trophies}</dd>
+              </div>
+            )}
           </dl>
           <section className="player-clan-details-section">
             <h3>Current clan</h3>
@@ -221,7 +244,7 @@ export default function PlayerClanDetailsDialog(props: PlayerClanDetailsProps) {
                 <small> {player.current_clan_tag}</small>
               ) : null}
             </p>
-            {player.current_clan_tag && (
+            {player.current_clan_tag && !publicView && (
               <small>
                 {player.family_clan_status === "approved"
                   ? "Warriors United family clan"
@@ -245,48 +268,77 @@ export default function PlayerClanDetailsDialog(props: PlayerClanDetailsProps) {
       ) : (
         props.kind === "clan" && (
           <>
-            <p className="player-clan-details-clan-meta">
-              {props.clan
-                ? props.clan.archived
-                  ? "Archived family entry"
-                  : "Family clan"
-                : "Clan of a linked player"}
-              {props.clan?.cwl_league && (
-                <>
-                  {" "}
-                  · CWL league: {props.clan.cwl_league}
-                  {props.clan.cwl_league_stale ? " (may be outdated)" : ""}
-                </>
-              )}
-            </p>
-            <section className="player-clan-details-section">
-              <h3>Your linked players here</h3>
-              <p>
-                {props.freshness === "unavailable"
-                  ? "Linked player count is unavailable while account data cannot load."
-                  : props.freshness === "partial"
-                    ? `${clanMembers.length} linked player${clanMembers.length === 1 ? "" : "s"} available so far in this clan. The list may be incomplete.`
-                    : `${clanMembers.length} of your linked player${clanMembers.length === 1 ? "" : "s"} currently shown in this clan. This is not the full clan roster.`}
-              </p>
-              {clanMembers.length > 0 && (
-                <details>
-                  <summary>Show linked players</summary>
-                  <ul>
-                    {clanMembers.map((account) => (
-                      <li key={account.tag}>
-                        <strong>{account.name}</strong>
-                        <span>
-                          {account.tag}
-                          {account.town_hall == null
-                            ? ""
-                            : ` · TH ${account.town_hall}`}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-            </section>
+            {publicView ? (
+              <dl className="player-clan-details-facts">
+                <div>
+                  <dt>Level</dt>
+                  <dd>{props.publicData?.level ?? "Unavailable"}</dd>
+                </div>
+                <div>
+                  <dt>Members</dt>
+                  <dd>{props.publicData?.members ?? "Unavailable"}</dd>
+                </div>
+                <div>
+                  <dt>War league</dt>
+                  <dd>{props.publicData?.war_league ?? "Unavailable"}</dd>
+                </div>
+                <div>
+                  <dt>Public war log</dt>
+                  <dd>
+                    {props.publicData?.public_war_log == null
+                      ? "Unavailable"
+                      : props.publicData?.public_war_log
+                        ? "Yes"
+                        : "No"}
+                  </dd>
+                </div>
+              </dl>
+            ) : (
+              <>
+                <p className="player-clan-details-clan-meta">
+                  {props.clan
+                    ? props.clan.archived
+                      ? "Archived family entry"
+                      : "Family clan"
+                    : "Clan of a linked player"}
+                  {props.clan?.cwl_league && (
+                    <>
+                      {" "}
+                      · CWL league: {props.clan.cwl_league}
+                      {props.clan.cwl_league_stale ? " (may be outdated)" : ""}
+                    </>
+                  )}
+                </p>
+                <section className="player-clan-details-section">
+                  <h3>Your linked players here</h3>
+                  <p>
+                    {props.freshness === "unavailable"
+                      ? "Linked player count is unavailable while account data cannot load."
+                      : props.freshness === "partial"
+                        ? `${clanMembers.length} linked player${clanMembers.length === 1 ? "" : "s"} available so far in this clan. The list may be incomplete.`
+                        : `${clanMembers.length} of your linked player${clanMembers.length === 1 ? "" : "s"} currently shown in this clan. This is not the full clan roster.`}
+                  </p>
+                  {clanMembers.length > 0 && (
+                    <details>
+                      <summary>Show linked players</summary>
+                      <ul>
+                        {clanMembers.map((account) => (
+                          <li key={account.tag}>
+                            <strong>{account.name}</strong>
+                            <span>
+                              {account.tag}
+                              {account.town_hall == null
+                                ? ""
+                                : ` · TH ${account.town_hall}`}
+                            </span>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </section>
+              </>
+            )}
           </>
         )
       )}

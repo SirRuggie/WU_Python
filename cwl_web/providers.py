@@ -6,7 +6,7 @@ import os
 import re
 import time
 from datetime import datetime, timezone
-from urllib.parse import quote, urlsplit
+from urllib.parse import quote, urlsplit, urlencode
 
 import aiohttp
 from pymongo import AsyncMongoClient, timeout
@@ -244,14 +244,61 @@ class LiveProviders:
         return {"tag": tag(body["tag"]), "name": body["name"], "town_hall": body["townHallLevel"],
                 "current_clan_tag": clan_tag,
                 "current_clan_name": clan.get("name") if isinstance(clan.get("name"), str) else None,
-                "current_clan_badge_url": _clan_badge_url(clan)}
+                "current_clan_badge_url": _clan_badge_url(clan),
+                **({"trophies": body["trophies"]} if type(body.get("trophies")) is int and body["trophies"] >= 0 else {})}
+
+    async def search_clans(self, name, limit=10):
+        """Public official-API clan search; no account-link/history fallback."""
+        if not isinstance(name, str) or len(name.strip()) < 3:
+            return []
+        if len(name.strip()) > 40 or type(limit) is not int or not 1 <= limit <= 10:
+            raise ValueError("Invalid clan search")
+        body = await self._clash_json("/clans?" + urlencode({"name": name.strip(), "limit": limit}))
+        if not isinstance(body, dict) or not isinstance(body.get("items"), list) or len(body["items"]) > limit:
+            raise ProviderUnavailable("Invalid clan search response")
+        result = []
+        seen = set()
+        for item in body["items"]:
+            if (not isinstance(item, dict) or not isinstance(item.get("name"), str)
+                    or not 1 <= len(item["name"].strip()) <= 100 or type(item.get("clanLevel")) is not int
+                    or not 1 <= item["clanLevel"] <= 100 or type(item.get("members")) is not int
+                    or not 0 <= item["members"] <= 50):
+                raise ProviderUnavailable("Invalid clan search result")
+            try:
+                value = tag(item.get("tag"))
+            except ValueError as exc:
+                raise ProviderUnavailable("Invalid clan search tag") from exc
+            if value in seen:
+                raise ProviderUnavailable("Duplicate clan search result")
+            seen.add(value)
+            league = item.get("warLeague")
+            if league is None:
+                league = {}
+            if not isinstance(league, dict) or not isinstance(league.get("name", "Unranked"), str):
+                raise ProviderUnavailable("Invalid clan search league")
+            result.append({"tag": value, "name": item["name"], "level": item["clanLevel"],
+                           "members": item["members"], "badge_url": _clan_badge_url(item),
+                           "war_league": league.get("name", "Unranked")})
+        return result
 
     async def clan(self, value):
         body = await self._coc("clans", value)
-        if not isinstance(body.get("name"), str):
+        league = body.get("warLeague") or {}
+        if not isinstance(body.get("name"), str) or not isinstance(league, dict):
             raise ProviderUnavailable("Incomplete clan data")
-        return {"tag": tag(body["tag"]), "name": body["name"],
-                "cwl_league": (body.get("warLeague") or {}).get("name") or "Unranked"}
+        result = {"tag": tag(body["tag"]), "name": body["name"],
+                  "cwl_league": league.get("name") or "Unranked",
+                  "badge_url": _clan_badge_url(body)}
+        for source, target, low, high in (("clanLevel", "level", 1, 100), ("members", "members", 0, 50)):
+            if source in body:
+                if type(body[source]) is not int or not low <= body[source] <= high:
+                    raise ProviderUnavailable("Invalid public clan details")
+                result[target] = body[source]
+        if "isWarLogPublic" in body:
+            if type(body["isWarLogPublic"]) is not bool:
+                raise ProviderUnavailable("Invalid public war log flag")
+            result["public_war_log"] = body["isWarLogPublic"]
+        return result
 
 
     async def clan_roster(self, value):
@@ -506,6 +553,10 @@ class FixtureProviders:
             "#Q2Y": {"tag": "#Q2Y", "name": "Dev Guardian", "town_hall": 15, "current_clan_tag": "#R2Y", "current_clan_name": "Fixture Family"},
             "#G2Y": {"tag": "#G2Y", "name": "Dev Wanderer", "town_hall": 14, "current_clan_tag": "#J2Y", "current_clan_name": "Other Fixture Clan"},
         }
+        self.search_players = {
+            "#V2Y": {"tag": "#V2Y", "name": "Fixture visitor", "town_hall": 19,
+                      "current_clan_tag": "#Y2Y", "current_clan_name": "Fixture public clan", "trophies": 3210},
+        }
 
     async def weights(self, tags):
         fictional = {"#P2Y": 176000, "#Q2Y": 168000, "#G2Y": 159000}
@@ -524,12 +575,31 @@ class FixtureProviders:
         return {value: True for value in self.players} if str(user_id) == self.owner_id else {}
 
     async def player(self, value):
-        return self.players[tag(value)].copy()
+        value = tag(value)
+        if value in self.search_players:
+            return self.search_players[value].copy()
+        if value not in self.players:
+            error = ProviderUnavailable("Fixture player not found")
+            error.status_code = 404
+            raise error
+        return self.players[value].copy()
 
     async def clan(self, value):
         value = tag(value)
-        names = {"#R2Y": "Fixture Family", "#J2Y": "Other Fixture Clan", "#C2Y": "Fixture Hosting"}
-        return {"tag": value, "name": names.get(value, "Fixture Clan")}
+        names = {"#R2Y": "Fixture Family", "#J2Y": "Other Fixture Clan", "#C2Y": "Fixture Hosting", "#Y2Y": "Fixture public clan"}
+        return {"tag": value, "name": names.get(value, "Fixture Clan"), "level": 18,
+                "members": 25, "cwl_league": "Gold League I", "public_war_log": True, "badge_url": None}
+
+    async def search_clans(self, name, limit=10):
+        if not isinstance(name, str) or len(name.strip()) < 3:
+            return []
+        clans = [{"tag": "#R2Y", "name": "Fixture Family", "level": 20, "members": 25,
+                  "badge_url": None, "war_league": "Crystal League I"},
+                 {"tag": "#C2Y", "name": "Fixture Hosting", "level": 18, "members": 30,
+                  "badge_url": None, "war_league": "Gold League I"},
+                 {"tag": "#Y2Y", "name": "Fixture public clan", "level": 18, "members": 25,
+                  "badge_url": None, "war_league": "Gold League I"}]
+        return [row for row in clans if name.casefold().strip() in row["name"].casefold()][:limit]
 
     async def weight_war_lineup(self, value):
         raise ProviderUnavailable('No current war lineup is available.')

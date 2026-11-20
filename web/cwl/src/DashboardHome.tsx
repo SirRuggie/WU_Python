@@ -1,3 +1,5 @@
+import GameSearch from "./GameSearch";
+import HomeSignupSummary from "./HomeSignupSummary";
 import EmptyState from "./EmptyState";
 import LoadError from "./LoadError";
 import RefreshControl from "./RefreshControl";
@@ -5,7 +7,7 @@ import CwlPageHeader from "./CwlPageHeader";
 import { visibleRefresh } from "./visibleRefresh";
 import { ArrowRight } from "lucide-react";
 import { memberSignupsOpen } from "./memberSeason";
-import MemberSignupStatus, { signupHeading } from "./MemberSignupStatus";
+import { signupHeading } from "./MemberSignupStatus";
 import { useJourneyState, useJourneyPosition } from "./journeyState";
 import {
   loadAccountDisplay,
@@ -23,6 +25,7 @@ import {
   api,
   ApiError,
   type Account,
+  type Clan,
   type Pool,
   type Season,
   type Session,
@@ -134,6 +137,7 @@ export function homeNextStep(
   };
 }
 type Props = {
+  onTasks?: (tag: string) => void;
   session: Session;
   seasonId: string;
   /** Season and step the staff-tool links open with. */
@@ -219,6 +223,68 @@ export default function DashboardHome(props: Props) {
   const [error, setError] = useState("");
   const [refreshing, setRefreshing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const sessionKey = `${session.user.id}:${session.csrf_token}:${session.can_edit}`;
+  const authDenied = useRef(false);
+  const [directoryAttempt, setDirectoryAttempt] = useState(0);
+  const [directory, setDirectory] = useState<{
+    key: string;
+    clans: Clan[];
+    busy: boolean;
+    error: string;
+  }>({ key: sessionKey, clans: [], busy: session.can_edit, error: "" });
+  useEffect(() => {
+    authDenied.current = false;
+  }, [sessionKey]);
+  useEffect(() => {
+    let active = true;
+    setDirectory({
+      key: sessionKey,
+      clans: [],
+      busy: session.can_edit,
+      error: "",
+    });
+    if (!session.can_edit) return;
+    void api<{ clans: Clan[] }>("/approved-clans").then(
+      (result) => {
+        if (active && !authDenied.current)
+          setDirectory({
+            key: sessionKey,
+            clans: result.clans,
+            busy: false,
+            error: "",
+          });
+      },
+      (failure) => {
+        if (!active) return;
+        const denied =
+          failure instanceof ApiError && [401, 403].includes(failure.status);
+        if (denied) {
+          authDenied.current = true;
+          lastComplete.current = null;
+          setData(null);
+          setSelected([]);
+          setDetail(null);
+          setCached(false);
+          setPartial(false);
+          setError("Your dashboard access changed. Sign in again.");
+        }
+        setDirectory({
+          key: sessionKey,
+          clans: [],
+          busy: false,
+          error: denied ? "" : "Some family results could not load. Try again.",
+        });
+      },
+    );
+    return () => {
+      active = false;
+    };
+  }, [sessionKey, directoryAttempt]);
+  const currentDirectory =
+    directory.key === sessionKey && session.can_edit
+      ? directory
+      : { clans: [], busy: session.can_edit, error: "" };
+
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<string[]>([]);
   const [filter, setFilter] = useJourneyState<AccountFilter>(
@@ -264,6 +330,7 @@ export default function DashboardHome(props: Props) {
         const showProgress = () => {
           if (
             cancelled ||
+            authDenied.current ||
             generation !== readGeneration.current ||
             !accepting ||
             !context ||
@@ -288,7 +355,10 @@ export default function DashboardHome(props: Props) {
             showProgress();
           },
           () =>
-            !cancelled && generation === readGeneration.current && accepting,
+            !cancelled &&
+            !authDenied.current &&
+            generation === readGeneration.current &&
+            accepting,
           refreshKey > 0,
         );
         const contextRead = Promise.all([
@@ -323,7 +393,11 @@ export default function DashboardHome(props: Props) {
           accountRead,
           contextRead,
         ]);
-        if (!cancelled && generation === readGeneration.current) {
+        if (
+          !cancelled &&
+          !authDenied.current &&
+          generation === readGeneration.current
+        ) {
           const snapshot: Snapshot = {
             ...resolved,
             accounts: accounts.accounts,
@@ -351,6 +425,13 @@ export default function DashboardHome(props: Props) {
         accepting = false;
         if (!cancelled && generation === readGeneration.current) {
           if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
+            authDenied.current = true;
+            setDirectory({
+              key: sessionKey,
+              clans: [],
+              busy: false,
+              error: "",
+            });
             lastComplete.current = null;
             setData(null);
             setSelected([]);
@@ -379,7 +460,7 @@ export default function DashboardHome(props: Props) {
       cancelled = true;
       refreshRead.current = () => {};
     };
-  }, [seasonId, seasonsKnown, refreshKey]);
+  }, [seasonId, seasonsKnown, refreshKey, sessionKey]);
   useEffect(() => {
     if (paused) return;
     const tick = () => refreshRead.current();
@@ -403,7 +484,8 @@ export default function DashboardHome(props: Props) {
     [data],
   );
   const visible = useMemo(
-    () => filterDashboardRows(rows, filter, search, sort),
+    () =>
+      filterDashboardRows(rows, filter, rows.length > 10 ? search : "", sort),
     [rows, filter, search, sort],
   );
   const detailPlayer =
@@ -580,7 +662,9 @@ export default function DashboardHome(props: Props) {
         />
       )}
       {!attentionState && complete && data && season ? (
-        <MemberSignupStatus
+        <HomeSignupSummary
+          key={`${session.csrf_token}:${seasonId}`}
+          sessionKey={`${session.csrf_token}:${seasonId}`}
           signups={data.signups.map((signup) => ({
             ...signup,
             assigned_clan_tag: data.assignments.accounts.find(
@@ -641,16 +725,19 @@ export default function DashboardHome(props: Props) {
           Open tasks <ArrowRight size={16} aria-hidden="true" />
         </DashboardLink>
       </section>
+      <GameSearch
+        compact
+        accounts={data?.accounts || []}
+        family={currentDirectory.clans}
+        familyBusy={
+          currentDirectory.busy || refreshing || (!data && !attentionError)
+        }
+        familyError={currentDirectory.error}
+        onRetryFamily={() => setDirectoryAttempt((value) => value + 1)}
+        session={session}
+        onTasks={props.onTasks || (() => onNavigate("todo"))}
+      />
       <div className="home-quick-links">
-        <DashboardLink
-          className="button home-search-entry"
-          href={dashboardPath({ view: "search", season: "" })}
-          onNavigate={() => onNavigate("search")}
-        >
-          <DashboardIcon name="search" />
-          <span>Search your players and clans</span>
-          <kbd>Ctrl / ⌘ K</kbd>
-        </DashboardLink>
         <nav className="home-activity-links" aria-label="Activity">
           <DashboardLink
             className="button"
@@ -668,6 +755,34 @@ export default function DashboardHome(props: Props) {
           </DashboardLink>
         </nav>
       </div>
+      {session.can_edit && (
+        <section className="hub-staff">
+          <h3>Staff tools</h3>
+          <div>
+            {(
+              [
+                ["roster", "Build roster"],
+                ["publication", "Finalize roster"],
+                ["staff", "Seasons"],
+              ] as const
+            ).map(([view, label]) => (
+              <DashboardLink
+                key={view}
+                className="button"
+                href={dashboardPath({
+                  view,
+                  season: staffSeasonId,
+                  step: view === "publication" ? publicationStep : undefined,
+                })}
+                onNavigate={() => onNavigate(view)}
+              >
+                {label}
+                <ArrowRight aria-hidden="true" size={16} />
+              </DashboardLink>
+            ))}
+          </div>
+        </section>
+      )}
       {(rows.length > 0 || !attentionState) && (
         <>
           <div className="hub-stats" aria-label="Account overview">
@@ -737,15 +852,17 @@ export default function DashboardHome(props: Props) {
             </DashboardLink>
           </div>
           <div className="hub-toolbar">
-            <label>
-              Find a player or clan
-              <input
-                type="search"
-                placeholder="Find a player or clan"
-                value={search}
-                onChange={(event) => setSearch(event.target.value)}
-              />
-            </label>
+            {rows.length > 10 && (
+              <label>
+                Filter accounts
+                <input
+                  type="search"
+                  placeholder="Filter accounts"
+                  value={search}
+                  onChange={(event) => setSearch(event.target.value)}
+                />
+              </label>
+            )}
             <label>
               Show
               <select
@@ -1003,34 +1120,6 @@ export default function DashboardHome(props: Props) {
             Open My signups →
           </DashboardLink>
         </details>
-        {session.can_edit && (
-          <section className="hub-staff">
-            <h3>Staff tools</h3>
-            <div>
-              {(
-                [
-                  ["roster", "Build roster"],
-                  ["publication", "Finalize roster"],
-                  ["staff", "Seasons"],
-                ] as const
-              ).map(([view, label]) => (
-                <DashboardLink
-                  key={view}
-                  className="button"
-                  href={dashboardPath({
-                    view,
-                    season: staffSeasonId,
-                    step: view === "publication" ? publicationStep : undefined,
-                  })}
-                  onNavigate={() => onNavigate(view)}
-                >
-                  {label}
-                  <ArrowRight aria-hidden="true" size={16} />
-                </DashboardLink>
-              ))}
-            </div>
-          </section>
-        )}
       </div>
       {detailPlayer && (
         <PlayerClanDetailsDialog

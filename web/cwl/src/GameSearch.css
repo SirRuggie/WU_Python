@@ -1,0 +1,39 @@
+.game-search {
+  min-width: 0;
+}
+.game-search form {
+  display: flex;
+  align-items: stretch;
+  gap: 12px;
+}
+.game-search form .global-search-field {
+  flex: 1;
+  min-width: 0;
+}
+.game-search-open {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
+  background: transparent;
+  border: 0;
+}
+.game-search-open strong,
+.game-search-open small {
+  overflow-wrap: anywhere;
+}
+.game-search-open small {
+  color: var(--wu-muted, #b8b8bd);
+}
+.game-search--home {
+  margin-block: 20px;
+}
+@media (max-width: 480px) {
+  .game-search form {
+    flex-wrap: wrap;
+  }
+  .game-search form .global-search-field {
+    flex-basis: 100%;
+  }
+}

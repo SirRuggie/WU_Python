@@ -657,15 +657,6 @@
   margin: var(--wu-space-3) 0 var(--wu-space-4);
 }
 
-.dashboard-home .home-search-entry {
-  flex: 1;
-  width: auto;
-  min-width: 0;
-  margin: 0;
-  border-radius: var(--wu-radius-md);
-  background: transparent;
-}
-
 .dashboard-home .home-activity-links {
   flex: none;
   margin: 0;
@@ -692,9 +683,7 @@
   .home-quick-links {
     display: block;
   }
-  .dashboard-home .home-search-entry {
-    width: 100%;
-  }
+
   .dashboard-home .home-activity-links {
     margin-top: var(--wu-space-1);
   }
@@ -838,4 +827,27 @@
     background: transparent;
     color: var(--wu-accent-hover);
   }
+}
+
+.home-signup-summary {
+  border: 1px solid var(--success, #3a9b65);
+  border-radius: 14px;
+  background: #18392a;
+}
+.home-signup-summary > summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 14px;
+  min-height: 44px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.home-signup-summary > summary > span:last-child {
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+.home-signup-summary > .member-signup-status {
+  margin: 12px;
 }

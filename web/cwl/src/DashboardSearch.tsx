@@ -1,378 +1,104 @@
-import EmptyState from "./EmptyState";
-import DashboardLink from "./DashboardLink";
-import { dashboardPath } from "./dashboardHistory";
-import CwlPageHeader from "./CwlPageHeader";
-import FilterChips from "./FilterChips";
-import { loadAccountDisplay } from "./accountDisplay";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError, type Account, type Clan, type Session } from "./api";
-import DashboardIcon from "./DashboardIcon";
-import TownHallIcon from "./TownHallIcon";
-import PlayerClanDetailsDialog from "./PlayerClanDetailsDialog";
-import MemberDetailActivity from "./MemberDetailActivity";
-import { matchingResults, searchIndex } from "./dashboardSearch";
-import { dashboardSearchAttention } from "./dashboardSearchAttention";
-import AttentionSummary from "./AttentionSummary";
-import AccountLinkHelp from "./AccountLinkHelp";
-
-export default function DashboardSearch({
-  session,
-  includeFamily,
-  query,
-  onQuery,
-  kind,
-  onKind: setKind,
-  page,
-  onPage: setPage,
-  onTasks,
-}: {
+import { loadAccountDisplay } from "./accountDisplay";
+import CwlPageHeader from "./CwlPageHeader";
+import GameSearch from "./GameSearch";
+export default function DashboardSearch(props: {
   session: Session;
-  kind: "all" | "player" | "clan";
-  onKind: (kind: "all" | "player" | "clan") => void;
-  page: number;
-  onPage: (page: number) => void;
   includeFamily: boolean;
   query: string;
-  onQuery: (query: string) => void;
+  onQuery: (value: string) => void;
+  kind: "all" | "player" | "clan";
+  onKind: (value: "all" | "player" | "clan") => void;
+  page: number;
+  onPage: (page: number) => void;
   onTasks: (tag: string) => void;
 }) {
-  const readGeneration = useRef(0);
-  const [accounts, setAccounts] = useState<Account[]>([]);
-  const [family, setFamily] = useState<Clan[]>([]);
-  const [error, setError] = useState("");
-  const [familyError, setFamilyError] = useState("");
-  const [busy, setBusy] = useState(true);
-  const [attempt, setAttempt] = useState(0);
-  const [detail, setDetail] = useState<{
-    kind: "player" | "clan";
-    tag: string;
-  } | null>(null);
-  const [loadedAt, setLoadedAt] = useState<string | null>(null);
-  const [familyLoadedAt, setFamilyLoadedAt] = useState<string | null>(null);
+  const [accounts, setAccounts] = useState<Account[]>([]),
+    [family, setFamily] = useState<Clan[]>([]);
+  const [busy, setBusy] = useState(true),
+    [error, setError] = useState(""),
+    [attempt, setAttempt] = useState(0);
   useEffect(() => {
-    const generation = ++readGeneration.current;
-    let active = true;
-    let denied = false;
-    setBusy(true);
-    setError("");
-    setFamilyError("");
+    let active = true,
+      denied = false;
     setAccounts([]);
     setFamily([]);
-    setDetail(null);
-    setLoadedAt(null);
-    setFamilyLoadedAt(null);
+    setBusy(true);
+    setError("");
+    const reject = (failure: unknown): never => {
+      if (
+        active &&
+        failure instanceof ApiError &&
+        [401, 403].includes(failure.status)
+      ) {
+        denied = true;
+        setAccounts([]);
+        setFamily([]);
+        setError("Your dashboard access changed. Sign in again.");
+      }
+      throw failure;
+    };
     void Promise.allSettled([
       loadAccountDisplay(
         (snapshot) => {
-          if (active && generation === readGeneration.current && !denied)
-            setAccounts(snapshot.accounts);
+          if (active && !denied) setAccounts(snapshot.accounts);
         },
-        () => active && generation === readGeneration.current && !denied,
+        () => active && !denied,
         attempt > 0,
-      ).catch((error) => {
-        if (
-          active &&
-          generation === readGeneration.current &&
-          error instanceof ApiError &&
-          [401, 403].includes(error.status)
-        ) {
-          denied = true;
-          setAccounts([]);
-          setFamily([]);
-        }
-        throw error;
-      }),
-      (includeFamily
+      ).catch(reject),
+      (props.includeFamily
         ? api<{ clans: Clan[] }>("/approved-clans")
         : Promise.resolve({ clans: [] })
-      ).then(
-        (result) => {
-          if (active && generation === readGeneration.current && !denied) {
-            setFamily(result.clans);
-            setFamilyLoadedAt(new Date().toISOString());
-          }
-          return result;
-        },
-        (error) => {
-          if (
-            active &&
-            generation === readGeneration.current &&
-            error instanceof ApiError &&
-            [401, 403].includes(error.status)
-          ) {
-            denied = true;
-            setAccounts([]);
-            setFamily([]);
-          }
-          throw error;
-        },
-      ),
+      ).catch(reject),
     ]).then(([players, clans]) => {
-      if (!active || generation !== readGeneration.current) return;
-      // A revoked session must not leave any protected results visible.
-      const denied = [players, clans].find(
-        (result) =>
-          result.status === "rejected" &&
-          result.reason instanceof ApiError &&
-          [401, 403].includes(result.reason.status),
-      );
-      if (denied?.status === "rejected") {
+      if (!active) return;
+      const failures = [players, clans].filter((r) => r.status === "rejected");
+      if (
+        failures.some(
+          (r) =>
+            r.status === "rejected" &&
+            r.reason instanceof ApiError &&
+            [401, 403].includes(r.reason.status),
+        )
+      ) {
+        denied = true;
         setAccounts([]);
         setFamily([]);
-        setError("Your dashboard access changed. Refresh or sign in again.");
+        setError("Your dashboard access changed. Sign in again.");
       } else {
-        if (players.status === "fulfilled") {
-          setAccounts(players.value.accounts);
-          setLoadedAt(new Date().toISOString());
-        } else
-          setError(
-            players.reason instanceof Error
-              ? players.reason.message
-              : "Could not load linked accounts.",
-          );
+        if (players.status === "fulfilled") setAccounts(players.value.accounts);
         if (clans.status === "fulfilled") setFamily(clans.value.clans);
-        else
-          setFamilyError(
-            "The family directory is unavailable. Results include only linked accounts and their clans.",
-          );
+        if (failures.length)
+          setError("Some family results could not load. Try again.");
       }
       setBusy(false);
     });
     return () => {
       active = false;
     };
-  }, [includeFamily, attempt]);
-  const index = useMemo(
-    () => searchIndex(accounts, family),
-    [accounts, family],
-  );
-  const detailPlayer =
-    detail?.kind === "player"
-      ? accounts.find((account) => account.tag === detail.tag)
-      : undefined;
-  const detailClan =
-    detail?.kind === "clan"
-      ? index.find((item) => item.kind === "clan" && item.tag === detail.tag)
-      : undefined;
-  const detailClanAccount =
-    detailClan &&
-    accounts.find((account) => account.current_clan_tag === detailClan.tag);
-  const detailDirectoryClan =
-    detailClan && family.find((clan) => clan.tag === detailClan.tag);
-  const denyDetails = () => {
-    readGeneration.current++;
-    setBusy(false);
-    setDetail(null);
-    setAccounts([]);
-    setFamily([]);
-    setError("Your account access changed. Refresh or sign in again.");
-  };
-  const freshness = error ? "unavailable" : busy ? "partial" : "current";
-  const results = matchingResults(index, query, kind);
-  const lastPage = Math.max(0, Math.ceil(results.length / 20) - 1);
-  const currentPage = Math.min(page, lastPage);
+  }, [props.session.user.id, props.includeFamily, attempt]);
   return (
     <section className="dashboard-search-workspace">
       <CwlPageHeader
         title={<h1>Search</h1>}
-        description={
-          <>
-            Find your linked players and their clans
-            {includeFamily ? ", plus the family clan directory" : ""}.
-          </>
-        }
+        description="Find players by tag, and clans by name or tag."
       />
-      <label className="global-search-field" htmlFor="dashboard-search">
-        <DashboardIcon name="search" />
-        <span className="sr-only">Find a player or clan</span>
-        <input
-          id="dashboard-search"
-          autoFocus={window.matchMedia("(pointer: fine)").matches}
-          type="search"
-          placeholder="Find a player or clan"
-          value={query}
-          maxLength={100}
-          onChange={(event) => onQuery(event.target.value)}
-        />
-      </label>
-      <FilterChips
-        className="search-kind-filters filter-chips--flow"
-        label="Search result type"
-        options={(["all", "player", "clan"] as const).map((value) => {
-          return {
-            value: value,
-            label: (
-              <>
-                {value === "all"
-                  ? "All"
-                  : value === "player"
-                    ? "Players"
-                    : "Clans"}
-              </>
-            ),
-            count: matchingResults(index, query, value).length,
-          };
-        })}
-        value={kind}
-        onChange={(value) => {
-          setKind(value);
-        }}
-        variant="pill"
-        role="group"
-        revealSelection
+      <GameSearch
+        session={props.session}
+        accounts={accounts}
+        family={family}
+        familyBusy={busy}
+        familyError={error}
+        onRetryFamily={() => setAttempt((n) => n + 1)}
+        query={props.query}
+        onQuery={props.onQuery}
+        kind={props.kind}
+        onKind={props.onKind}
+        page={props.page}
+        onPage={props.onPage}
+        onTasks={props.onTasks}
       />
-      {busy && <p role="status">Loading searchable accounts and clans…</p>}
-      {(error || familyError) && (
-        <AttentionSummary
-          items={dashboardSearchAttention(error, familyError, busy, () =>
-            setAttempt((value) => value + 1),
-          )}
-          urgent
-        />
-      )}
-      {!busy && (
-        <p role="status">
-          {results.length} result{results.length === 1 ? "" : "s"}
-        </p>
-      )}
-      {!busy && !error && !results.length && (
-        <EmptyState
-          title={
-            index.length
-              ? familyError
-                ? "No matches in available results"
-                : "No matches"
-              : "No accounts to search yet"
-          }
-          line={
-            index.length
-              ? "Try another name or tag, or select All."
-              : "Your linked-account check returned no accounts."
-          }
-          action={
-            index.length ? (
-              <button
-                onClick={() => {
-                  onQuery("");
-                  setKind("all");
-                }}
-              >
-                Clear filters
-              </button>
-            ) : (
-              <details>
-                <summary>Link an account</summary>
-                <AccountLinkHelp
-                  busy={busy}
-                  onRefresh={() => setAttempt((value) => value + 1)}
-                />
-              </details>
-            )
-          }
-        />
-      )}
-      <div className="search-results">
-        {results.slice(currentPage * 20, (currentPage + 1) * 20).map((item) => (
-          <article className="search-result" key={`${item.kind}:${item.tag}`}>
-            {item.kind === "player" ? (
-              <TownHallIcon level={item.townHall ?? null} />
-            ) : (
-              <DashboardIcon name="shield" />
-            )}
-            <div>
-              <strong>{item.name}</strong>
-              <small>
-                {item.tag} · {item.detail}
-              </small>
-            </div>
-            <div className="search-result-actions">
-              {(item.kind === "player" ||
-                accounts.some(
-                  (account) => account.current_clan_tag === item.tag,
-                )) && (
-                <DashboardLink
-                  href={dashboardPath({
-                    view: "todo",
-                    season: "",
-                    activityFilter: item.tag,
-                  })}
-                  onNavigate={() => onTasks(item.tag)}
-                  aria-label={`Open tasks for ${item.name}`}
-                >
-                  Open tasks
-                </DashboardLink>
-              )}
-              <button
-                onClick={() => setDetail({ kind: item.kind, tag: item.tag })}
-                aria-label={`${item.kind === "player" ? "Account" : "Clan"} details for ${item.name}`}
-              >
-                {item.kind === "player" ? "Account" : "Clan"} details
-              </button>
-            </div>
-          </article>
-        ))}
-      </div>
-      {lastPage > 0 && (
-        <nav className="search-pagination" aria-label="Search pages">
-          <button
-            disabled={currentPage === 0}
-            onClick={() => setPage(currentPage - 1)}
-          >
-            Previous
-          </button>
-          <span>
-            Page {currentPage + 1} of {lastPage + 1}
-          </span>
-          <button
-            disabled={currentPage === lastPage}
-            onClick={() => setPage(currentPage + 1)}
-          >
-            Next
-          </button>
-        </nav>
-      )}
-      {detailPlayer && (
-        <PlayerClanDetailsDialog
-          returnFocusFallbackId="dashboard-main"
-          kind="player"
-          account={detailPlayer}
-          session={session}
-          freshness={freshness}
-          loadedAt={loadedAt}
-          onClose={() => setDetail(null)}
-        >
-          <MemberDetailActivity
-            onDenied={denyDetails}
-            key={detailPlayer.tag}
-            target="player"
-            tag={detailPlayer.tag}
-            clanTag={detailPlayer.current_clan_tag}
-          />
-        </PlayerClanDetailsDialog>
-      )}
-      {detailClan && (
-        <PlayerClanDetailsDialog
-          returnFocusFallbackId="dashboard-main"
-          kind="clan"
-          tag={detailClan.tag}
-          name={detailClan.name}
-          badgeUrl={detailClanAccount?.current_clan_badge_url}
-          clan={detailDirectoryClan}
-          linkedAccounts={accounts}
-          freshness={freshness}
-          loadedAt={detailDirectoryClan ? familyLoadedAt : loadedAt}
-          onClose={() => setDetail(null)}
-        >
-          {detailClanAccount && (
-            <MemberDetailActivity
-              onDenied={denyDetails}
-              key={detailClan.tag}
-              target="clan"
-              tag={detailClan.tag}
-            />
-          )}
-        </PlayerClanDetailsDialog>
-      )}
     </section>
   );
 }
