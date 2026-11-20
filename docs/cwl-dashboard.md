@@ -108,3 +108,45 @@ missing head, and weight/history recovery tests. Real Mongo drill uses an
 authenticated temporary loopback server via `CWL_RECOVERY_MONGOD`; it never uses
 production credentials. Live source rows were independently round-tripped
 read-only. No frontend controls changed; no live notification test is implied.
+
+## Home and public game search (250, development)
+
+Home keeps the green signup status in one summary line. Its native Show/Hide
+disclosure starts closed and retains only view state in memory for the current
+session and season. Staff shortcuts precede My accounts. The local Filter
+accounts field appears only above ten linked accounts and never searches Clash.
+Home and the sidebar share one player/clan search component.
+
+Per Shaka1207, family matching stays in the browser over the already-authorized
+linked-account and approved-clan data loaded by the existing normal readers.
+Home reuses its account snapshot; the sidebar loads account display and, only
+with the existing editor permission, the approved-clan directory once when
+opened. Typing a query does not reload those readers or fan out player reads.
+Family results appear first and retain their authorized tasks/details actions.
+Family loading or failure is distinct from public search, so public rows can
+arrive while family data is still loading. No new family-directory grant exists.
+
+`GET /api/cwl/search` and `/api/cwl/search/details` accept any signed-in session
+and return only whitelisted public Clash data (`source: "clash"`). The search
+endpoint never resolves account links or family data. Tags (optional #, three to
+twelve normalized tag characters for search) look up player and clan concurrently;
+404 results are skipped. Clan-name queries require three characters. Player-name
+matches use loaded family accounts only; the browser explains that rule when no
+family player matches a non-tag query. Details accept the existing public tag
+validator and expose public name/tag, Town Hall/clan/trophies, or clan level,
+member count, war league, public-war-log flag and an official HTTPS badge URL.
+Public results never imply ownership, roster weight, Discord identity or staff
+access. They use the same existing details dialog in its public mode.
+
+One process-local owner counts every search/details request against its session
+hash before cache reads: twenty per minute and two hundred per hour. Quotas do
+not depend on query text or cache hits. Only public provider results are cached,
+for sixty seconds with at most five hundred entries and bounded in-flight reads;
+combined family responses are never cached. The UI debounces 350ms, Enter uses the
+same read, and older responses cannot replace a newer query. Upstream failure
+keeps client-side family matches visible, with a single retry action; 429 has a
+separate wait message. Query text is not logged by the feature; the existing web
+runner disables request access logs. This change adds no schema, persistent data,
+provider write, Discord action or migration. Focused/integrated checks and browser
+review are recorded in the250 review artifact before READY; this development
+section is not a live-delivery or deployment claim.

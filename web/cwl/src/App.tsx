@@ -2355,6 +2355,7 @@ function App() {
               )}
               {view === "home" && (
                 <DashboardHome
+                  onTasks={(tag) => changeView("todo", tag)}
                   key={`${session.user.id}:${seasonId}`}
                   staffSeasonId={staffSeasonId}
                   publicationStep={publicationStep}
