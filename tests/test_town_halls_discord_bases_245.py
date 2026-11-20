@@ -144,3 +144,15 @@ def test_base_manager_can_refresh_snapshot_without_admin_write_permission(snapsh
         result=asyncio.run(runtime.apply_town_halls_refresh(object(),row,{'user_id':'123'}))
         assert result['revision']==snapshot['revision']
         refresh.assert_awaited_once()
+
+
+def test_levels_below_th16_show_no_merged_word(snapshot):
+    from test_town_halls_bases import LINK
+    doc = town_halls.set_base_field(snapshot, 12, 'merged.link', LINK)
+    town_halls._snapshot = doc
+    labels = [item['label'] for item in base_menu('fixture').build()[0]['options']]
+    assert labels == ['TH19 Merged', 'TH19 Non-merged', 'TH12']
+    assert base_choice('th12')['friendly_name'] == 'Town Hall 12'
+    assert base_choice('th12')['display_name'] == 'TH12'
+    assert base_choice('th19')['friendly_name'] == 'Town Hall 19 Merged'
+    assert town_halls.variant_label(15, 'merged') == '' and town_halls.variant_label(16, 'merged') == 'Merged'
