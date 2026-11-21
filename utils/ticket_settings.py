@@ -4,6 +4,32 @@ Storage, authorization, auditing and Discord transport remain with their existin
 owners. These helpers preserve the ticket adapter's accepted values and defaults.
 """
 
+import hashlib
+import json
+
+
+_RUNTIME_REVISION_KEYS = frozenset({
+    "thread_name_capability_version",
+    "thread_name_capability_booted_at",
+    "thread_name_capability_boot_id",
+    "thread_name_capability_heartbeat_at",
+})
+
+
+def settings_revision(cfg):
+    """Fingerprint settings without the bot's ephemeral capability heartbeat.
+
+    Keep every other key, including the native revision counter and future
+    settings, so real edits and edit-then-restore races remain conflicts.
+    The filtered copy leaves the shared configuration document untouched.
+    """
+    settings = {key: value for key, value in cfg.items()
+                if key not in _RUNTIME_REVISION_KEYS}
+    return hashlib.sha256(
+        json.dumps(settings, sort_keys=True, default=str).encode()
+    ).hexdigest()
+
+
 DESK_KEYS = ('desk_channel_id', 'desk_staff_parent', 'account_thread_recruiter_role',
              'staff_thread_recruiter_role')
 

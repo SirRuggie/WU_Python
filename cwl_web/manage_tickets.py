@@ -1,6 +1,8 @@
 """Ticket settings and isolated test controls backed by native bot operations."""
 from aiohttp import web
-from utils.ticket_settings import FIELDS, validated_settings, history_values, desk_readiness
+from utils.ticket_settings import (
+    FIELDS, validated_settings, history_values, desk_readiness, settings_revision,
+)
 from utils.ticket_rollout import get_rollout
 from .server_management import API, GUILD_ID, mongo, require_manage, queue_action
 from .manage_content import fingerprint
@@ -15,7 +17,7 @@ async def settings(request):
     async with mongo(request) as db:
         cfg=await db.ticket_setup.find_one({'_id':'config'}) or {}
         rollout=await get_rollout(db) if part=='desk' else None
-    result=dict(id='ticket_settings',label='Ticket settings',description="Select the ticket settings to change.",group='Recruitment',revision=fingerprint(cfg),fields=[])
+    result=dict(id='ticket_settings',label='Ticket settings',description="Select the ticket settings to change.",group='Recruitment',revision=settings_revision(cfg),fields=[])
     if not part:
         result['documents']=[dict(id=key,label=label,endpoint='/manage/ticket-settings/'+key) for key,label in [('timers','Ticket wait times'),('main','Main application channels'),('fwa','FWA application channels'),('desk','Warrior Desk'),('viewers','Staff viewing access'),('tools','Ticket panel tools')]]
     elif part=='timers':
