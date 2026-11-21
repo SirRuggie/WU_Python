@@ -145,8 +145,7 @@ async def lock_expired_member_threads(bot, mongo, config):
             if current is None:
                 continue
             if channel.is_locked:
-                if pending:
-                    await store.clear_member_window_lock(mongo, ticket['_id'], pending)
+                await store.complete_member_window_lock(mongo, current, channel_id, at=now(), marker=pending)
                 continue
             marker = await store.claim_member_window_lock(mongo, current, channel_id)
             if marker is None:
@@ -163,8 +162,15 @@ async def lock_expired_member_threads(bot, mongo, config):
                         and (latest.get('status') == 'open' or lifecycle.member_reopen_eligible(latest))):
                     await bot.rest.edit_channel(channel_id, archived=latest.get('status') != 'open', locked=False,
                         reason='Ticket changed during member-window maintenance')
-            await store.clear_member_window_lock(mongo, ticket['_id'], marker)
+                await store.clear_member_window_lock(mongo, ticket['_id'], marker)
+            else:
+                # A failed CAS leaves the claim visible for reopen/race recovery.
+                await store.complete_member_window_lock(mongo, current, channel_id, at=now(), marker=marker)
         except hikari.NotFoundError:
+            completed = await store.complete_member_window_lock(
+                mongo, ticket, channel_id, at=now(), marker=ticket.get('member_window_lock'))
+            if not completed and ticket.get('member_window_lock'):
+                await store.clear_member_window_lock(mongo, ticket['_id'], ticket['member_window_lock'])
             continue
         except Exception:
             _log.exception('Member reopen-window lock failed ticket=%s', ticket['_id'])
@@ -175,9 +181,10 @@ async def sweep(bot, mongo):
     if testing_service.is_test_scope(mongo):
         return
     config = await mongo.ticket_setup.find_one({'_id': 'config'}) or {}
-    await lock_expired_member_threads(bot, mongo, config)
-    days = quiet_days(config)
     gid = int(config.get('ticket_target_guild_id') or 0)
+    if gid and await store.claim_member_window_sweep(mongo, guild_id=gid, at=now()):
+        await lock_expired_member_threads(bot, mongo, config)
+    days = quiet_days(config)
     if not days or not gid:
         return
     schedule = await mongo.ticket_setup.find_one({'_id': STATE_ID}) or {}

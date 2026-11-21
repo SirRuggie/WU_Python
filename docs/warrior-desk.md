@@ -118,11 +118,23 @@ excluded. The result is bounded to ten. Opening My Tickets does not unarchive a
 closed thread.
 
 The existing archive task also pages 25 expiry candidates, independently of the
-quiet-archive setting/daily completion marker. After 60 days it locks the member
-thread; messages never reopen an expired ticket. A durable maintenance marker
+quiet-archive setting/daily completion marker, with a durable per-guild claim
+allowing at most one page attempt per hour (also across restarts). A proven lock,
+already-locked thread or missing thread records `member_window_locked_at` for
+that Close generation; completed rows are not fetched again. Close/Reopen clears
+completion for a new window. After 60 days it locks the member thread; messages
+never reopen an expired ticket. A durable maintenance marker
 allows a later pass to repair an interrupted lock even if the ticket reopened
 and the post-lock read failed. A concurrent successful reopen wins. These are
 scheduled, bounded sweeps rather than an exact-second timer.
+
+Periodic staff-access reconciliation keeps its five-pair page and 30-second
+budget. Eligibility and an atomic per-ticket hourly attempt claim precede REST,
+so unscanned pairs progress without repeatedly fetching recently checked rows.
+A failed REST attempt becomes eligible again after an hour. The cursor wraps
+when eligible rows are exhausted. Role-change events bypass this periodic gate
+and retain their immediate, bounded first-50-pair path; larger offline backlogs
+still require multiple pages.
 
 Official Discord documentation states that sending a message unarchives an
 unlocked thread and requires membership plus `SEND_MESSAGES_IN_THREADS`:

@@ -155,6 +155,8 @@ def test_restart_expiry_lock_runs_even_when_quiet_archiving_is_disabled(monkeypa
     ticket=_closed();ticket['closed_at']=datetime.now(timezone.utc)-timedelta(days=61)
     config={'ticket_target_guild_id':ticket['guild_id'],'ticket_archive_quiet_days':0}
     db=NS(ticket_setup=NS(find_one=AsyncMock(return_value=config)))
+    monkeypatch.setattr(store,'claim_member_window_sweep',AsyncMock(return_value=True))
+    monkeypatch.setattr(store,'complete_member_window_lock',AsyncMock(return_value=True))
     monkeypatch.setattr(store,'expired_member_ticket_page',AsyncMock(return_value=[ticket]))
     monkeypatch.setattr(store,'claim_member_window_lock',AsyncMock(return_value={'rev':ticket.get('rev',0),'candidate_id':ticket['location']['id']}))
     monkeypatch.setattr(store,'clear_member_window_lock',AsyncMock())

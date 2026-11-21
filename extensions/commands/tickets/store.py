@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, Mapping
 
 import pymongo
@@ -924,6 +924,10 @@ async def transition(
             "approved_at": "", "approved_by": "", "approved_by_name": "",
         })
 
+    if target in {"closed", "open"}:
+        # Completion belongs to a single Close generation. Keep any in-flight
+        # member_window_lock so post-lock/restart compensation can still run.
+        unset_fields["member_window_locked_at"] = ""
     if target == "closed":
         set_fields.update(closed_at=now, closed_by=actor, closed_by_name=name)
         audit["reason"] = supplied.get("closure_reason")
@@ -1492,16 +1496,45 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
     return [str(name) for name in specs]
 
 
-async def private_staff_tickets(mongo, *, guild_id: int, after: str = "", limit: int = 5):
+async def private_staff_tickets(mongo, *, guild_id: int, after: str = "", limit: int = 5, not_checked_since=None):
     """Bounded recovery page of explicitly new private staff threads only."""
     limit = min(max(int(limit), 1), 50)
     query = {**RUNTIME_FILTER, "guild_id": int(guild_id), "staff_thread_private": True}
+    if not_checked_since is not None:
+        query["$or"] = [
+            {"staff_access_check_started_at": {"$exists": False}},
+            {"staff_access_check_started_at": {"$lte": not_checked_since}},
+        ]
     if after:
         query["_id"] = {"$gt": after}
     return await mongo.tickets.find(query, {
         "_id": 1, "guild_id": 1, "ticket_type": 1, "location": 1,
         "staff_thread_private": 1,
     }).sort("_id", 1).limit(limit + 1).to_list(length=limit + 1)
+
+
+async def claim_member_window_sweep(mongo, *, guild_id, at):
+    """Persist one expiry page attempt per guild/hour, including restarts."""
+    try:
+        row = await mongo.ticket_setup.find_one_and_update({
+            "_id": f"member_window_lock_schedule:{int(guild_id)}",
+            "$or": [{"started_at": {"$exists": False}},
+                    {"started_at": {"$lte": at - timedelta(hours=1)}}],
+        }, {"$set": {"started_at": at}}, upsert=True, return_document=ReturnDocument.AFTER)
+    except DuplicateKeyError:
+        return False  # Existing hourly claim does not match; never run REST.
+    return row is not None
+
+
+async def claim_staff_access_check(mongo, ticket, *, at):
+    """At most one periodic REST attempt per private pair/hour; events bypass."""
+    result = await mongo.tickets.update_one({
+        **RUNTIME_FILTER, "_id": ticket["_id"], "guild_id": ticket["guild_id"],
+        "staff_thread_private": True,
+        "$or": [{"staff_access_check_started_at": {"$exists": False}},
+                {"staff_access_check_started_at": {"$lte": at - timedelta(hours=1)}}],
+    }, {"$set": {"staff_access_check_started_at": at}})
+    return bool(result.matched_count)
 
 
 async def claim_member_reopen_notice(mongo, ticket):
@@ -1535,7 +1568,8 @@ async def expired_member_ticket_page(mongo, *, guild_id, cutoff, after="", limit
     """Read-only restart-safe lock candidates; no TTL or transcript rewrite."""
     amount = min(max(int(limit), 1), 25)
     query = {**RUNTIME_FILTER, "guild_id": int(guild_id), "$or": [
-        {"status": "closed", "closed_at": {"$lt": cutoff}},
+        {"status": "closed", "closed_at": {"$lt": cutoff},
+         "member_window_locked_at": {"$exists": False}},
         {"member_window_lock": {"$exists": True}},
     ]}
     if after:
@@ -1551,8 +1585,25 @@ async def claim_member_window_lock(mongo, ticket, channel_id):
     result = await mongo.tickets.update_one({
         **RUNTIME_FILTER, "_id": ticket["_id"], "status": "closed",
         "rev": _rev_filter(marker["rev"]), "location.id": int(channel_id),
+        "closed_at": ticket["closed_at"], "member_window_locked_at": {"$exists": False},
     }, {"$set": {"member_window_lock": marker}})
     return marker if result.matched_count else None
+
+
+async def complete_member_window_lock(mongo, ticket, channel_id, *, at, marker=None):
+    """Record proven lock/absence only for the still-current Close generation."""
+    if ticket.get("status") != "closed" or not ticket.get("closed_at"):
+        return False
+    query = {**RUNTIME_FILTER, "_id": ticket["_id"], "guild_id": ticket["guild_id"],
+             "status": "closed", "rev": _rev_filter(int(ticket.get("rev") or 0)),
+             "closed_at": ticket["closed_at"], "location.id": int(channel_id)}
+    if marker is not None:
+        query["member_window_lock"] = marker
+    result = await mongo.tickets.update_one(query, {
+        "$set": {"member_window_locked_at": at},
+        "$unset": {"member_window_lock": ""},
+    })
+    return bool(result.matched_count)
 
 
 async def clear_member_window_lock(mongo, ticket_id, marker):

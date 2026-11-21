@@ -5,6 +5,7 @@ through marked private pairs, including closed history, so role loss while the
 bot was offline does not permanently retain an old invite.
 """
 import logging
+from datetime import datetime, timedelta, timezone
 
 import hikari
 
@@ -23,9 +24,13 @@ async def sweep(bot, mongo):
     me = bot.get_me()
     if not guild_id or me is None:
         return
-    rows = await store.private_staff_tickets(mongo, guild_id=guild_id, after=_after, limit=5)
-    members = await thread_service.staff_member_snapshot(bot.rest, guild_id) if rows else []
-    for row in rows[:5]:
+    at = datetime.now(timezone.utc)
+    rows = await store.private_staff_tickets(mongo, guild_id=guild_id, after=_after, limit=5,
+                                             not_checked_since=at-timedelta(hours=1))
+    # Claim before every REST call, including the shared member snapshot.
+    claimed = [row for row in rows[:5] if await store.claim_staff_access_check(mongo, row, at=at)]
+    members = await thread_service.staff_member_snapshot(bot.rest, guild_id) if claimed else []
+    for row in claimed:
         try:
             thread_id = int((row.get("location") or {}).get("staff_space_id") or 0)
             if not thread_id:
