@@ -4040,6 +4040,12 @@ async def deliver_staff_identity_context(
                 await request_hub_refresh_best_effort(
                     bot, mongo, reason="automatic prior denial flag",
                 )
+    except flag_store.IdentityLockBusy:
+        await queue_staff_identity_context(
+            mongo, ticket_doc, open_only_refresh=open_only_refresh,
+        )
+        _log.info("staff identity context pending identity lock ticket=%s", ticket_id)
+        return None
     except Exception:
         _log.exception("automatic prior-denial reconciliation failed ticket=%s", ticket_id)
     state_id = await queue_staff_identity_context(
