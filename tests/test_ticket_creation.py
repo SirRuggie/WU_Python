@@ -681,6 +681,15 @@ def _valid_parent_rest(
                 ),
             ]
 
+        def fetch_members(self, _guild_id):
+            class Members:
+                def limit(self, _amount): return self
+                def __aiter__(self):
+                    async def iterate():
+                        for member in (): yield member
+                    return iterate()
+            return Members()
+
     return Rest()
 
 
@@ -4472,11 +4481,24 @@ def test_shared_staff_parent_accepts_other_configured_recruitment_role():
     config["fwa_staff_parent"] = 22
     parents = thread_service.parents_from_config(config, 10, "main")
     assert parents.shared_staff_role_ids == ()
-    with pytest.raises(thread_service.ThreadConfigurationError, match="non-recruiter role"):
-        asyncio.run(thread_service.validate_thread_parents(
-            _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True),
-            parents, bot_user_id=99,
-        ))
+    # 1304: another configured handler may view this parent even when its own
+    # ticket type uses a different parent. This does not change shared invites.
+    asyncio.run(thread_service.validate_thread_parents(
+        _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True),
+        parents, bot_user_id=99,
+    ))
+    del config["fwa_thread_recruiter_role"]
+    parents = thread_service.parents_from_config(config, 10, "main")
+    rest = _valid_parent_rest(mentionable=True, bot_can_mention=False, staff_role_leak=True)
+    original_roles = rest.fetch_roles
+    async def named_roles(guild):
+        roles = await original_roles(guild)
+        for role in roles:
+            if role.id == 50: role.name = "Unrelated observers"
+        return roles
+    rest.fetch_roles = named_roles
+    with pytest.raises(thread_service.ThreadConfigurationError, match="non-recruiter role Unrelated observers"):
+        asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
 
 
 def test_explicit_staff_viewer_access_does_not_change_recruiter_role():

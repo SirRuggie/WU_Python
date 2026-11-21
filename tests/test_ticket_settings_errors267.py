@@ -151,11 +151,6 @@ def test_manage_threads_allows_configured_handler_roles_but_not_unrelated_roles(
     async def channel(channel_id):
         value = await original_channel(channel_id)
         value.name = 'warrior-desk' if channel_id == 20 else 'ticket-staff'
-        # A different type's handler is not thereby granted staff-parent view;
-        # this isolates the candidate-parent Manage Threads policy exception.
-        if channel_id == 21 and role_source.startswith('mapped_'):
-            value.permission_overwrites.append(NS(id=role_id, type=hikari.PermissionOverwriteType.ROLE,
-                                                 allow=hikari.Permissions.NONE, deny=hikari.Permissions.VIEW_CHANNEL))
         if channel_id == 21 and role_source == 'current':
             value.permission_overwrites.append(NS(id=role_id, type=hikari.PermissionOverwriteType.ROLE,
                                                  allow=hikari.Permissions.NONE, deny=hikari.Permissions.VIEW_CHANNEL))
@@ -231,3 +226,83 @@ def test_member_manage_threads_exception_requires_a_configured_handler_role(sour
             asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
         assert display_name in str(failure.value)
         assert str(member_id) not in str(failure.value)
+
+
+def _bot_role_readiness_fixture(membership, *, manage_threads=True, fresh_bot_flag=True):
+    rest = _valid_parent_rest(mentionable=True, bot_can_mention=True)
+    original_roles, original_channel, original_member = rest.fetch_roles, rest.fetch_channel, rest.fetch_member
+    role_id, member_id = 888888888888888888, 777777777777777777
+    members = [NS(id=member_id, display_name='Automation bot', role_ids=[role_id], is_bot=True)]
+    if membership == 'human':
+        members.append(NS(id=member_id + 1, display_name='Human teammate', role_ids=[role_id], is_bot=False))
+    elif membership == 'unknown':
+        members.append(NS(id=member_id + 1, display_name='Unknown teammate', role_ids=[role_id]))
+    elif membership == 'empty':
+        members = []
+    reads = []
+    class Members:
+        def limit(self, amount):
+            assert amount == thread_service.STAFF_MEMBER_SCAN_LIMIT + 1
+            return self
+        def __aiter__(self):
+            async def iterate():
+                if membership == 'unavailable': raise RuntimeError('member list unavailable')
+                for member in members: yield member
+            return iterate()
+    def fetch_members(guild):
+        reads.append(guild)
+        return Members()
+    async def roles(guild):
+        values = await original_roles(guild)
+        permissions = hikari.Permissions.VIEW_CHANNEL
+        if manage_threads: permissions |= hikari.Permissions.MANAGE_THREADS
+        return [*values, NS(id=role_id, name='Master Bots', permissions=permissions, is_managed=False)]
+    async def channel(channel_id):
+        value = await original_channel(channel_id)
+        value.name = 'warrior-desk' if channel_id == 20 else 'ticket-staff'
+        if channel_id == 21:
+            value.permission_overwrites.append(NS(id=member_id, type=hikari.PermissionOverwriteType.MEMBER,
+                                                 allow=hikari.Permissions.VIEW_CHANNEL, deny=hikari.Permissions.NONE))
+        return value
+    async def fetch_member(guild, user_id):
+        if user_id != member_id: return await original_member(guild, user_id)
+        return NS(id=member_id, display_name='Fresh member', role_ids=[role_id], is_bot=fresh_bot_flag)
+    rest.fetch_roles, rest.fetch_channel, rest.fetch_member, rest.fetch_members = roles, channel, fetch_member, fetch_members
+    parents = thread_service.ThreadParents(10, 20, 21, 40, staff_thread_role_ids=(40,), private_staff=True)
+    return rest, parents, reads, role_id, member_id
+
+
+@pytest.mark.parametrize('manage_threads', [False, True])
+@pytest.mark.parametrize('membership', ['bots', 'human', 'unknown', 'empty', 'unavailable'])
+def test_only_nonempty_verified_all_bot_roles_pass_readiness(membership, manage_threads):
+    rest, parents, reads, role_id, _member_id = _bot_role_readiness_fixture(membership, manage_threads=manage_threads)
+    if membership == 'bots':
+        channels = asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
+        assert [item.id for item in channels] == [20, 21]
+    elif membership == 'unavailable':
+        with pytest.raises(RuntimeError, match='member list unavailable'):
+            asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
+    else:
+        with pytest.raises(thread_service.ThreadConfigurationError) as failure:
+            asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
+        assert 'Master Bots' in str(failure.value)
+        assert str(role_id) not in str(failure.value)
+    assert reads == [10]  # no per-role or second member enumeration
+
+
+@pytest.mark.parametrize('fresh_bot_flag', [False, None])
+def test_snapshot_bot_role_proof_does_not_exempt_a_fresh_human_or_unknown_member(fresh_bot_flag):
+    rest, parents, reads, _role_id, member_id = _bot_role_readiness_fixture('bots', fresh_bot_flag=fresh_bot_flag)
+    with pytest.raises(thread_service.ThreadConfigurationError) as failure:
+        asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
+    assert 'Fresh member' in str(failure.value) and str(member_id) not in str(failure.value)
+    assert reads == [10]
+
+
+def test_mapped_handler_human_passes_remaining_staff_view_guard():
+    from dataclasses import replace
+    rest, parents, reads, role_id, _member_id = _bot_role_readiness_fixture('human', fresh_bot_flag=False)
+    parents = replace(parents, staff_role_config=(('fwa', role_id),))
+    channels = asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
+    assert [item.id for item in channels] == [20, 21]
+    assert reads == [10]

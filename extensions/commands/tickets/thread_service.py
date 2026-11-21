@@ -617,12 +617,21 @@ async def validate_thread_parents(
     manage_thread_handler_roles = authorized_staff_roles | {
         role_id for _kind, role_id in parents.staff_role_config
     }
+    # One bounded snapshot proves nonempty bot-only roles and is reused below.
+    # No observation, unknown bot flags, or any human means no bot-role waiver.
+    members = await staff_member_snapshot(rest, parents.guild_id) if parents.private_staff else ()
+    role_bot_proof = {}
+    for member in members:
+        for role_id in getattr(member, "role_ids", ()):
+            role_id = _as_int(role_id)
+            role_bot_proof[role_id] = role_bot_proof.get(role_id, True) and getattr(member, "is_bot", False) is True
+    bot_only_roles = {role_id for role_id, proven in role_bot_proof.items() if role_id and proven}
     for role_id, role in roles_by_id.items():
         role_permissions = hikari.Permissions(getattr(role, "permissions", 0))
         # Manage Threads bypasses private-thread membership. This readiness gate
         # applies only to new Desk-enabled private pairs, not historical public
         # pairs or the legacy runtime.
-        if (parents.private_staff and role_id not in manage_thread_handler_roles
+        if (parents.private_staff and role_id not in manage_thread_handler_roles | bot_only_roles
                 and not (role_id in bot_role_ids and bool(getattr(role, "is_managed", False)))):
             for private_parent in (candidate, staff):
                 effective = _effective_permissions(
@@ -636,7 +645,7 @@ async def validate_thread_parents(
                     raise ThreadConfigurationError(
                         f"non-admin role {_configuration_name(role, '(unnamed role)')} can view all private ticket threads via Manage Threads in {_configuration_parent(private_parent, 'ticket')}"
                     )
-        if role_id in {parents.guild_id, *authorized_staff_roles}:
+        if role_id in {parents.guild_id, *manage_thread_handler_roles, *bot_only_roles}:
             continue
         if role_permissions & hikari.Permissions.ADMINISTRATOR:
             continue
@@ -682,7 +691,9 @@ async def validate_thread_parents(
                 "staff parent member overwrites could not be inspected"
             ) from error
         role_ids = {_as_int(value) for value in getattr(member, "role_ids", ())}
-        authorized = bool(role_ids & authorized_staff_roles) or any(
+        authorized_handler = bool(role_ids & manage_thread_handler_roles)
+        authorized_bot = getattr(member, "is_bot", False) is True and bool(role_ids & bot_only_roles)
+        authorized = authorized_handler or authorized_bot or any(
             hikari.Permissions(getattr(roles_by_id[role_id], "permissions", 0))
             & hikari.Permissions.ADMINISTRATOR
             for role_id in role_ids
@@ -698,7 +709,7 @@ async def validate_thread_parents(
         if (parents.private_staff and effective & hikari.Permissions.VIEW_CHANNEL
                 and effective & hikari.Permissions.MANAGE_THREADS
                 and not effective & hikari.Permissions.ADMINISTRATOR
-                and not role_ids.intersection(manage_thread_handler_roles)):
+                and not (authorized_handler or authorized_bot)):
             raise ThreadConfigurationError(
                 f"non-admin member {_configuration_name(member, '(unnamed member)')} can view all private staff threads via Manage Threads"
             )
@@ -708,18 +719,19 @@ async def validate_thread_parents(
             )
 
     if parents.private_staff:
-        members = await staff_member_snapshot(rest, parents.guild_id)
         for member in members:
             if int(member.id) == bot_user_id:
                 continue
             member_role_ids = {_as_int(value) for value in getattr(member, "role_ids", ())}
+            authorized_handler = bool(member_role_ids & manage_thread_handler_roles)
+            authorized_bot = getattr(member, "is_bot", False) is True and bool(member_role_ids & bot_only_roles)
             for label, channel in (("candidate", candidate), ("staff", staff)):
                 effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
                     member=member, roles=roles, channel=channel)
                 if (not effective & hikari.Permissions.ADMINISTRATOR
                         and effective & hikari.Permissions.VIEW_CHANNEL
                         and effective & hikari.Permissions.MANAGE_THREADS
-                        and not member_role_ids.intersection(manage_thread_handler_roles)):
+                        and not (authorized_handler or authorized_bot)):
                     raise ThreadConfigurationError(
                         f"non-admin member {_configuration_name(member, '(unnamed member)')} bypasses private membership in the {_configuration_parent(channel, label)}")
     if applicant_user_id is not None:
