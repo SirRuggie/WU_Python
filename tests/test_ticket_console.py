@@ -269,14 +269,14 @@ def test_shared_hub_has_native_overview_status_picker_and_actions():
     assert container["components"][0]["content"] == "# Ticket Command"
     assert [attachment.filename for attachment in attachments] == [
         "ticket_overview.png", "clan_main.png", "ticket_main_status.png",
-        "clan_fwa.png", "ticket_fwa_status.png", "ticket_desk_status.png",
+        "clan_fwa.png", "ticket_fwa_status.png",
         "ticket_flag_blacklisted.png", "ticket_flag_denied_before.png",
         "ticket_flag_not_loyal.png", "ticket_flag_ghosted.png",
         "ticket_flag_flew_the_coop.png",
     ]
     assert sum(child["type"] == hikari.ComponentType.SECTION for child in container["components"]) == 2
-    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 9
-    assert len(attachments) == 11
+    assert sum(child["type"] == hikari.ComponentType.MEDIA_GALLERY for child in container["components"]) == 8
+    assert len(attachments) == 10
     assert container["id"] == console.HUB_STATS_COMPONENT_ID
     assert not any(child["type"] == hikari.ComponentType.ACTION_ROW for child in container["components"])
     assert container["components"][-1]["type"] == hikari.ComponentType.MEDIA_GALLERY
@@ -444,7 +444,9 @@ def test_ticket_command_drops_per_ticket_controls_and_paging():
     assert not [i for i in ids if i.startswith(("ticket_v2_hub_details:", "ticket_v2_hub_closure:"))]
     assert "ticket_v2_hub_page:previous" not in ids and "ticket_v2_hub_page:next" not in ids
     assert "ticket_v2_hub_page:refresh" in ids
-    assert not [n for n in _nodes(view) if n.get("url")]
+    assert [n["url"] for n in _nodes(view) if n.get("url")] == [
+        "attachment://ticket_desk_status.png"
+    ]
 
 
 def test_empty_actions_retains_tools_without_unneeded_navigation():
@@ -5287,3 +5289,63 @@ def test_paired_publish_refuses_writes_after_lease_owner_changed(monkeypatch):
                 },
             )
         )
+
+
+@pytest.mark.parametrize("open_count", [0, 1, console.MAX_OPEN_PICKER])
+def test_hub_message_attachment_limits_preserve_every_image(open_count):
+    """The Discord cap applies to each message, not to the shared two-message hub."""
+    tickets = [_ticket(index) for index in range(1, open_count + 1)]
+    flags = {kind: ("flag:" + kind).encode() for kind in console.HUB_FLAG_ROW_ATTACHMENTS}
+    stats = console.build_hub_components(
+        tickets, b"overview-original", thumbnails={
+            "clan_main.png": b"main-thumbnail-original",
+            "clan_fwa.png": b"fwa-thumbnail-original",
+        }, clan_bars={"main": b"main-bar-original", "fwa": b"fwa-bar-original"},
+        flag_rows=flags,
+    )
+    actions = console.build_hub_actions(
+        {key: tickets for key, _label, _types in console.HUB_TYPE_GROUPS},
+        counts={key: open_count for key, _label, _types in console.HUB_TYPE_GROUPS},
+        total=open_count * len(console.HUB_TYPE_GROUPS), desk_bar=b"desk-bar-original",
+    )
+    attachments = []
+    for payload in (stats, actions):
+        files = [file for component in payload for file in component.build()[1]]
+        assert len(files) <= 10
+        attachments.extend(files)
+        _assert_component_limits(payload)
+    expected = {
+        "ticket_overview.png": b"overview-original",
+        "clan_main.png": b"main-thumbnail-original",
+        "clan_fwa.png": b"fwa-thumbnail-original",
+        "ticket_main_status.png": b"main-bar-original",
+        "ticket_fwa_status.png": b"fwa-bar-original",
+        "ticket_desk_status.png": b"desk-bar-original",
+        **{filename: flags[kind] for kind, filename in console.HUB_FLAG_ROW_ATTACHMENTS.items()},
+    }
+    assert len(attachments) == len(expected) == 11
+    async def image_bytes():
+        return {file.filename: await file.read() for file in attachments}
+    assert asyncio.run(image_bytes()) == expected
+    assert [file.filename for component in actions for file in component.build()[1]] == ["ticket_desk_status.png"]
+
+
+def test_hub_actions_payload_prewarms_desk_status_from_all_ticket_states(monkeypatch):
+    observed = []
+    by_type = {"account": {"approved": 4, "open": 2, "denied": 1}, "staff": {"closed": 3, "open": 5}}
+    async def counts(_mongo):
+        return {"statuses": {"open": 7}, "by_type": by_type}
+    async def lists(_mongo, _types, *, limit):
+        return []
+    async def render(values):
+        observed.append(values)
+        return b"pre-rendered-desk-original"
+    monkeypatch.setattr(console.store, "console_counts", counts)
+    monkeypatch.setattr(console.store, "list_open_by_types", lists)
+    monkeypatch.setattr(console, "render_clan_status_bar", render)
+    monkeypatch.setattr(console, "render_clan_status_bar_sync", lambda *_args: pytest.fail("gateway-loop render"))
+    payload = asyncio.run(console._hub_actions_payload(object(), {}))
+    assert observed == [{"approved": 7, "open": 7, "denied": 1}]
+    files = [file for component in payload for file in component.build()[1]]
+    assert len(files) == 1 and files[0].filename == "ticket_desk_status.png"
+    assert asyncio.run(files[0].read()) == b"pre-rendered-desk-original"

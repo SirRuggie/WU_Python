@@ -804,10 +804,6 @@ def build_hub_components(
                 f"{_int(counts.by_type.get('account', {}).get('denied'))} denied\n"
                 f"**Contact staff:** {_int(counts.by_type.get('staff', {}).get('closed'))} done · "
                 f"{_int(counts.by_type.get('staff', {}).get('open'))} open")),
-            Media(items=[MediaItem(media=hikari.Bytes(
-                clan_bars.get("desk") or render_clan_status_bar_sync(_desk_bar_counts(counts.by_type)),
-                "ticket_desk_status.png", "image/png"),
-                description="Warrior Desk approved or done, open, and denied status distribution.")]),
             Separator(divider=True),
             Text(content="### Flags"),
             flag_row("blacklisted"),
@@ -880,6 +876,7 @@ def build_hub_actions(
     total: int,
     total_tickets: int | None = None,
     updated_at: datetime | None = None,
+    desk_bar: bytes | None = None,
 ) -> list[Container]:
     children = [Text(content="## Open tickets")]
     for key, label, _types in HUB_TYPE_GROUPS:
@@ -889,6 +886,15 @@ def build_hub_actions(
         )
     children.extend(
         [
+            Separator(divider=True),
+            Text(content="### Warrior Desk status"),
+            Media(items=[MediaItem(
+                media=hikari.Bytes(
+                    desk_bar if desk_bar is not None else render_clan_status_bar_sync({}),
+                    "ticket_desk_status.png", "image/png",
+                ),
+                description="Warrior Desk approved or done, open, and denied status distribution.",
+            )]),
             Separator(divider=True),
             Text(content="### Console tools"),
             ActionRow(
@@ -962,6 +968,7 @@ async def _hub_actions_payload(mongo: MongoClient, state: Mapping) -> list[Conta
         total=statuses.get("open", 0),
         total_tickets=sum(statuses.values()),
         updated_at=utcnow(),
+        desk_bar=await render_clan_status_bar(_desk_bar_counts(by_type)),
     )
 
 
@@ -1001,12 +1008,11 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
     )
     # Pillow decodes and resizes the fixed artwork only in worker threads;
     # subsequent thumbnail reads use the tiny process-local cache.
-    png, thumbnails, main_bar, fwa_bar, desk_bar, *flag_rows = await asyncio.gather(
+    png, thumbnails, main_bar, fwa_bar, *flag_rows = await asyncio.gather(
         render_status_strip(counts),
         asyncio.to_thread(_hub_thumbnail_assets),
         render_clan_status_bar(by_type["main"]),
         render_clan_status_bar(by_type["fwa"]),
-        render_clan_status_bar(_desk_bar_counts(by_type)),
         *(render_flag_row(
             label=label,
             count=_int(counts.flags.get(kind)),
@@ -1020,7 +1026,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
         total_open=statuses.get("open", len(open_tickets)),
         counts=counts,
         thumbnails=thumbnails,
-        clan_bars={"main": main_bar, "fwa": fwa_bar, "desk": desk_bar},
+        clan_bars={"main": main_bar, "fwa": fwa_bar},
         flag_rows={
             kind: payload
             for (kind, _label, _color, _filename), payload in zip(HUB_FLAG_ROWS, flag_rows)
@@ -1031,7 +1037,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 16
+HUB_LAYOUT_VERSION = 17
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
