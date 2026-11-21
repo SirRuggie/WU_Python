@@ -56,6 +56,7 @@ DOCUMENTS = {
     "strike-system": Document("strike-system", "WU Strike System", "strikesystem_acknowledge"),
     "family-particulars": Document("family-particulars", "Family Particulars", "familyparticulars_acknowledge"),
     "apply": Document("apply", "Apply / Clan Entry", "ticket_v2_rite_open"),
+    "warrior_desk": Document("warrior_desk", "Warrior Desk", "ticket_v2_create"),
     "rite-of-passage": Document("rite-of-passage", "Rite of Passage", "ticket_v2_rite_choose"),
     "family-rules": Document("family-rules", "Family Rules", None),
     "wu-faq": Document("wu-faq", "WU FAQ", None),
@@ -66,6 +67,7 @@ BLOCK_LABELS = {
     "strike-system": ("How strikes work heading", "How strikes work", "At 4 strikes heading", "At 4 strikes", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
     "family-particulars": ("Family heading", "Intro heading", "Intro", "Friendly challenges heading", "Friendly challenges", "Clan games heading", "Clan games", "War rules heading", "War eligibility heading", "War eligibility", "Prep day heading", "Prep day", "Battle day heading", "Battle day", "CWL heading", "CWL overview", "CWL principles heading", "CWL principles", "Acknowledgement heading", "Acknowledgement"),
     "apply": ("Heading", "Body"),
+    "warrior_desk": ("Heading", "Body"),
     "rite-of-passage": ("Heading", "Introduction", "Main path", "FWA path", "Closing"),
     "family-rules": ("Heading", "Body"),
     "wu-faq": ("Questions heading", "Questions"),
@@ -80,16 +82,20 @@ MEDIA_SLOTS = {
     ),
     "family-particulars": (("welcome", "Welcome banner"), ("cwl", "CWL banner")),
     "apply": (("footer", "Footer image"),),
+    "warrior_desk": (("footer", "Footer image"),),
     "rite-of-passage": (("guide", "Rite of Passage guide"),),
     "family-rules": (),
     "wu-faq": (),
 }
+# Panels bound to one live post owned by the ticket rollout (no posting channel).
+_BOUND_PANELS = frozenset({"apply", "warrior_desk"})
+BOUND_PANELS = _BOUND_PANELS  # public name for the web content/publish adapters
 _baselines: dict[str, list] = {}
 _DESTINATION_TYPES = frozenset((hikari.ChannelType.GUILD_TEXT, hikari.ChannelType.GUILD_NEWS))
 
 
 def has_posting_channel(document_key):
-    return document_key in DOCUMENTS and document_key not in {"apply", "rite-of-passage", "family-rules"}
+    return document_key in DOCUMENTS and document_key not in {*_BOUND_PANELS, "rite-of-passage", "family-rules"}
 
 
 def is_template_only(document_key):
@@ -172,6 +178,7 @@ async def baseline(document: Document):
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
         "apply": ticket_setup.create_public_ticket_embed,
+        "warrior_desk": ticket_setup.create_warrior_desk_embed,
         "rite-of-passage": rite.build_rite,
     }[document.key]
     _baselines[document.key] = build()
@@ -189,6 +196,7 @@ def document_renderer(document: Document):
         "strike-system": recruit_strikesystem.build_strikesystem,
         "family-particulars": recruit_familyparticulars.build_familyparticulars,
         "apply": ticket_setup.create_public_ticket_embed,
+        "warrior_desk": ticket_setup.create_warrior_desk_embed,
         "rite-of-passage": rite.build_rite,
     }[document.key]
 
@@ -294,8 +302,9 @@ def editable_groups(document, sections):
             ("What happens next", ((blocks[2][0], "Title", "title"), (blocks[2][0], "Body", "body"))),
             ("Call to action", ((blocks[3][0], "Title", "title"), (blocks[3][0], "Body", "body"))),
         )
-    if document.key == "apply":
-        return (("Apply panel", ((0, "Heading", "full"), (1, "Body", "full"))),)
+    if document.key in _BOUND_PANELS:
+        return (("Apply panel" if document.key == "apply" else "Warrior Desk panel",
+                 ((0, "Heading", "full"), (1, "Body", "full"))),)
     if document.key == "rite-of-passage":
         return (
             ("Introduction", ((0, "Heading", "full"), (1, "Body", "full"))),
@@ -374,10 +383,12 @@ def published_key(guild_id: int, document_key: str) -> str:
 async def published_for(mongo, guild_id: int, document_key: str):
     if is_template_only(document_key):
         return None
-    if document_key == "apply":
+    if document_key in _BOUND_PANELS:
         from extensions.commands import ticket_runtime
         rollout = await ticket_runtime.get_rollout(mongo)
-        source = rollout.thread_intake if rollout.valid else None
+        source = (
+            rollout.thread_intake if document_key == "apply" else rollout.desk_intake
+        ) if rollout.valid else None
         if source is None or source.guild_id != int(guild_id):
             return None
         return {"channel_id": source.channel_id, "message_id": source.message_id}
@@ -410,6 +421,8 @@ async def loaded_published_target(bot, guild_id: int, document: Document, coordi
     recovery = (
         "Complete ticket setup to restore the active public Apply post."
         if document.key == "apply" else
+        "Post the Warrior Desk panel again from Ticket settings."
+        if document.key == "warrior_desk" else
         "Check the channel. If you need a new post, select Send to channel."
     )
     try:
@@ -617,7 +630,7 @@ def panel(state, notice=None):
         source = "custom image" if slot in overrides else "default image"
         image_menu.add_option(f"{label} ({source})", slot, is_default=slot == selected_slot)
     private_only = is_template_only(document.key)
-    fixed_public = document.key == "apply"
+    fixed_public = document.key in _BOUND_PANELS
     destination = state.get("destination_channel_id")
     destination_menu = hikari.impl.MessageActionRowBuilder()
     destination_menu.add_channel_menu(
@@ -677,10 +690,14 @@ def panel(state, notice=None):
         ))
     elif fixed_public:
         controls.append(hikari.impl.TextDisplayComponentBuilder(
-            content=("Apply is linked to the public ticket post. Save template keeps the text for later posts. "
-                     "Update published post changes the public post now." if target else
-                     "No public Apply post is linked. Complete ticket setup before you update the public post. "
-                     "You can still save this template.")
+            content=(("Warrior Desk is linked to its saved panel. Save template keeps the text for later posts. "
+                      "Update published post changes the linked panel now." if target else
+                      "No Warrior Desk panel is linked. Use Post Warrior Desk panel in Ticket settings. You can still save this template.")
+                     if document.key == "warrior_desk" else
+                     ("Apply is linked to the public ticket post. Save template keeps the text for later posts. "
+                      "Update published post changes the public post now." if target else
+                      "No public Apply post is linked. Complete ticket setup before you update the public post. "
+                      "You can still save this template."))
         ))
     else:
         controls.extend([hikari.impl.TextDisplayComponentBuilder(content=destination_status),
@@ -829,10 +846,10 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
             except (ValueError, hikari.NotFoundError, hikari.ForbiddenError) as exc:
                 await initial_panel(ctx, mongo, state, str(exc) if isinstance(exc, ValueError) else "The bot cannot read that message."); return
             document = next((item for item in DOCUMENTS.values() if int(message.author.id) == int(ctx.interaction.application_id) and acknowledgement_id(message.components, item)), None)
-            if document and document.key in {"apply", "rite-of-passage"}:
+            if document and document.key in {*_BOUND_PANELS, "rite-of-passage"}:
                 source = await published_for(mongo, state["guild_id"], document.key)
                 if source != {"channel_id": int(match[2]), "message_id": int(match[3])}:
-                    await initial_panel(ctx, mongo, state, "Open this ticket panel from Recruit Gauntlet. Apply updates only the active public ticket post."); return
+                    await initial_panel(ctx, mongo, state, "Open Warrior Desk from Ticket settings. Only the bound Warrior Desk panel can be updated." if document.key == "warrior_desk" else "Open this ticket panel from Recruit Gauntlet. Apply updates only the active public ticket post."); return
             if not document:
                 await initial_panel(ctx, mongo, state, "Select a supported post."); return
             original_sections = [node.content for node in text_nodes(message.components)]
@@ -914,7 +931,7 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
                        if document.key != "family-rules" else None)
     destination_channel_id = ((destination_row or {}).get("channel_id")
                               if has_posting_channel(document.key) else None)
-    target = state.get("target") if state.get("document") == document.key and document.key != "apply" else None
+    target = state.get("target") if state.get("document") == document.key and document.key not in _BOUND_PANELS else None
     notice = None
     if target is None:
         coordinates = await published_for(mongo, state["guild_id"], document.key)
@@ -934,8 +951,10 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
         destination_channel_id=destination_channel_id, selected_media_slot=None,
         destination_baseline=destination_row,
     )
-    if document.key == "apply" and target is None and notice is None:
-        notice = "No active public Apply post is bound. Complete ticket setup before updating the post."
+    if document.key in _BOUND_PANELS and target is None and notice is None:
+        notice = ("No active public Apply post is bound. Complete ticket setup before updating the post."
+                  if document.key == "apply" else
+                  "No Warrior Desk post is bound. Post it from Ticket settings before updating the post.")
     for name in ("shared_targets", "shared_target_errors", "shared_update_started", "shared_update_results"):
         draft_state.pop(name, None)
     if document.key == "family-rules":
@@ -978,8 +997,8 @@ async def choose_destination(
         return error_panel(problem)
     document_key = state.get("document")
     values = getattr(ctx.interaction, "values", ()) or ()
-    if document_key in {"apply", "rite-of-passage", "family-rules"}:
-        return panel(state, "This ticket panel does not support a posting channel. Use ticket setup for the public Apply post.")
+    if document_key in {*_BOUND_PANELS, "rite-of-passage", "family-rules"}:
+        return panel(state, "Warrior Desk uses its saved channel. Use Ticket settings → Warrior Desk." if document_key == "warrior_desk" else "This ticket panel does not support a posting channel. Use ticket setup for the public Apply post.")
     if document_key not in DOCUMENTS or len(values) != 1:
         return panel(state, "Select one text or announcement channel.")
     try:
@@ -1031,8 +1050,8 @@ async def send_to_channel(
     if problem:
         return error_panel(problem)
     document_key = state.get("document")
-    if document_key in {"apply", "rite-of-passage", "family-rules"}:
-        return panel(state, "This ticket panel cannot send a new post. Use ticket setup for the public Apply post.")
+    if document_key in {*_BOUND_PANELS, "rite-of-passage", "family-rules"}:
+        return panel(state, "Use Post Warrior Desk panel in Ticket settings → Warrior Desk." if document_key == "warrior_desk" else "This ticket panel cannot send a new post. Use ticket setup for the public Apply post.")
     channel_id = state.get("destination_channel_id")
     if not has_posting_channel(document_key) or not isinstance(channel_id, int) or channel_id <= 0:
         return panel(state, "Select and save a posting channel before sending.")
@@ -1450,11 +1469,11 @@ async def save_and_publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
                              "Family Rules is shared. Save it, then review its linked posts."))
     if not state.get("document") or not target_matches_destination(state):
         return panel(state, "The published post is unavailable in this posting channel. Your draft is unchanged.")
-    if state["document"] == "apply":
-        source = await published_for(mongo, state["guild_id"], "apply")
+    if state["document"] in _BOUND_PANELS:
+        source = await published_for(mongo, state["guild_id"], state["document"])
         target = state.get("target") or {}
         if not source or any(target.get(key) != value for key, value in source.items()):
-            return panel(state, "The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged.")
+            return panel(state, "The Warrior Desk post changed or is missing. Use Post Warrior Desk panel in Ticket settings, then reopen this editor. Your draft is unchanged." if state["document"] == "warrior_desk" else "The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged.")
     if not await _save(ctx, state, mongo):
         return panel(state, "The template changed. Reopen the dashboard. The post was not updated.")
     saved_state = dict(state, revision=state["revision"] + 1)
@@ -1488,10 +1507,18 @@ async def publish_state(ctx, state, mongo, bot, *, saved_template=False, return_
                       if state.get("document") == "rite-of-passage" else
                       "Family Rules is shared. Save it, then review its linked posts.")
     target = state.get("target")
+    if state.get("document") in _BOUND_PANELS:
+        authoritative = await published_for(mongo, state["guild_id"], state["document"])
+        if not authoritative or not target or any(target.get(key) != value for key, value in authoritative.items()):
+            return answer(
+                "The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged."
+                if state.get("document") == "apply" else
+                "The Warrior Desk post changed or is missing. Use Post Warrior Desk panel in Ticket settings, then reopen this editor. Your draft is unchanged."
+            )
     if not target_matches_destination(state):
         return answer("The posting channel is not the channel of this post. Select the original channel, then update the post.")
     document = DOCUMENTS[state["document"]]
-    if document.key == "apply" or target.get("tracked"):
+    if document.key in _BOUND_PANELS or target.get("tracked"):
         current = await published_for(mongo, state["guild_id"], document.key)
         if not current or any(current.get(key) != target.get(key) for key in ("channel_id", "message_id")):
             return answer("The linked published post changed. Reopen the editor to review the current post.")
@@ -1518,7 +1545,7 @@ async def publish_state(ctx, state, mongo, bot, *, saved_template=False, return_
         acknowledgement = acknowledgement_id(message.components, document)
         if document.acknowledgement and not acknowledgement:
             raise ValueError("That is not the selected content type.")
-        if document.key == "apply" or target.get("tracked"):
+        if document.key in _BOUND_PANELS or target.get("tracked"):
             current = await published_for(mongo, state["guild_id"], document.key)
             if current != {"channel_id": target["channel_id"], "message_id": target["message_id"]}:
                 raise ValueError("The active linked post changed. Reopen the editor before updating it.")

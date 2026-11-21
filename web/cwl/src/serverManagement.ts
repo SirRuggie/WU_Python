@@ -81,8 +81,15 @@ export type ManagementDocument = ManagementSection & {
   preview?: PreviewPart[];
   warning?: string;
   readonly?: boolean;
+  desk_readiness?: {
+    ready: boolean;
+    live: boolean;
+    missing: { key: string; label: string }[];
+  };
   actions?: {
     advanced?: boolean;
+    primary?: boolean;
+    disabled_reason?: string;
     id: string;
     label: string;
     description?: string;

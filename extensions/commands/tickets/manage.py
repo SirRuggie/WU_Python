@@ -24,7 +24,7 @@ from hikari.impl import (
 from utils.mongo import MongoClient
 from utils.component_state import insert_state
 from utils.constants import BLUE_ACCENT
-from extensions.commands.tickets import store
+from extensions.commands.tickets import store, perms, schema
 from extensions.commands.tickets.store import as_int as _as_int
 
 # Discord rejects a Components V2 text display whose content is outside 1-4000
@@ -73,31 +73,15 @@ class ListTickets(
     ) -> None:
         """List all open tickets"""
 
-        # Get config to check roles
-        config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-        main_role = config.get("main_thread_recruiter_role")
-        fwa_role = config.get("fwa_thread_recruiter_role")
-
-        # Check if user is a recruiter
-        user_roles = ctx.member.role_ids
-        is_recruiter = (
-                (main_role and main_role in user_roles) or
-                (fwa_role and fwa_role in user_roles) or
-                ctx.member.permissions & hikari.Permissions.ADMINISTRATOR
-        )
-
-        if not is_recruiter:
-            await ctx.respond(
-                "❌ You must be a recruiter to use this command!",
-                ephemeral=True
-            )
+        if not await perms.is_ticket_staff(ctx.member, mongo):
+            await ctx.respond("❌ Ticket staff permission is required.", ephemeral=True)
             return
-
-        # Fetch all open tickets
+        allowed_types = [kind for kind in sorted(schema.TICKET_TYPES)
+                         if await perms.can_handle(ctx.member, mongo, kind)]
         tickets_list = await store.find(mongo, {
-            "type": "ticket",
-            "status": "open"
-        })
+            "status": "open", "guild_id": int(ctx.guild_id),
+            "ticket_type": {"$in": allowed_types},
+        }, sort=[("created_at", 1), ("_id", 1)], limit=100)
 
         if not tickets_list:
             await ctx.respond(
@@ -116,37 +100,18 @@ class ListTickets(
             )
             return
 
-        # Group tickets by type
-        main_tickets = []
-        fwa_tickets = []
-
+        groups = {kind: [] for kind in ("main", "fwa", "account", "staff")}
+        labels = {"main": "Main", "fwa": "FWA", "account": "Add account", "staff": "Contact staff"}
         for ticket in tickets_list:
-            ticket_info = (
-                f"• <@{ticket['user_id']}> - <#{ticket['channel_id']}> "
-                f"(Created <t:{int(ticket['created_at'].timestamp())}:R>)"
-            )
-
-            if ticket['ticket_type'] == 'main':
-                main_tickets.append(ticket_info)
-            else:
-                fwa_tickets.append(ticket_info)
-
-        # Build response
-        description_parts = []
-
-        if main_tickets:
-            description_parts.append(
-                f"**Main Clan Tickets ({len(main_tickets)}):**\n" +
-                "\n".join(main_tickets)
-            )
-
-        if fwa_tickets:
-            if description_parts:
-                description_parts.append("")  # Add spacing
-            description_parts.append(
-                f"**FWA Clan Tickets ({len(fwa_tickets)}):**\n" +
-                "\n".join(fwa_tickets)
-            )
+            kind = ticket.get("ticket_type")
+            if kind not in groups or kind not in allowed_types:
+                continue
+            location = (ticket.get("location") or {}).get("id") or ticket.get("channel_id")
+            created = ticket.get("created_at")
+            opened = created.astimezone(timezone.utc).strftime("%Y-%m-%d") if created else "date unavailable"
+            groups[kind].append(f"• <@{ticket['user_id']}> - <#{location}> (Opened {opened})")
+        description_parts = [f"**{labels[kind]} ({len(rows)}):**\n"+"\n".join(rows)
+                             for kind, rows in groups.items() if rows]
 
         await ctx.respond(
             components=[

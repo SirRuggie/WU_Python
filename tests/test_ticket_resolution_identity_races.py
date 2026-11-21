@@ -122,6 +122,7 @@ def _patch_approval(monkeypatch, collection, *, blacklisted, transitions):
         )
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve.store, "find_one", find_ticket)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", active_blacklist)
     monkeypatch.setattr(resolve.store, "transition", transition)
@@ -277,6 +278,7 @@ def test_approval_pins_ticket_revision_at_blacklist_decision_boundary(monkeypatc
         )
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(resolve.store, "find_one", find)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", no_blacklist)
     monkeypatch.setattr(resolve.store, "transition", transition)
@@ -323,6 +325,7 @@ def test_slash_approve_reports_lock_contention_without_blacklist_claim(monkeypat
         )
 
     monkeypatch.setattr(close.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(close.perms, "can_handle", lambda member, mongo, ticket_type: close.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(close.store, "find_by_location", find)
     monkeypatch.setattr(close.resolve, "approve_ticket", busy)
     asyncio.run(close.Approve.invoke._func(

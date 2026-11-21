@@ -1,6 +1,7 @@
 """Ticket settings and isolated test controls backed by native bot operations."""
 from aiohttp import web
-from utils.ticket_settings import FIELDS, validated_settings, history_values
+from utils.ticket_settings import FIELDS, validated_settings, history_values, desk_readiness
+from utils.ticket_rollout import get_rollout
 from .server_management import API, GUILD_ID, mongo, require_manage, queue_action
 from .manage_content import fingerprint
 
@@ -10,11 +11,13 @@ def field(key,label,value,kind='text',**extra):
 
 async def settings(request):
     await require_manage(request,'ticket_settings')
-    async with mongo(request) as db:cfg=await db.ticket_setup.find_one({'_id':'config'}) or {}
     part=request.match_info.get('part')
+    async with mongo(request) as db:
+        cfg=await db.ticket_setup.find_one({'_id':'config'}) or {}
+        rollout=await get_rollout(db) if part=='desk' else None
     result=dict(id='ticket_settings',label='Ticket settings',description="Select the ticket settings to change.",group='Recruitment',revision=fingerprint(cfg),fields=[])
     if not part:
-        result['documents']=[dict(id=key,label=label,endpoint='/manage/ticket-settings/'+key) for key,label in [('timers','Ticket wait times'),('main','Main application channels'),('fwa','FWA application channels'),('viewers','Staff viewing access'),('tools','Ticket panel tools')]]
+        result['documents']=[dict(id=key,label=label,endpoint='/manage/ticket-settings/'+key) for key,label in [('timers','Ticket wait times'),('main','Main application channels'),('fwa','FWA application channels'),('desk','Warrior Desk'),('viewers','Staff viewing access'),('tools','Ticket panel tools')]]
     elif part=='timers':
         result['description']='Set when staff review inactive tickets and when resolved tickets are archived.'
         result['fields']=[field('ticket_inactivity_minutes','Open-ticket review wait (minutes)',cfg.get('ticket_inactivity_minutes',10080),'number',min=1440,max=525600,description='Staff are asked to review silent tickets. Tickets are not denied automatically.'),field('ticket_archive_quiet_days','Archive resolved tickets after quiet days',cfg.get('ticket_archive_quiet_days',1),'number',min=0,max=365,description='0 turns automatic archiving off. History is kept.')]
@@ -22,6 +25,18 @@ async def settings(request):
         result['description']="Select application channels and the recruiter role."
         result['fields']=[field(f'{part}_{key}',label,str(cfg.get(f'{part}_{key}') or ''),kind) for key,label,kind in [('candidate_parent','Recruit channel','channel'),('staff_parent','Staff channel','channel'),('thread_recruiter_role','Recruiter role','role')]]
         result['warning']='The recruit channel must match the active Apply panel. Moving intake requires updating that binding first.'
+    elif part=='desk':
+        result['description']='Select the Warrior Desk channel, where staff threads go, and the roles that handle each request type.'
+        result['fields']=[field(key,label,str(cfg.get(key) or ''),kind) for key,label,kind in [('desk_channel_id','Warrior Desk channel','channel'),('desk_staff_parent','Staff thread channel','channel'),('account_thread_recruiter_role','Add account staff role','role'),('staff_thread_recruiter_role','Contact staff role','role')]]
+        result['warning']='Leaving the staff thread channel empty uses the Main staff channel. Setup checks Discord permissions again before posting.'
+        readiness=desk_readiness(cfg,phase=rollout.phase,rollout_valid=rollout.valid)
+        readiness['live']=bool(rollout.desk_intake)
+        result['desk_readiness']=readiness
+        result['actions']=[dict(id='restore_desk_entry',label='Repair panel' if readiness['live'] else 'Post Warrior Desk panel',
+            confirm='Repair the Warrior Desk panel?' if readiness['live'] else 'Post the Warrior Desk panel in its saved channel?',
+            endpoint='/manage/ticket-settings/actions/restore_desk_entry',
+            disabled_reason='' if readiness['ready'] else 'Complete the missing setup items before posting.',
+            primary=not readiness['live'])]
     elif part=='viewers':
         result['description']="Select additional roles that can view tickets."
         result['fields']=[field('ticket_staff_viewer_role_ids','Extra staff viewer roles',[str(x) for x in cfg.get('ticket_staff_viewer_role_ids',[])],'multiselect',description='Viewing access does not grant permission to make ticket decisions.',source='roles')]
@@ -29,7 +44,7 @@ async def settings(request):
         result['description']='Check ticket setup or restore a missing panel.'
         result['action_only']=True
         result['fields']=[field('console_channel','Staff console channel','','channel')]
-        result['actions']=[dict(id=x,label=l,confirm=c,endpoint='/manage/ticket-settings/actions/'+x) for x,l,c in [('check','Check setup','Check current ticket channels and bot permissions? No messages are sent.'),('restore_entry','Restore Apply panel','Restore the public Apply message in its bound channel?'),('restore_console','Restore staff console','Restore the staff console in the selected channel?')]]
+        result['actions']=[dict(id=x,label=l,confirm=c,endpoint='/manage/ticket-settings/actions/'+x) for x,l,c in [('check','Check setup','Check current ticket channels and bot permissions? No messages are sent.'),('restore_entry','Restore Apply panel','Restore the public Apply message in its bound channel?'),('restore_console','Post Ticket Command','Post or repair Ticket Command in the selected channel?')]]
     else:raise web.HTTPNotFound()
     return web.json_response(result)
 

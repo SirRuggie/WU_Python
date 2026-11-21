@@ -10,7 +10,8 @@ inherit trust from the command that rendered it.
 import hikari
 
 from utils.mongo import MongoClient
-from extensions.commands.tickets import testing_service
+from utils.ticket_access import ticket_type_role_ids, allowed_types_from_config
+from extensions.commands.tickets import schema, testing_service
 
 
 def _as_int(value) -> int:
@@ -80,3 +81,51 @@ async def is_recruiter(member: hikari.Member | None, mongo: MongoClient) -> bool
         or (fwa_role and fwa_role in role_ids)
         or member.permissions & hikari.Permissions.ADMINISTRATOR
     )
+
+
+async def is_ticket_staff(member: hikari.Member | None, mongo: MongoClient) -> bool:
+    """Recruiter, or a holder of a Warrior Desk (account/staff) role.
+
+    Console access only: viewing the hub and tools and selecting tickets. It
+    does not authorise recruit actions, staff-create or flag writes by ID.
+    """
+    if await is_recruiter(member, mongo):
+        return True
+    if member is None or testing_service.is_test_scope(mongo):
+        return False
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    target_guild_id = _as_int(config.get("ticket_target_guild_id"))
+    if not target_guild_id or _as_int(getattr(member, "guild_id", 0)) != target_guild_id:
+        return False
+    role_ids = {_as_int(value) for value in member.role_ids}
+    desk_roles = {
+        _as_int(config.get(f"{kind}_thread_recruiter_role"))
+        for kind in schema.DESK_TICKET_TYPES
+    }
+    return bool(role_ids & (desk_roles - {0}))
+
+
+async def allowed_ticket_types(member, mongo: MongoClient) -> frozenset[str]:
+    """One bounded config read gives the actor's per-type read/action scope."""
+    if member is None:
+        return frozenset()
+    if testing_service.is_test_scope(mongo):
+        return frozenset(schema.TICKET_TYPES) if await is_recruiter(member, mongo) else frozenset()
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    return allowed_types_from_config(
+        config, guild_id=getattr(member, "guild_id", 0),
+        role_ids=getattr(member, "role_ids", ()) or (),
+        administrator=bool(member.permissions & hikari.Permissions.ADMINISTRATOR),
+    )
+
+
+async def can_handle(
+    member: hikari.Member | None, mongo: MongoClient, ticket_type: str
+) -> bool:
+    """Administrator in the bound guild, or the exact type's handler roles.
+
+    Recruiters handle Main/FWA and Add account; the account role handles only
+    Add account; the Contact staff role handles only Contact staff.
+    """
+    kind = str(ticket_type or "").strip().lower()
+    return kind in await allowed_ticket_types(member, mongo)

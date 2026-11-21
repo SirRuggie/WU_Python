@@ -36,7 +36,10 @@ export const pageParamSpecs: Partial<
       values: ["open", "all", "approved", "denied", "closed"],
       fallback: "open",
     },
-    type: { values: ["all", "main", "fwa"], fallback: "all" },
+    type: {
+      values: ["all", "main", "fwa", "recruit", "account", "staff"],
+      fallback: "all",
+    },
   },
 };
 
@@ -48,7 +51,11 @@ export function parsePageParam(
 ): string {
   const spec = pageParamSpecs[view]?.[key];
   if (!spec) return "";
-  const value = new URLSearchParams(search).get(key) || "";
+  const params = new URLSearchParams(search);
+  const value =
+    params.get(key) ||
+    (view === "tickets" && key === "type" ? params.get("kind") : "") ||
+    "";
   return spec.values.includes(value) ? value : spec.fallback;
 }
 
@@ -71,6 +78,7 @@ export function replacePageParam(
   const spec = pageParamSpecs[view]?.[key];
   if (!spec || typeof window === "undefined") return;
   const url = new URL(window.location.href);
+  if (view === "tickets" && key === "type") url.searchParams.delete("kind");
   if (value && value !== spec.fallback && spec.values.includes(value))
     url.searchParams.set(key, value);
   else url.searchParams.delete(key);

@@ -61,6 +61,7 @@ def activity_baseline(ticket):
 def eligible(ticket):
     return bool(ticket and all(ticket.get(k) == v for k, v in store.RUNTIME_FILTER.items())
                 and ticket.get("status") == "open" and not ticket.get("thread_missing")
+                and ticket.get("ticket_type") != "staff"
                 and not testing_service.is_test_ticket(ticket))
 
 
@@ -223,16 +224,14 @@ async def finish_ghosted(bot, mongo, ticket):
     if won is None:
         return False
     reason = str(won.get("reason") or prompt.get("reason") or REASON)
-    ids = flag_store._discord_ids(ticket.get("user_id"))
-    tags = ticket.get("player_tags") or ()
-    async with flag_store.identity_guard(mongo, discord_ids=ids, player_tags=tags):
-        existing = await mongo.ticket_flags.find({"kind": flag_store.FLAG_GHOSTED, "active": True,
-            "$or": flag_store._identity_query(ids, list(tags))}).limit(2).to_list(length=2)
-        flag_doc = existing[0] if existing else None
-        if not existing:
-            flag_doc = await flag_store._set_flag_unlocked(mongo, kind=flag_store.FLAG_GHOSTED, discord_ids=ids,
-                player_tags=tags, source="Recruiter confirmed ticket inactivity",
-                added_by=won["actor"], added_by_name=won.get("actor_name") or str(won["actor"]), reason=reason)
+    mutation = await flag_store.apply_ghosted_close_receipt(
+        mongo, ticket=ticket, prompt=prompt, audit=won, reason=reason,
+    )
+    if not mutation.won:
+        await mongo.tickets.update_one({"_id":ticket["_id"], "inactivity.prompt.token":prompt["token"]},
+            {"$set":{"inactivity.prompt.state":"conflict", "inactivity.prompt.error":mutation.reason}})
+        return False
+    flag_doc = mutation.doc
     from extensions.commands.tickets import thread_service, console
     await console._refresh_after_flag_mutation(bot, mongo, flag_doc)
     await thread_service.notify_console_after_change(bot, mongo, ticket, reason="Ghosted inactivity flag")
@@ -240,6 +239,70 @@ async def finish_ghosted(bot, mongo, ticket):
     await mongo.tickets.update_one({"_id": ticket["_id"], "inactivity.prompt.token": prompt["token"]},
         {"$set": {"inactivity.prompt.state": "complete"}})
     return True
+
+
+async def close_as_ghosted(bot, mongo, *, ticket, member, actor_name, reason):
+    """One status/CAS/effects path shared by inactivity and manual Ghosted."""
+    from . import lifecycle
+    prompt = (ticket.get("inactivity") or {}).get("prompt") or {}
+    return await lifecycle.change(
+        bot, mongo, ticket_id=ticket["_id"], member=member, actor_name=actor_name,
+        kind="close", reason=reason, expected_rev=int(ticket.get("rev") or 0),
+        expected_activity_revision=int(prompt.get("activity_revision") or 0),
+        expected_inactivity_token=prompt.get("token"),
+    )
+
+
+async def apply_manual_ghosted(bot, mongo, *, ticket, member, actor_name, reason,
+                              expected_flag_id=None, expected_rev=None, check_expected=False):
+    """Flag+Close from an explicit manual request, with durable partial recovery."""
+    if ticket.get("ticket_type") == "staff":
+        return store.Transition(store.BLOCKED, ticket, "Contact staff requests cannot be Ghosted.")
+    if ticket.get("status") != "open":
+        return store.Transition(store.BLOCKED, ticket, "This ticket is already resolved; it was not closed again.")
+    if (not await perms.is_recruiter(member, mongo)
+            or not await perms.can_handle(member, mongo, ticket.get("ticket_type"))
+            or int(getattr(member, "guild_id", 0)) != int(ticket.get("guild_id") or 0)):
+        return store.Transition(store.UNAUTHORIZED, None, "Recruiter permission is required for this ticket.")
+    reason = str(reason or "").strip()
+    if not 5 <= len(reason) <= 500:
+        return store.Transition(store.BLOCKED, ticket, "Ghosted closes this ticket. Write one reason between 5 and 500 characters.")
+    ids, tags = (ticket.get("user_id"),), ticket.get("player_tags") or ()
+    async with flag_store.identity_guard(mongo, discord_ids=ids, player_tags=tags):
+        if check_expected:
+            expectation = await flag_store.current_flag_expectation(
+                mongo, kind=flag_store.FLAG_GHOSTED, discord_ids=ids, player_tags=tags,
+                expected_flag_id=expected_flag_id, expected_rev=expected_rev,
+            )
+            if not expectation.won:
+                return store.Transition(expectation.outcome, ticket, expectation.reason)
+        if not check_expected:
+            expectation = await flag_store.current_flag_snapshot(mongo,
+                kind=flag_store.FLAG_GHOSTED, discord_ids=ids, player_tags=tags)
+            if not expectation.won:
+                return store.Transition(expectation.outcome, ticket, expectation.reason)
+        token = uuid4().hex
+        claimed = await store.claim_manual_ghosted(
+            mongo, ticket, actor_id=member.id, actor_name=actor_name, reason=reason,
+            token=token, at=now(), lease_until=now()+LEASE,
+            expected_flag=expectation.doc,
+        )
+        if claimed is None:
+            return store.Transition(store.LOST, ticket, "The ticket changed. Nothing was closed.")
+        result = await close_as_ghosted(bot, mongo, ticket=claimed, member=member,
+                                       actor_name=actor_name, reason=reason)
+    if result.won or result.outcome == store.EFFECT_FAILED:
+        try:
+            complete = await finish_ghosted(bot, mongo, result.doc)
+        except Exception:
+            _log.exception("Manual Ghosted flag pending after won close ticket=%s", ticket["_id"])
+            complete = False
+        return store.Transition(result.outcome, result.doc,
+            "Ghosted applied and ticket closed with the reason you provided." if complete else
+            "The ticket is closed. Check Manage flags: a flag update is pending recovery or needs review after a concurrent change.")
+    await mongo.tickets.update_one({"_id":ticket["_id"], "inactivity.prompt.token":token},
+                                  {"$unset":{"inactivity.prompt":""}})
+    return result
 
 
 @register_action("ticket_inactivity", opens_modal=True, no_return=True, preload_state=False)
@@ -276,7 +339,7 @@ async def handle_inactivity_reason(ctx, action_id: str,
 
 async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None):
     await ctx.defer(ephemeral=True)
-    if not await perms.is_recruiter(ctx.member, mongo) or testing_service.is_test_scope(mongo):
+    if not await perms.is_ticket_staff(ctx.member, mongo) or testing_service.is_test_scope(mongo):
         await ctx.interaction.edit_initial_response(content="Recruiter permission required.")
         return
     parts = action_id.split(":")
@@ -297,7 +360,7 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
         or store.as_int(getattr(source, "id", 0)) != store.as_int(prompt.get("message_id"))):
         await ctx.interaction.edit_initial_response(content="This inactivity prompt is out of date.")
         return
-    if not await perms.is_recruiter(ctx.member, mongo):
+    if not await perms.can_handle(ctx.member, mongo, ticket.get("ticket_type")):
         await ctx.interaction.edit_initial_response(content="Recruiter permission required.")
         return
     config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
@@ -319,11 +382,8 @@ async def _handle_inactivity_decision(ctx, action_id, *, bot, mongo, reason=None
         if not claimed:
             wording = "This inactivity prompt is out of date."
         else:
-            from . import lifecycle
-            result = await lifecycle.change(bot, mongo, ticket_id=ticket_id, member=ctx.member,
-                actor_name=actor_name, kind="close", reason=reason,
-                expected_rev=int(ticket.get("rev") or 0), expected_activity_revision=int(prompt.get("activity_revision") or 0),
-                expected_inactivity_token=token)
+            result = await close_as_ghosted(bot, mongo, ticket=claimed, member=ctx.member,
+                actor_name=actor_name, reason=reason)
             if result.won or result.outcome == store.EFFECT_FAILED:
                 try:
                     complete = await finish_ghosted(bot, mongo, result.doc)

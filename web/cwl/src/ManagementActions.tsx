@@ -78,12 +78,37 @@ export default function ManagementActions({
             {actions.map((action) => (
               <div className="manage-action" key={action.id}>
                 <>{action.description && <p>{action.description}</p>}</>
+                {action.disabled_reason && (
+                  <p id={`action-${action.id}-reason`}>
+                    {action.disabled_reason}
+                  </p>
+                )}
                 <button
+                  className={action.primary ? "primary" : undefined}
+                  aria-disabled={
+                    busy ||
+                    !!statusUrl ||
+                    (dirty && !document.action_only) ||
+                    !!action.disabled_reason
+                  }
+                  aria-describedby={
+                    action.disabled_reason
+                      ? `action-${action.id}-reason`
+                      : undefined
+                  }
                   disabled={
-                    busy || !!statusUrl || (dirty && !document.action_only)
+                    busy ||
+                    !!statusUrl ||
+                    (dirty && !document.action_only) ||
+                    !!action.disabled_reason
                   }
                   onClick={async () => {
-                    if (writing.current) return;
+                    if (
+                      writing.current ||
+                      action.disabled_reason ||
+                      (dirty && !document.action_only)
+                    )
+                      return;
                     const invalid = document.fields
                       .map((field) => fieldError(field, draft[field.key]))
                       .find(Boolean);

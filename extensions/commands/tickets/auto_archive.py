@@ -10,6 +10,7 @@ _log = logging.getLogger(__name__)
 _task = None
 STATE_ID = 'resolved_ticket_archive_schedule'
 STATUSES = ('approved', 'denied', 'closed')
+_member_expiry_after = ''
 
 
 def now():
@@ -101,10 +102,80 @@ async def archive_pair(bot, mongo, ticket, config):
     return True
 
 
+async def lock_expired_member_threads(bot, mongo, config):
+    """Reuse this task to lock Close threads after the durable 60-day deadline."""
+    global _member_expiry_after
+    guild_id = int(config.get('ticket_target_guild_id') or 0)
+    if not guild_id:
+        return
+    rows = await store.expired_member_ticket_page(
+        mongo, guild_id=guild_id, cutoff=now()-timedelta(days=60),
+        after=_member_expiry_after, limit=25,
+    )
+    for ticket in rows[:25]:
+        try:
+            location = ticket.get('location') or {}
+            channel_id = int(location.get('id') or 0)
+            if not channel_id:
+                continue
+            channel = await bot.rest.fetch_channel(channel_id)
+            if (int(channel.guild_id) != guild_id or channel.type not in (
+                    hikari.ChannelType.GUILD_PRIVATE_THREAD, hikari.ChannelType.GUILD_PUBLIC_THREAD)):
+                continue
+            pending = ticket.get('member_window_lock')
+            if pending:
+                from . import lifecycle
+                latest = await store.find_one(mongo, {
+                    **store.RUNTIME_FILTER, '_id':ticket['_id'], 'guild_id':guild_id,
+                    'location.id':channel_id,
+                })
+                if latest and (latest.get('status') == 'open' or lifecycle.member_reopen_eligible(latest)):
+                    await bot.rest.edit_channel(channel_id, archived=latest.get('status') != 'open', locked=False,
+                        reason='Recovering interrupted member-window maintenance')
+                    await store.clear_member_window_lock(mongo, ticket['_id'], pending)
+                    continue
+                if latest and latest.get('status') not in {'open','closed'}:
+                    await store.clear_member_window_lock(mongo, ticket['_id'], pending)
+                    continue
+            current = await store.find_one(mongo, {
+                **store.RUNTIME_FILTER, '_id':ticket['_id'], 'guild_id':guild_id,
+                'status':'closed', 'rev':ticket.get('rev',0), 'location.id':channel_id,
+                'closed_at':{'$lt':now()-timedelta(days=60)},
+            })
+            if current is None:
+                continue
+            if channel.is_locked:
+                if pending:
+                    await store.clear_member_window_lock(mongo, ticket['_id'], pending)
+                continue
+            marker = await store.claim_member_window_lock(mongo, current, channel_id)
+            if marker is None:
+                continue
+            await bot.rest.edit_channel(channel_id, locked=True,
+                reason='Member reopen window ended 60 days after Close')
+            latest = await store.find_one(mongo, {**store.RUNTIME_FILTER, '_id':ticket['_id']})
+            if (not latest or latest.get('status') != 'closed'
+                    or latest.get('rev',0) != ticket.get('rev',0)
+                    or latest.get('location') != location):
+                # A concurrent successful reopen always wins over maintenance.
+                from . import lifecycle
+                if (latest and latest.get('location') == location
+                        and (latest.get('status') == 'open' or lifecycle.member_reopen_eligible(latest))):
+                    await bot.rest.edit_channel(channel_id, archived=latest.get('status') != 'open', locked=False,
+                        reason='Ticket changed during member-window maintenance')
+            await store.clear_member_window_lock(mongo, ticket['_id'], marker)
+        except hikari.NotFoundError:
+            continue
+        except Exception:
+            _log.exception('Member reopen-window lock failed ticket=%s', ticket['_id'])
+    _member_expiry_after = str(rows[24]['_id']) if len(rows) > 25 else ''
+
+
 async def sweep(bot, mongo):
     if testing_service.is_test_scope(mongo):
         return
     config = await mongo.ticket_setup.find_one({'_id': 'config'}) or {}
+    await lock_expired_member_threads(bot, mongo, config)
     days = quiet_days(config)
     gid = int(config.get('ticket_target_guild_id') or 0)
     if not days or not gid:
@@ -138,7 +209,10 @@ async def _run(bot, mongo):
         try:
             from . import thread_intake_ready
             if thread_intake_ready():
+                from . import staff_access
                 await sweep(bot, mongo)
+                async with asyncio.timeout(30):
+                    await staff_access.sweep(bot, mongo)
         except Exception:
             _log.exception('Daily resolved ticket archive failed')
         await asyncio.sleep(60)

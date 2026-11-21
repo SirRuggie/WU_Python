@@ -5,6 +5,10 @@ from datetime import datetime, timedelta, timezone
 import pytest
 
 from extensions.commands.tickets import handlers, resolve
+import asyncio
+from types import SimpleNamespace
+from unittest.mock import AsyncMock
+from tests.test_ticket_pilot_rollout import _pilot_context, _my_ticket_fixture
 
 
 @pytest.mark.parametrize('host_zone', ['UTC', 'America/New_York'])
@@ -28,27 +32,36 @@ def test_mongo_utc_timestamp_does_not_depend_on_host_timezone(host_zone):
         time.tzset()
 
 
-def test_history_uses_current_decision_not_previous_approval_or_later_updates():
-    denied = datetime(2026, 9, 28, 17, 6, 15)
-    ticket = dict(ticket_type='fwa', ticket_number=809, status='denied',
-                  approved_at=datetime(2026, 9, 27), denied_at=denied,
-                  updated_at=datetime(2026, 9, 29))
-    line = handlers._my_ticket_history_line(ticket)
-    assert 'FWA #809 · Denied' in line
-    assert resolve.ts(denied, 'f') in line
-    del ticket['denied_at']
-    assert 'Date unavailable' in handlers._my_ticket_history_line(ticket)
+def test_member_closed_ticket_has_exact_open_presentation_and_no_decision_date(monkeypatch):
+    outputs=[]
+    for status in ['open','closed']:
+        edits=[]
+        row=dict(_id='ticket_809',ticket_type='fwa',ticket_number=809,status=status,
+                 guild_id=11,user_id=50,location={'id':55,'staff_space_id':66},
+                 closed_at=datetime.now(timezone.utc)-timedelta(days=1),
+                 approved_at=datetime(2026,9,27),updated_at=datetime(2026,9,29))
+        access=AsyncMock(return_value=True)
+        monkeypatch.setattr(handlers.thread_service,'ensure_candidate_thread_access',access)
+        asyncio.run(handlers.handle_my_ticket(_pilot_context(edits),'',
+            bot=SimpleNamespace(rest=SimpleNamespace()),mongo=_my_ticket_fixture(monkeypatch,[row])))
+        payload=edits[-1]['components'][0].build()[0]
+        outputs.append(payload)
+        if status=='closed':access.assert_not_awaited()
+    assert outputs[0]==outputs[1]
+    assert 'FWA #809' in repr(outputs[0])
+    assert 'Closed' not in repr(outputs[0]) and '<t:' not in repr(outputs[0])
 
 
-def test_history_card_fits_five_tickets_and_keeps_staff_data_private():
-    ticket = dict(ticket_type='fwa', ticket_number=809, status='denied',
-                  guild_id=11, location={'id': 55, 'staff_space_id': 66},
-                  reason='private reason', staff_notes='private notes', flags=['ghosted'])
-    panel = handlers._my_ticket_history_components([ticket] * 5)[0]
-    payload = panel.build()[0]
-    assert payload['type'] == 17
-    assert len(payload['components']) == 17
-    assert 'private reason' not in repr(payload)
-    assert 'private notes' not in repr(payload)
-    assert 'ghosted' not in repr(payload)
-    assert '/11/66' not in repr(payload)
+def test_member_ticket_card_fits_five_tickets_and_keeps_staff_data_private(monkeypatch):
+    edits=[]
+    row=dict(_id='ticket_809',ticket_type='fwa',ticket_number=809,status='closed',guild_id=11,
+             user_id=50,location={'id':55,'staff_space_id':66},reason='private reason',
+             staff_notes='private notes',flags=['ghosted'])
+    asyncio.run(handlers.handle_my_ticket(_pilot_context(edits),'',
+        bot=SimpleNamespace(rest=SimpleNamespace()),mongo=_my_ticket_fixture(monkeypatch,[row]*5)))
+    payload=edits[-1]['components'][0].build()[0]
+    assert payload['type']==17 and len(payload['components'])==16
+    for private in ['private reason','private notes','ghosted','/11/66','Closed']:
+        assert private not in repr(payload)
+    assert repr(payload).count('https://discord.com/channels/11/55')==5
+    assert edits[-1]['role_mentions'] is False

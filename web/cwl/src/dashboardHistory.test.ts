@@ -535,3 +535,20 @@ it("round trips Town Hall record paths and safe old weight aliases", () => {
     }),
   ).toBe("/server/fwa");
 });
+
+it("round trips a validated Tickets reader URL without leaking it to other pages", () => {
+  const route = dashboardTarget(
+    "?type=staff&status=closed&ticket=ticket_123",
+    "/tickets",
+  );
+  expect(route.ticket).toBe("ticket_123");
+  expect(dashboardPath(route)).toBe(
+    "/tickets?status=closed&type=staff&ticket=ticket_123",
+  );
+  expect(
+    dashboardTarget("?ticket=../../secret", "/tickets").ticket,
+  ).toBeUndefined();
+  expect(
+    dashboardTarget("?ticket=ticket_123", "/roster").ticket,
+  ).toBeUndefined();
+});

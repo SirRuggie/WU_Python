@@ -4,11 +4,12 @@ import { formatDateTime, formatNumber } from "./format";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
 import RefreshControl, { useRefreshTime } from "./RefreshControl";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Shield, UserPlus, Users } from "lucide-react";
 import DiscordIdentity, { discordIdentityName } from "./DiscordIdentity";
 import TicketConversation from "./TicketConversation";
+import { dashboardPath, dashboardTarget } from "./dashboardHistory";
 import { useEffect, useRef, useState } from "react";
-import { api } from "./api";
+import { api, ApiError } from "./api";
 import "./TicketBrowser.css";
 import { parsePageParam, replacePageParam } from "./pageUrlState";
 import ActionPanel from "./ActionPanel";
@@ -24,6 +25,22 @@ export type Ticket = {
   status: string;
   created_at: string | null;
   flags: { kind: string; label: string; reason: string }[];
+};
+const ticketTypeName = (kind: string) =>
+  ({
+    main: "Recruit",
+    fwa: "Recruit",
+    account: "Add account",
+    staff: "Contact staff",
+  })[kind] || "Ticket";
+const ticketIcon = (kind: string) =>
+  kind === "staff" ? Shield : kind === "account" ? UserPlus : Users;
+const initialTicketType = () => {
+  const params = new URLSearchParams(window.location.search);
+  const value = params.get("type") || params.get("kind") || "all";
+  return ["all", "main", "fwa", "recruit", "account", "staff"].includes(value)
+    ? value
+    : "all";
 };
 const statusName = (value: string) =>
   ({ open: "Open", approved: "Approved", denied: "Denied", closed: "Closed" })[
@@ -41,9 +58,7 @@ export default function TicketBrowser() {
   const [status, setStatus] = useState(() =>
       parsePageParam("tickets", "status", window.location.search),
     ),
-    [kind, setKind] = useState(() =>
-      parsePageParam("tickets", "type", window.location.search),
-    ),
+    [kind, setKind] = useState(() => initialTicketType()),
     [flag, setFlag] = useState("all"),
     [search, setSearch] = useState(""),
     [query, setQuery] = useState(""),
@@ -56,10 +71,46 @@ export default function TicketBrowser() {
     [error, setError] = useState(""),
     [reload, setReload] = useState(0),
     [selected, setSelected] = useState<Ticket | null>(null);
+  const [noAccess, setNoAccess] = useState(false);
+  const [allowedTypes, setAllowedTypes] = useState<string[] | null>(null);
+  const [readerId, setReaderId] = useState(
+    () =>
+      dashboardTarget(window.location.search, window.location.pathname)
+        .ticket || "",
+  );
+  const readerBackPending = useRef(false);
+  const readerUrl = (id: string) =>
+    dashboardPath({
+      ...dashboardTarget(window.location.search, window.location.pathname),
+      view: "tickets",
+      season: "",
+      ticket: id,
+    });
+  const listUrl = () => {
+    const url = new URL(window.location.href);
+    url.searchParams.delete("ticket");
+    return url.pathname + url.search + url.hash;
+  };
+  const restoreReaderLocation = () => {
+    const next =
+      dashboardTarget(window.location.search, window.location.pathname)
+        .ticket || "";
+    readerBackPending.current = false;
+    setReaderId(next);
+    setSelected((current) => (current?.id === next ? current : null));
+    if (!next) {
+      returnReady.current = false;
+      setBusy(true);
+    }
+  };
+  useEffect(() => {
+    window.addEventListener("popstate", restoreReaderLocation);
+    return () => window.removeEventListener("popstate", restoreReaderLocation);
+  }, []);
   const returnTicket = useRef<string | null>(null);
   const returnReady = useRef(false);
   const heading = useRef<HTMLHeadingElement>(null);
-  const ticketButtons = useRef(new Map<string, HTMLButtonElement>());
+  const ticketButtons = useRef(new Map<string, HTMLAnchorElement>());
   useEffect(() => {
     if (selected || busy || !returnReady.current || !returnTicket.current)
       return;
@@ -77,30 +128,45 @@ export default function TicketBrowser() {
     return () => clearTimeout(timer);
   }, [search]);
   useEffect(() => {
-    if (selected) return;
+    if (readerId) return;
     let alive = true;
     setBusy(true);
     setError("");
+    setNoAccess(false);
     setTickets([]);
     const params = new URLSearchParams({
       status,
-      kind,
+      type: kind,
       flag,
       q: query,
       from,
       to,
       page: String(page),
     });
-    api<{ tickets: Ticket[]; has_more: boolean }>(`/manage/tickets?${params}`)
+    api<{ tickets: Ticket[]; has_more: boolean; allowed_types?: string[] }>(
+      `/manage/tickets?${params}`,
+    )
       .then((result) => {
         if (alive) {
           setTickets(result.tickets);
           setMore(result.has_more);
+          setAllowedTypes(
+            result.allowed_types || ["main", "fwa", "account", "staff"],
+          );
         }
       })
       .catch((e) => {
         if (alive) {
+          if (e instanceof ApiError && e.status === 403 && kind !== "all") {
+            // A stale forbidden scope can coexist with access to other types.
+            // One All read distinguishes that case from a global denial.
+            setKind("all");
+            setPage(1);
+            replacePageParam("tickets", "type", "all");
+            return;
+          }
           setError(e.message);
+          setNoAccess(e instanceof ApiError && e.status === 403);
           setMore(false);
         }
       })
@@ -113,11 +179,35 @@ export default function TicketBrowser() {
     return () => {
       alive = false;
     };
-  }, [selected, status, kind, flag, query, from, to, page, reload]);
+  }, [readerId, status, kind, flag, query, from, to, page, reload]);
   const updatedAt = useRefreshTime(busy, true, error);
   const extraFilters = Number(flag !== "all") + Number(!!from) + Number(!!to);
   const filterCount = Number(status !== "open") + extraFilters;
   const statusLabel = `${status === "all" ? "All" : statusName(status)} tickets`;
+  const scopeItems = [
+    ...(allowedTypes?.some((type) => type === "main" || type === "fwa")
+      ? [{ id: "recruit", label: "Recruits" }]
+      : []),
+    ...(allowedTypes?.includes("account")
+      ? [{ id: "account", label: "Accounts" }]
+      : []),
+    ...(allowedTypes?.includes("staff")
+      ? [{ id: "staff", label: "Staff" }]
+      : []),
+  ];
+  const scopeValue = kind === "main" || kind === "fwa" ? "recruit" : kind;
+  const displayScope =
+    scopeValue === "all" && scopeItems.length === 1
+      ? scopeItems[0].id
+      : scopeValue;
+  const scopeNoun =
+    displayScope === "staff"
+      ? "staff requests"
+      : displayScope === "account"
+        ? "account requests"
+        : displayScope === "recruit"
+          ? "recruit applications"
+          : "tickets";
   const clearFilters = () => {
     setSearch("");
     setQuery("");
@@ -130,16 +220,50 @@ export default function TicketBrowser() {
     setTo("");
     setPage(1);
   };
-  if (selected)
+  if (readerId)
     return (
       <TicketConversation
-        ticket={selected}
+        ticket={
+          selected?.id === readerId
+            ? selected
+            : {
+                id: readerId,
+                number: 0,
+                name: "",
+                user_id: "",
+                kind: "",
+                status: "",
+                created_at: null,
+                flags: [],
+              }
+        }
         onBack={() => {
-          returnReady.current = false;
-          setBusy(true);
-          setSelected(null);
+          if (readerBackPending.current) return;
+          returnTicket.current = readerId;
+          if (window.history.state?.wuTicketReader === readerId) {
+            readerBackPending.current = true;
+            window.history.back();
+          } else {
+            const { wuTicketReader: _reader, ...state } =
+              window.history.state || {};
+            window.history.replaceState(state, "", listUrl());
+            restoreReaderLocation();
+          }
         }}
       />
+    );
+  if (noAccess)
+    return (
+      <section className="ticket-browser">
+        <CwlPageHeader
+          title={
+            <h1 ref={heading} tabIndex={-1}>
+              Tickets
+            </h1>
+          }
+        />
+        <p role="status">You do not have access to tickets.</p>
+      </section>
     );
   return (
     <section className="ticket-browser">
@@ -149,7 +273,7 @@ export default function TicketBrowser() {
             Tickets
           </h1>
         }
-        description="Review applications and conversations. Reply or make decisions in Discord."
+        description="Review recruit applications and member requests. Reply or make decisions in Discord."
       >
         <RefreshControl
           updatedAt={updatedAt}
@@ -174,24 +298,23 @@ export default function TicketBrowser() {
       <ListToolbar
         className="ticket-toolbar"
         scope={
-          <SectionTabs
-            mode="segmented"
-            label="Ticket type"
-            items={[
-              { id: "all", label: "All" },
-              { id: "main", label: "Main" },
-              { id: "fwa", label: "FWA" },
-            ]}
-            value={kind}
-            onChange={(next) => {
-              setKind(next);
-              replacePageParam("tickets", "type", next);
-              setPage(1);
-            }}
-          />
+          scopeItems.length > 1 ? (
+            <SectionTabs
+              mode="segmented"
+              label="Ticket type"
+              items={[{ id: "all", label: "All" }, ...scopeItems]}
+              value={scopeValue}
+              onChange={(next) => {
+                setKind(next);
+                replacePageParam("tickets", "type", next);
+                setPage(1);
+              }}
+            />
+          ) : undefined
         }
         filters={
           <FiltersTrigger
+            className="ticket-filters-trigger"
             count={filterCount}
             open={filtersOpen}
             onClick={(event) => {
@@ -293,7 +416,7 @@ export default function TicketBrowser() {
         <p role="status">Loading tickets…</p>
       ) : !error && !tickets.length ? (
         <EmptyState
-          title="No tickets found"
+          title={`No ${status === "open" ? "open " : ""}${scopeNoun}`}
           line="Try another name, status or date."
           action={<button onClick={clearFilters}>Clear filters</button>}
         />
@@ -302,39 +425,62 @@ export default function TicketBrowser() {
           {tickets.map((t) => (
             <article className="ticket-row" key={t.id}>
               <div>
-                <strong>#{t.number}</strong>
-                <DiscordIdentity
-                  userId={t.user_id}
-                  displayName={t.name}
-                  resolvedMember={null}
-                  variant="compact"
-                  contact={false}
-                />
-                <small>
-                  {t.kind.toUpperCase()} · {statusName(t.status)} · Opened{" "}
+                <div className="ticket-name-line">
+                  <strong>#{t.number}</strong>
+                  <DiscordIdentity
+                    userId={t.user_id}
+                    displayName={t.name}
+                    resolvedMember={null}
+                    variant="compact"
+                    contact={false}
+                  />
+                  {t.flags.length > 0 && (
+                    <ul className="ticket-flags" aria-label="Applicant flags">
+                      {t.flags.map((item, index) => (
+                        <li key={`${item.kind}-${index}`}>{item.label}</li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+                <small className="ticket-type-line">
+                  {(() => {
+                    const Icon = ticketIcon(t.kind);
+                    return <Icon size={16} aria-hidden="true" />;
+                  })()}
+                  {ticketTypeName(t.kind)} · {statusName(t.status)} · Opened{" "}
                   {when(t.created_at)}
                 </small>
-                {t.flags.length > 0 && (
-                  <ul className="ticket-flags" aria-label="Applicant flags">
-                    {t.flags.map((item, index) => (
-                      <li key={`${item.kind}-${index}`}>{item.label}</li>
-                    ))}
-                  </ul>
-                )}
               </div>
-              <button
+              <a
+                href={readerUrl(t.id)}
+                className="ticket-read"
                 ref={(node) => {
                   if (node) ticketButtons.current.set(t.id, node);
                   else ticketButtons.current.delete(t.id);
                 }}
-                aria-label={`Read ticket ${t.number} · ${discordIdentityName(t.user_id, null, t.name) || "Discord member unavailable"}`}
-                onClick={() => {
+                aria-label={`Read ${discordIdentityName(t.user_id, null, t.name) || "Discord member unavailable"} #${t.number}, ${ticketTypeName(t.kind)}`}
+                onClick={(event) => {
+                  if (
+                    event.button !== 0 ||
+                    event.metaKey ||
+                    event.ctrlKey ||
+                    event.shiftKey ||
+                    event.altKey
+                  )
+                    return;
+                  event.preventDefault();
                   returnTicket.current = t.id;
+                  window.history.pushState(
+                    { ...window.history.state, wuTicketReader: t.id },
+                    "",
+                    readerUrl(t.id),
+                  );
                   setSelected(t);
+                  setReaderId(t.id);
                 }}
               >
                 Read <ArrowRight size={16} aria-hidden="true" />
-              </button>
+              </a>
             </article>
           ))}
         </div>

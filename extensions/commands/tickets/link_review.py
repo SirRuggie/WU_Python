@@ -51,7 +51,14 @@ async def session(ctx, mongo, token):
     data=await get_state(mongo,token)
     if not data or data.get('type')!='ticket_link_review': return None
     if data.get('owner_id')!=int(ctx.user.id) or data.get('guild_id')!=int(ctx.guild_id or 0): return None
-    if not await perms.is_recruiter(getattr(ctx,'member',None),mongo): return None
+    ticket = await store.find_one(mongo, {
+        '_id': data.get('ticket_id'), **store.RUNTIME_FILTER,
+        'guild_id': int(ctx.guild_id or 0),
+    })
+    if not ticket or not await perms.can_handle(
+        getattr(ctx, 'member', None), mongo, ticket.get('ticket_type'),
+    ):
+        return None
     return data
 
 

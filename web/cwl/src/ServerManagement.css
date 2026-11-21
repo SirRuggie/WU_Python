@@ -274,3 +274,25 @@
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
 }
+
+.warrior-desk-status {
+  margin-block: var(--wu-space-3) var(--wu-space-5);
+  padding-block: var(--wu-space-3);
+  border-block: 1px solid var(--wu-border-subtle);
+}
+.warrior-desk-status h2 {
+  margin: 0 0 var(--wu-space-2);
+  font-size: var(--wu-text-lg);
+  color: var(--wu-text);
+}
+.warrior-desk-status ul {
+  margin: var(--wu-space-2) 0;
+  padding-inline-start: var(--wu-space-5);
+}
+.warrior-desk-status a {
+  display: inline-flex;
+  align-items: center;
+  min-height: 44px;
+  color: var(--wu-text);
+  text-underline-offset: 0.2em;
+}

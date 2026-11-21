@@ -17,13 +17,13 @@ def setup(monkeypatch):
   def limit(self,*a):return self
   async def to_list(self,**kw):return [row]
  collection=NS(find_one=AsyncMock(return_value=row),find=lambda *a:Cursor())
- db=NS(tickets=collection)
+ config={'ticket_target_guild_id':api.GUILD_ID,**{f'{kind}_thread_recruiter_role':42 for kind in ['main','fwa','account','staff']}}
+ db=NS(tickets=collection,ticket_setup=NS(find_one=AsyncMock(return_value=config)))
  @asynccontextmanager
  async def mongo(_):yield db
  monkeypatch.setattr(api,'mongo',mongo)
  monkeypatch.setattr(api,'identity',AsyncMock(return_value=actor))
  monkeypatch.setattr(api,'allowed',AsyncMock(return_value=True))
- monkeypatch.setattr(api,'is_recruiter',AsyncMock(return_value=True))
  async def discord(req,method,path,**kw):
   assert method=='GET'
   if path.endswith('/messages'):return [{'id':'999','content':'Hello','author':{'username':'Example'},'timestamp':'2026-10-15T00:00:00Z'}]
@@ -48,7 +48,7 @@ def test_both_dashboard_scope_and_discord_recruiter_required(setup,monkeypatch):
  monkeypatch.setattr(api,'allowed',AsyncMock(return_value=False))
  with pytest.raises(web.HTTPForbidden):asyncio.run(api.conversation(req))
  db.tickets.find_one.assert_not_awaited();discord.assert_not_awaited()
- monkeypatch.setattr(api,'allowed',AsyncMock(return_value=True));monkeypatch.setattr(api,'is_recruiter',AsyncMock(return_value=False))
+ monkeypatch.setattr(api,'allowed',AsyncMock(return_value=True));db.ticket_setup.find_one.return_value={'ticket_target_guild_id':api.GUILD_ID}
  with pytest.raises(web.HTTPForbidden):asyncio.run(api.listing(req))
 
 def test_permission_overwrite_precedence():
@@ -86,7 +86,7 @@ def test_missing_or_forged_ticket_cannot_read_arbitrary_thread(setup):
  with pytest.raises(web.HTTPNotFound):asyncio.run(api.conversation(req))
  discord.assert_not_awaited()
  req.match_info['ticket_id']='ticket_555';db.tickets.find_one.return_value=None
- with pytest.raises(web.HTTPNotFound):asyncio.run(api.conversation(req))
+ with pytest.raises(web.HTTPForbidden):asyncio.run(api.conversation(req))
  discord.assert_not_awaited()
 
 def test_message_shapes_and_unsafe_attachment_urls():

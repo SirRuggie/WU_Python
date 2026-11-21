@@ -419,6 +419,7 @@ async def _set_flag_unlocked(
     reason: str = "",
     checked_at: datetime | None = None,
     automatic_rule: str | None = None,
+    receipt_id: str | None = None,
 ) -> dict:
     """Create or extend one active flag, retry-safe under unique indexes."""
     flag_kind = normalize_kind(kind)
@@ -455,8 +456,12 @@ async def _set_flag_unlocked(
         "source": source_name,
         "reason": str(reason or "").strip(),
     }
+    if receipt_id:
+        audit["receipt_id"] = receipt_id
     if existing:
         current = existing[0]
+        if receipt_id and current.get("last_receipt_id") == receipt_id:
+            return current
         rev = max(0, int(current.get("rev") or 0))
         updated = await mongo.ticket_flags.find_one_and_update(
             {"_id": current["_id"], "active": True, "rev": store._rev_filter(rev)},
@@ -472,6 +477,7 @@ async def _set_flag_unlocked(
                     "updated_at": now,
                     "added_by": actor,
                     "added_by_name": actor_name,
+                    **({"last_receipt_id": receipt_id} if receipt_id else {}),
                 },
                 "$inc": {"rev": 1},
                 "$push": {
@@ -500,6 +506,8 @@ async def _set_flag_unlocked(
         "rev": 0,
         "audit": [audit],
     }
+    if receipt_id:
+        document["last_receipt_id"] = receipt_id
     if automatic_rule:
         document["automatic_rule"] = str(automatic_rule)
     try:
@@ -686,6 +694,36 @@ async def ensure_legacy_ghosted_flag(
         return document, document.get("automatic_rule") == "legacy_ghosted"
 
 
+async def current_flag_snapshot(mongo, *, kind, discord_ids, player_tags):
+    """Bounded active-row snapshot under the caller's identity guard."""
+    ids = _discord_ids(discord_ids)
+    tags = schema.player_tags(player_tags)
+    with pymongo.timeout(30):
+        rows = await mongo.ticket_flags.find({
+            "kind": normalize_kind(kind), "active": True,
+            "$or": _identity_query(ids, tags),
+        }).limit(2).to_list(length=2)
+    if len(rows) > 1:
+        return FlagMutation(store.LOST, rows[0], "Matching identities overlap multiple active flags.")
+    return FlagMutation(store.WON, rows[0] if rows else None)
+
+
+async def current_flag_expectation(mongo, *, kind, discord_ids, player_tags,
+                                   expected_flag_id=None, expected_rev=None):
+    """Read a panel expectation under the caller's identity_guard; no write."""
+    snapshot = await current_flag_snapshot(mongo, kind=kind, discord_ids=discord_ids, player_tags=player_tags)
+    if not snapshot.won:
+        return snapshot
+    current = snapshot.doc
+    if expected_flag_id is None:
+        matches = current is None
+    else:
+        matches = bool(current and str(current.get("_id")) == str(expected_flag_id)
+                       and int(current.get("rev") or 0) == int(expected_rev or 0))
+    return FlagMutation(store.WON if matches else store.LOST, current,
+                        None if matches else "The flag changed. Open Manage flags again.")
+
+
 async def set_flag_if_current_authorized(
     mongo: MongoClient,
     *,
@@ -854,3 +892,30 @@ async def deactivate_flag_authorized(
         reason=reason,
         expected_rev=expected_rev,
     )
+
+
+async def apply_ghosted_close_receipt(mongo, *, ticket, prompt, audit, reason):
+    ids = _discord_ids(ticket.get("user_id"))
+    tags = schema.player_tags(ticket.get("player_tags") or ())
+    receipt_id = f"ticket-ghosted:{ticket['_id']}:{prompt['token']}"
+    async with identity_guard(mongo, discord_ids=ids, player_tags=tags):
+        rows = await mongo.ticket_flags.find({"kind": FLAG_GHOSTED, "active": True,
+            "$or": _identity_query(ids, tags)}).limit(2).to_list(length=2)
+        if len(rows) > 1:
+            return FlagMutation(store.LOST, rows[0], "Overlapping Ghosted flags need staff review.")
+        current = rows[0] if rows else None
+        if current and current.get("last_receipt_id") == receipt_id:
+            return FlagMutation(store.WON, current)
+        if prompt.get("manual_flag_update"):
+            expected_id = prompt.get("expected_flag_id")
+            if (expected_id is None and current is not None) or (expected_id is not None and (
+                    current is None or str(current['_id']) != str(expected_id)
+                    or int(current.get('rev') or 0) != int(prompt.get('expected_flag_rev') or 0))):
+                return FlagMutation(store.LOST, current, "A newer Ghosted flag was preserved; staff review is required.")
+        elif current:
+            return FlagMutation(store.WON, current)
+        document = await _set_flag_unlocked(mongo, kind=FLAG_GHOSTED, discord_ids=ids,
+            player_tags=tags, source=prompt.get("source") or "Recruiter confirmed ticket inactivity",
+            added_by=audit["actor"], added_by_name=audit.get("actor_name") or str(audit["actor"]),
+            reason=reason, receipt_id=receipt_id)
+        return FlagMutation(store.WON, document)

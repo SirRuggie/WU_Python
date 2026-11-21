@@ -132,6 +132,8 @@ DENIAL_CARD_TITLE = (
 _LEGACY_DENIAL_CARD_TITLE = (
     "we regret to inform you that currently your application has been denied."
 )
+ACCOUNT_APPROVAL_CARD_TITLE = "Staff approved your new account."
+ACCOUNT_DENIAL_CARD_TITLE = "staff denied your new account."
 TEST_APPROVAL_CARD_TITLE = "TEST MODE: Simulated approval."
 TEST_DENIAL_CARD_TITLE = "TEST MODE: Simulated denial."
 
@@ -154,6 +156,11 @@ async def apply_denial(
     body = reason if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
     if testing_service.is_test_ticket(ticket):
         body = reason or "This is a simulated decision."
+    denied_text = (
+        ACCOUNT_DENIAL_CARD_TITLE
+        if ticket.get("ticket_type") == "account"
+        else "we are sorry to tell you that we denied your application."
+    )
     components = [
         Container(
             accent_color=WU_RED,
@@ -165,8 +172,7 @@ async def apply_denial(
                             f"This decision affects only the test ticket.\n\n"
                             f"## **Reason:**\n{body}"
                             if testing_service.is_test_ticket(ticket) else
-                            f"<@{user_id}>, we are sorry to tell you that we denied your "
-                            f"application.\n\n"
+                            f"<@{user_id}>, {denied_text}\n\n"
                             f"## **Reason:**\n{body}"
                         ))
                     ],
@@ -212,6 +218,8 @@ async def apply_approval(
                             f"{TEST_APPROVAL_CARD_TITLE}\n<@{user_id}> "
                             "No role, membership, invitation, or permanent history was changed."
                             if testing_service.is_test_ticket(ticket) else
+                            f"<@{user_id}> {ACCOUNT_APPROVAL_CARD_TITLE}"
+                            if ticket.get("ticket_type") == "account" else
                             f"<@{user_id}> **Congratulations!** Warriors United accepted you. "
                             f"A recruiter will send you your clan invite. This ticket "
                             f"stays open, so you can ask questions here. To find it "
@@ -288,9 +296,11 @@ def _is_notification_card(message, kind: str) -> bool:
 
     titles = (
         (APPROVAL_CARD_TITLE, _PREVIOUS_APPROVAL_CARD_TITLE,
-         _LEGACY_APPROVAL_CARD_TITLE, TEST_APPROVAL_CARD_TITLE)
+         _LEGACY_APPROVAL_CARD_TITLE, ACCOUNT_APPROVAL_CARD_TITLE,
+         TEST_APPROVAL_CARD_TITLE)
         if kind == KIND_APPROVE
-        else (DENIAL_CARD_TITLE, _LEGACY_DENIAL_CARD_TITLE, TEST_DENIAL_CARD_TITLE)
+        else (DENIAL_CARD_TITLE, _LEGACY_DENIAL_CARD_TITLE, ACCOUNT_DENIAL_CARD_TITLE,
+              TEST_DENIAL_CARD_TITLE)
     )
     content = str(getattr(message, "content", "") or "")
     if any(title in content for title in titles):
@@ -640,16 +650,19 @@ def _staff_decision_components(ticket: dict, kind: str) -> list:
     decision = "Approved" if approved else "Denied"
     number = testing_service.number_label(int(ticket.get("ticket_number") or 0)) if testing_service.is_test_ticket(ticket) else ticket.get("ticket_number")
     title = f"## {'✅' if approved else '❌'} {str(ticket.get('ticket_type') or 'main').upper()} #{number} · {decision}"
-    body = "Warriors United accepted the recruit." if approved else (
+    account = ticket.get("ticket_type") == "account"
+    body = ("Staff approved the account." if account else "Warriors United accepted the recruit.") if approved else (
         ticket.get("denial_reason") if kind == KIND_DENY_CUSTOM else _DENIAL_BODY[kind]
     )
+    if account and not approved and kind == KIND_DENY_CUSTOM:
+        body = f"Staff denied the account.\n{body}"
     if testing_service.is_test_ticket(ticket):
         body = "TEST MODE — simulated decision.\n" + (ticket.get("denial_reason") or decision)
     return [Container(
         accent_color=WU_GREEN if approved else WU_RED,
         components=[
             Section(components=[Text(content=title), Text(content=(
-                f"**Recruit:** <@{ticket['user_id']}>\n"
+                f"**{'Member' if account else 'Recruit'}:** <@{ticket['user_id']}>\n"
                 f"**Handled by:** <@{ticket.get('handled_by')}>\n"
                 f"**Decision time:** {ts(ticket.get('handled_at'), 'F')}"
             ))], accessory=Thumbnail(media=APPROVAL_THUMB if approved else DENIED_THUMB)),
@@ -1261,7 +1274,7 @@ async def _resolve_ticket(
     """Authorize, enforce flags, CAS status, then run effects exactly once."""
     if coc_client is None:
         coc_client = account_sync.configured_coc_client()
-    if not await perms.is_recruiter(member, mongo):
+    if not await perms.is_ticket_staff(member, mongo):
         return store.Transition(store.UNAUTHORIZED, None, "recruiter permission required")
     if kind not in {KIND_APPROVE, *DENIAL_TYPE}:
         raise ValueError("unknown ticket resolution kind")
@@ -1273,6 +1286,18 @@ async def _resolve_ticket(
     ticket = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
     if ticket is None:
         return store.Transition(store.MISSING, None)
+    if ticket.get("ticket_type") == "staff":
+        return store.Transition(
+            store.BLOCKED, ticket, "Staff requests end with Done, not a decision."
+        )
+    if not await perms.can_handle(member, mongo, ticket.get("ticket_type")):
+        return store.Transition(
+            store.UNAUTHORIZED, None, "permission required for this request type"
+        )
+    if ticket.get("ticket_type") == "account" and kind in {KIND_DENY_FWA, KIND_DENY_MAIN}:
+        return store.Transition(
+            store.BLOCKED, ticket, "Write a reason to deny an account."
+        )
     lifecycle_effects = ticket.get("resolution_effects") or {}
     if lifecycle_effects.get("kind") in {"close", "reopen"} and not lifecycle_effects.get("complete"):
         return store.Transition(store.BLOCKED, ticket, "The close/reopen update is still finishing. Try again shortly.")
@@ -1494,7 +1519,7 @@ async def _resolve_ticket(
                 # The lookup and blacklist check can take long enough for a
                 # recruiter role change to arrive.  Authorization is required
                 # at the write boundary, not only when the action began.
-                if not await perms.is_recruiter(member, mongo):
+                if not await perms.can_handle(member, mongo, ticket.get("ticket_type")):
                     return store.Transition(
                         store.UNAUTHORIZED, None, "recruiter permission required"
                     )
@@ -1502,7 +1527,7 @@ async def _resolve_ticket(
         except flag_store.IdentityLockBusy as exc:
             return store.Transition(store.BLOCKED, ticket, str(exc))
     else:
-        if not await perms.is_recruiter(member, mongo):
+        if not await perms.can_handle(member, mongo, ticket.get("ticket_type")):
             return store.Transition(
                 store.UNAUTHORIZED, None, "recruiter permission required"
             )
@@ -1644,11 +1669,17 @@ async def overturn_ticket(
     """
     if to_status not in schema.TERMINAL_STATUSES:
         raise ValueError("to_status must be approved or denied")
-    if not await perms.is_recruiter(member, mongo):
+    if not await perms.is_ticket_staff(member, mongo):
         return store.Transition(store.UNAUTHORIZED, None, "recruiter permission required")
     current = await store.find_one(mongo, {"_id": ticket_id, **store.RUNTIME_FILTER})
     if current is None:
         return store.Transition(store.MISSING, None)
+    if current.get("ticket_type") == "staff" or not await perms.can_handle(
+        member, mongo, current.get("ticket_type")
+    ):
+        return store.Transition(
+            store.UNAUTHORIZED, None, "recruiter permission required"
+        )
     if current.get("status") not in schema.TERMINAL_STATUSES:
         return store.Transition(store.LOST, current, OVERTURN_NOT_DECIDED_MESSAGE)
     if current.get("status") == to_status:

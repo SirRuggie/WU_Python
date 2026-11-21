@@ -1,3 +1,4 @@
+from unittest.mock import AsyncMock
 import asyncio
 from dataclasses import replace
 from types import SimpleNamespace
@@ -74,9 +75,10 @@ def test_changed_external_mapping_invalidates_saved_review():
 
 @pytest.mark.parametrize('owner,guild,allowed',[(99,10,True),(98,10,True),(99,11,True),(99,10,False)])
 def test_session_checks_owner_guild_and_current_permission(monkeypatch,owner,guild,allowed):
-    async def get(*a): return {'type':'ticket_link_review','owner_id':99,'guild_id':10}
+    async def get(*a): return {'type':'ticket_link_review','owner_id':99,'guild_id':10,'ticket_id':'ticket_account'}
     async def auth(*a): return allowed
-    monkeypatch.setattr(link_review,'get_state',get);monkeypatch.setattr(link_review.perms,'is_recruiter',auth)
+    monkeypatch.setattr(link_review,'get_state',get);monkeypatch.setattr(link_review.perms,'can_handle',auth)
+    monkeypatch.setattr(link_review.store,'find_one',AsyncMock(return_value={'_id':'ticket_account','ticket_type':'account','guild_id':10}))
     ctx=SimpleNamespace(user=SimpleNamespace(id=owner),guild_id=guild,member=object())
     assert bool(asyncio.run(link_review.session(ctx,None,'token')))==(owner==99 and guild==10 and allowed)
 

@@ -33,6 +33,7 @@ export type DashboardRoute = {
   resultsState?: string;
   /** Page tab and filter keys (tab, status, type); see pageUrlState.ts. */
   pageState?: string;
+  ticket?: string;
 };
 const resultsViews = ["participation"];
 export function dashboardTarget(
@@ -139,6 +140,10 @@ export function dashboardTarget(
     ...(pageParamQuery(view, search)
       ? { pageState: pageParamQuery(view, search) }
       : {}),
+    ...(view === "tickets" &&
+    /^ticket_[0-9]{1,22}$/.test(params.get("ticket") || "")
+      ? { ticket: params.get("ticket")! }
+      : {}),
     ...(value === "replacements" &&
     /^#[0289PYLQGRJCUV]{3,15}$/.test(params.get("clan") || "")
       ? { replacementClan: params.get("clan")! }
@@ -235,6 +240,11 @@ export function dashboardPath(route: DashboardRoute) {
     new URLSearchParams(pageParamQuery(route.view, route.pageState)).forEach(
       (value, key) => params.set(key, value),
     );
+  if (
+    route.view === "tickets" &&
+    /^ticket_[0-9]{1,22}$/.test(route.ticket || "")
+  )
+    params.set("ticket", route.ticket!);
   if (route.season && seasonViews.has(route.view))
     params.set("season", route.season);
   if (resultsViews.includes(route.view) && route.resultsState)
@@ -275,6 +285,15 @@ export class DashboardHistory {
       ? new URLSearchParams(window.location.search).get("account")
       : null;
     if (account) url.searchParams.set("account", account);
+    // Tickets owns its local reader entry; auth/session refreshes must not
+    // canonicalize an explicit deep link back into the list.
+    if (
+      sameView &&
+      route.view === "tickets" &&
+      route.ticket === undefined &&
+      current?.ticket
+    )
+      url.searchParams.set("ticket", current.ticket);
     // Page tabs and filters belong to the view, so a season change keeps them.
     if (sameView && !route.pageState)
       new URLSearchParams(
