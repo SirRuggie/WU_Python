@@ -3,6 +3,8 @@ import { roleOption } from "./RolePicker";
 import SearchPicker from "./SearchPicker";
 
 export default function RoleSelect({
+  triggerId,
+  describedBy,
   roles,
   value,
   onChange,
@@ -11,6 +13,8 @@ export default function RoleSelect({
   onOpen,
   unavailableLabel = "Unavailable role",
 }: {
+  triggerId?: string;
+  describedBy?: string;
   roles: RoleChoice[];
   value: string;
   onChange: (id: string) => void;
@@ -21,6 +25,8 @@ export default function RoleSelect({
 }) {
   return (
     <SearchPicker
+      triggerId={triggerId}
+      describedBy={describedBy}
       label={label}
       value={value}
       options={roles.map(roleOption)}

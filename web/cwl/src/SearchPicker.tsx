@@ -25,6 +25,8 @@ export type PickerOption = {
 };
 
 type Props = {
+  triggerId?: string;
+  describedBy?: string;
   label: string;
   value: string;
   /** All options. Used for the default search and to show the value. */
@@ -106,6 +108,8 @@ function OptionBody({ option }: { option: PickerOption }) {
  * moves the content below it down. Selecting a row only calls onChange.
  */
 export default function SearchPicker({
+  triggerId,
+  describedBy,
   label,
   value,
   options,
@@ -287,6 +291,7 @@ export default function SearchPicker({
         <input
           {...searchInputProps}
           ref={input}
+          aria-describedby={describedBy}
           id={inputId}
           type="text"
           role="combobox"
@@ -345,6 +350,8 @@ export default function SearchPicker({
       <div className="search-picker-field">
         <button
           ref={setTrigger}
+          id={triggerId}
+          aria-describedby={describedBy}
           type="button"
           className="search-picker-trigger"
           aria-haspopup={phone ? "dialog" : "listbox"}

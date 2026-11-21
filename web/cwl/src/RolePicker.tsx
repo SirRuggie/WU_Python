@@ -32,12 +32,16 @@ export function roleOption(role: RoleChoice): PickerOption {
 
 /** Search field that adds one role at a time; the field itself stays empty. */
 export default function RolePicker({
+  triggerId,
+  describedBy,
   roles,
   selected,
   disabled,
   onChoose,
   label,
 }: {
+  triggerId?: string;
+  describedBy?: string;
   roles: RoleChoice[];
   selected: string[];
   disabled: boolean;
@@ -50,6 +54,8 @@ export default function RolePicker({
   );
   return (
     <SearchPicker
+      triggerId={triggerId}
+      describedBy={describedBy}
       label={label}
       value=""
       options={available.map(roleOption)}

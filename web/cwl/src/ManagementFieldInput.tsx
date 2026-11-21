@@ -3,6 +3,10 @@ import { useEffect, useState } from "react";
 import TownHallBaseImagePreview from "./TownHallBaseImagePreview";
 import TownHallEmojiPicker from "./TownHallEmojiPicker";
 import MemberPicker, { type MemberOption } from "./MemberPicker";
+import ChannelCombobox from "./ChannelCombobox";
+import RoleSelect from "./RoleSelect";
+import RolePicker from "./RolePicker";
+import { X } from "lucide-react";
 import { previewUrl } from "./previewFormatting";
 import { apiUpload } from "./api";
 import { apiPath, message } from "./managementRequests";
@@ -72,6 +76,89 @@ export default function Field({
         roles={memberRoles}
       />
     );
+  const channelField = field.type === "channel" || field.source === "channels";
+  const roleField = field.type === "role" || field.source === "roles";
+  if ((!multiple && channelField) || roleField) {
+    const label = field.label + (field.required ? " *" : "");
+    const locked = disabled || !!field.readonly;
+    const describedBy = field.description ? `${id}-help` : undefined;
+    const roles = options.map((option) => ({
+      id: option.value,
+      name: option.label,
+    }));
+    const selected = Array.isArray(value) ? value : [];
+    return (
+      <div className="manage-field">
+        {!roleField ? (
+          <ChannelCombobox
+            triggerId={id}
+            describedBy={describedBy}
+            label={label}
+            channels={options.map((option) => ({
+              id: option.value,
+              name: option.label.replace(/^#/, ""),
+              type: option.type,
+            }))}
+            value={String(value ?? "")}
+            disabled={locked}
+            onChange={onChange}
+          />
+        ) : !multiple ? (
+          <RoleSelect
+            triggerId={id}
+            describedBy={describedBy}
+            label={label}
+            roles={roles}
+            value={String(value ?? "")}
+            disabled={locked}
+            onChange={onChange}
+          />
+        ) : (
+          <>
+            <RolePicker
+              triggerId={id}
+              describedBy={describedBy}
+              label={label}
+              roles={roles}
+              selected={selected}
+              disabled={locked}
+              onChoose={(role) => onChange([...selected, role.id])}
+            />
+            {selected.length > 0 && (
+              <ul
+                className="manage-selected-roles"
+                aria-label={`${field.label} selected roles`}
+              >
+                {selected.map((roleId, index) => {
+                  const name =
+                    roles.find((role) => role.id === roleId)?.name ||
+                    "Unavailable role";
+                  return (
+                    <li key={roleId}>
+                      <span>{name}</span>
+                      <button
+                        type="button"
+                        disabled={locked}
+                        aria-label={`Remove ${name}${name === "Unavailable role" ? ` ${index + 1}` : ""}`}
+                        onClick={() =>
+                          onChange(selected.filter((item) => item !== roleId))
+                        }
+                      >
+                        <X size={16} aria-hidden="true" />
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
+          </>
+        )}
+        {field.description && (
+          <small id={describedBy}>{field.description}</small>
+        )}
+      </div>
+    );
+  }
   return (
     <div
       className={`manage-field ${field.type === "textarea" ? "manage-field-wide" : ""}`}
