@@ -130,6 +130,8 @@
 }
 .reminders-workspace .reminder-message-row {
   display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  justify-content: stretch;
   align-content: center;
   gap: var(--wu-space-1);
   width: 100%;

@@ -510,6 +510,21 @@ Select 15/30 with no unlocked matches retains the current selection, including h
 - Publication status reuses Finalize's version/date and hidden-publication wording. One Refresh status control; no sender-ready badge. Three text levels: 15px bold, 13–14px regular, 12px muted. Check text-fill as well as color; links must stay legible on dark cards.
 - Images keep their existing select/preview/download/test behavior. This batch does not add real image posting.
 
+### Return reminders page shell (264)
+
+Return reminders follows the Signup reminders page shell without a Season
+picker, because schedules are global. The existing capture-month label remains. One
+status line and Pause/Resume control cover eligible automatic FWA clans through
+the existing max-50 review, confirmation and revision checks; Main sends remain
+manual. Clans retains the 263 toolbar and every existing per-clan action.
+Message displays both destinations read-only because no editable message-text
+HTTP contract exists. History loads only when opened, keeps the existing
+newest-first order, and shows this account's latest 20 group actions five at a
+time. It is not complete automatic-send history or new server pagination.
+
+Signup reminder rows use one stretched minmax column, so switching All/Main/Lazy
+keeps every message row full width (264, owner-reported width fix).
+
 ## Details panel
 
 - Desktop (≥768px): nonmodal right-side panel; phone: full-screen sheet. Keep the opener list mounted. Previous/Next use its current order and filters; disable at the ends and hide when no list exists.
