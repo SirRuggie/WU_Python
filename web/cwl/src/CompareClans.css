@@ -4,36 +4,6 @@
   max-width: 100%;
   margin-top: 12px;
 }
-.compare-workspace .compare-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 10px;
-}
-.compare-header h2 {
-  margin: 0;
-  font-size: var(--wu-text-lg);
-}
-.compare-header small {
-  color: var(--wu-text-muted);
-}
-.compare-toolbar {
-  display: flex;
-  gap: 8px;
-  align-items: center;
-  margin-bottom: 10px;
-  min-width: 0;
-}
-.compare-toolbar > button {
-  min-width: 0;
-}
-.compare-toolbar-note {
-  color: var(--wu-text-muted);
-  font-size: var(--wu-text-xs);
-  background: transparent;
-  padding: 0;
-}
 .compare-navigation {
   display: flex;
   gap: 8px;
@@ -324,27 +294,6 @@
   .compare-workspace.card {
     padding: 8px;
   }
-  .compare-header h2 {
-    font-size: var(--wu-text-md);
-  }
-  .compare-header > button {
-    padding: 6px 10px;
-    font-size: var(--wu-text-xs);
-  }
-  .compare-toolbar {
-    gap: 5px;
-  }
-  .compare-toolbar > button {
-    padding: 6px 8px;
-    font-size: var(--wu-text-xs);
-    flex: 1;
-    overflow: hidden;
-    white-space: nowrap;
-  }
-  .compare-toolbar .roster-ui-icon {
-    width: 16px;
-    flex-shrink: 0;
-  }
   .compare-mobile-rail {
     display: flex;
     align-items: stretch;
@@ -513,4 +462,19 @@
   font-size: var(--wu-text-xs);
   white-space: nowrap;
   color: var(--roster-text-muted);
+}
+
+.compare-summary {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-block: 8px;
+  color: var(--roster-text-muted);
+  font-size: var(--wu-text-sm);
+}
+.compare-summary .roster-ui-button {
+  border-color: transparent;
+  background: transparent;
+  padding-inline: 4px;
+  min-height: 44px;
 }

@@ -4,7 +4,7 @@ import "./ListToolbar.css";
 type Props = {
   search?: ReactNode;
   scope?: ReactNode;
-  filters: ReactNode;
+  filters?: ReactNode;
   sort?: ReactNode;
   actions?: ReactNode;
   className?: string;

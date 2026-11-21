@@ -1,6 +1,9 @@
 import { searchInputProps } from "./inputProps";
 import { formatDateTime, formatTime } from "./format";
-import FilterChips from "./FilterChips";
+import SectionTabs from "./SectionTabs";
+import ListToolbar from "./rosterUi/ListToolbar";
+import FiltersTrigger from "./rosterUi/FiltersTrigger";
+import ActionPanel from "./ActionPanel";
 import LoadError from "./LoadError";
 import SelectionActionBar from "./SelectionActionBar";
 import ActionMenu, { type ActionMenuItem } from "./rosterUi/ActionMenu";
@@ -72,6 +75,8 @@ export default function ReturnReminderOverview({
   const [query, setQuery] = useState("");
   const [section, setSection] = useState<"FWA" | "MAIN">("FWA");
   const [filter, setFilter] = useState("all");
+  const [filtersOpen, setFiltersOpen] = useState(false);
+  const [filterTrigger, setFilterTrigger] = useState<HTMLElement | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
   const [batch, setBatch] = useState<{
     action: ReturnAction;
@@ -260,29 +265,6 @@ export default function ReturnReminderOverview({
       }}
     >
       <p className="return-cycle">{captureMonth()}</p>
-      <div className="return-toolbar">
-        <FilterChips
-          className="return-clan-type filter-chips--flow"
-          label="Home clan type"
-          options={(["FWA", "MAIN"] as const).map((value) => {
-            return {
-              value: value,
-              label: <>{value === "MAIN" ? "Main" : value}</>,
-              count: clans.filter((row) => clanSection(row) === value).length,
-            };
-          })}
-          value={section}
-          onChange={(value) => {
-            setSection(value);
-            setFilter("all");
-            setSelected([]);
-          }}
-          disabled={!!batch}
-          variant="pill"
-          role="group"
-          revealSelection
-        />
-      </div>
       {helpSlot &&
         createPortal(
           <HelpButton title="About this page" className="return-about-panel">
@@ -345,80 +327,106 @@ export default function ReturnReminderOverview({
               }}
             />
           </label>
-          <div className="members-filter-tools">
-            <details
-              className="members-more-filters"
-              onKeyDown={(event) => {
-                if (event.key === "Escape") {
-                  event.preventDefault();
-                  event.currentTarget.open = false;
-                  event.currentTarget
-                    .querySelector<HTMLElement>("summary")
-                    ?.focus();
-                }
-              }}
-            >
-              <summary>
-                Filters
-                {filter !== "all" && (
-                  <span aria-label="1 active filter"> · 1</span>
-                )}
-              </summary>
-              <div className="members-filter-panel">
-                <label>
-                  Status
-                  <select
-                    value={filter}
-                    onChange={(event) => {
-                      setFilter(event.target.value);
-                    }}
-                  >
-                    <option value="all">All statuses</option>
-                    {(section === "FWA"
-                      ? [
-                          ["scheduled", "Running / scheduled"],
-                          ["paused", "Paused"],
-                          ["idle", "Not started"],
-                          ["not_saved", "No saved list"],
-                          ["expired", "Window ended"],
-                        ]
-                      : [
-                          ["manual", "Ready for manual sends"],
-                          ["not_saved", "No saved list"],
-                          ["expired", "Window ended"],
-                        ]
-                    ).map(([value, label]) => (
-                      <option key={value} value={value}>
-                        {label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-              </div>
-            </details>
-          </div>
-          <ActionMenu
-            name="Return reminders"
-            disabled={!!batch}
-            items={[
-              {
-                id: "refresh",
-                label: "Refresh",
-                disabled: loading,
-                onAction: () => {
-                  void load();
-                  void loadDestinations();
-                },
-              },
-              {
-                id: "channels",
-                label: "Return channels",
-                disabled: loading,
-                onAction: () => utility("return-channels"),
-              },
-            ]}
-          />
         </div>
+        <ListToolbar
+          className="return-list-toolbar"
+          scope={
+            <SectionTabs
+              mode="segmented"
+              label="Home clan type"
+              value={section}
+              items={(["FWA", "MAIN"] as const).map((value) => ({
+                id: value,
+                label: (
+                  <>
+                    {value === "MAIN" ? "Main" : value}
+                    <span className="return-scope-count">
+                      {" "}
+                      ·{" "}
+                      {clans.filter((row) => clanSection(row) === value).length}
+                    </span>
+                  </>
+                ),
+              }))}
+              disabled={!!batch}
+              onChange={(value) => {
+                setSection(value);
+                setFilter("all");
+                setSelected([]);
+              }}
+            />
+          }
+          filters={
+            <FiltersTrigger
+              className="return-filters-trigger"
+              count={Number(filter !== "all")}
+              open={filtersOpen}
+              disabled={!!batch}
+              onClick={(event) => {
+                setFilterTrigger(event.currentTarget);
+                setFiltersOpen(true);
+              }}
+            />
+          }
+          actions={
+            <ActionMenu
+              name="Return reminders"
+              disabled={!!batch}
+              items={[
+                {
+                  id: "refresh",
+                  label: "Refresh",
+                  disabled: loading,
+                  onAction: () => {
+                    void load();
+                    void loadDestinations();
+                  },
+                },
+                {
+                  id: "channels",
+                  label: "Return channels",
+                  disabled: loading,
+                  onAction: () => utility("return-channels"),
+                },
+              ]}
+            />
+          }
+        />
+        {filtersOpen && (
+          <ActionPanel
+            title="Filter return reminders"
+            trigger={filterTrigger}
+            onClose={() => setFiltersOpen(false)}
+          >
+            <label>
+              Status
+              <select
+                value={filter}
+                onChange={(event) => setFilter(event.target.value)}
+              >
+                <option value="all">All statuses</option>
+                {(section === "FWA"
+                  ? [
+                      ["scheduled", "Running / scheduled"],
+                      ["paused", "Paused"],
+                      ["idle", "Not started"],
+                      ["not_saved", "No saved list"],
+                      ["expired", "Window ended"],
+                    ]
+                  : [
+                      ["manual", "Ready for manual sends"],
+                      ["not_saved", "No saved list"],
+                      ["expired", "Window ended"],
+                    ]
+                ).map(([value, label]) => (
+                  <option key={value} value={value}>
+                    {label}
+                  </option>
+                ))}
+              </select>
+            </label>
+          </ActionPanel>
+        )}
         {chosen.length > 0 && (
           <SelectionActionBar
             className="return-selection-bar"

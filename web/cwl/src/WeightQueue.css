@@ -199,3 +199,7 @@
     padding: var(--wu-space-4);
   }
 }
+
+.weight-queue-toolbar {
+  margin-block: var(--wu-space-2);
+}

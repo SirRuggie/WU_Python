@@ -209,16 +209,35 @@ describe("season overview", () => {
       row.querySelector<HTMLInputElement>('input[name="search"]')!.placeholder,
     ).toBe("Name or #TAG…");
   });
-  it("orders the phone page: step bar, pool tabs, hosting clan, search row, then the list", async () => {
+  it("uses shared icon triggers with accessible filter count and sort state", async () => {
+    await mount(true, "pool=lazy&outcome=partial");
+    const row = host.querySelector(".participation-list-toolbar")!;
+    const filter = row.querySelector<HTMLButtonElement>(
+      ".participation-filters-trigger",
+    )!;
+    expect(filter).not.toBeNull();
+    expect(filter.querySelector("svg")).not.toBeNull();
+    expect(filter.textContent).toContain("Filters · 1");
+    expect(filter.getAttribute("aria-expanded")).toBe("false");
+    expect(
+      row.querySelector(".roster-sort-trigger")?.getAttribute("aria-label"),
+    ).toBe("Sort: Name A–Z");
+  });
+  it("orders the phone page: step bar, hosting clan, search, scoped toolbar, then list", async () => {
     await mount(true, "pool=lazy&clan=%232YQ&outcome=partial");
     const order = [
       ".bonus-step-bar",
-      ".cwl-pool-tabs",
       ".bonus-clan-select",
       ".participation-toolbar",
+      ".participation-list-toolbar",
       ".participation-list",
     ].map((selector) => host.querySelector(selector));
     expect(order.every(Boolean)).toBe(true);
+    expect(
+      host
+        .querySelector(".participation-list-toolbar .cwl-pool-tabs")
+        ?.getAttribute("role"),
+    ).toBe("group");
     for (let index = 1; index < order.length; index += 1)
       expect(
         order[index - 1]!.compareDocumentPosition(order[index]!) &

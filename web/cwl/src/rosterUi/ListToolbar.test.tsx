@@ -144,3 +144,17 @@ it("opens the existing ActionPanel, traps Tab and returns focus after native Esc
   expect(trigger.getAttribute("aria-expanded")).toBe("false");
   expect(document.activeElement).toBe(trigger);
 });
+
+it("allows a scope and actions without a Filters slot", async () => {
+  await act(async () =>
+    root.render(
+      <ListToolbar
+        scope={<button>Main</button>}
+        actions={<button>Add signup</button>}
+      />,
+    ),
+  );
+  expect(
+    [...host.querySelectorAll("button")].map((item) => item.textContent),
+  ).toEqual(["Main", "Add signup"]);
+});

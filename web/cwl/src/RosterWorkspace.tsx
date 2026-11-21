@@ -906,6 +906,23 @@ export default function RosterWorkspace({
     !!roster,
     feedback?.kind === "error" ? feedback.text : "",
   );
+  const rosterPoolControl = (
+    <CwlPoolTabs
+      compactLabels
+      value={poolFilter}
+      disabled={uiLocked && !working}
+      onChange={(pool) =>
+        mayLeaveEditor(() => {
+          setPoolFilter(pool);
+          closePanel();
+          setEditingTag(null);
+        })
+      }
+    />
+  );
+  const signupToolbarTarget = (
+    <div className="roster-toolbar-signup" ref={setSignupActionTarget} />
+  );
   return (
     <div
       className={`roster-workspace roster-ui page-wide${mode === "assign" ? " roster-workspace-assign" : ""}`}
@@ -1261,19 +1278,6 @@ export default function RosterWorkspace({
                 revealSelection
               />
             )}
-            {mode !== "assign" && mode !== "weights" && (
-              <CwlPoolTabs
-                value={poolFilter}
-                disabled={uiLocked && !working}
-                onChange={(pool) => {
-                  mayLeaveEditor(() => {
-                    setPoolFilter(pool);
-                    closePanel();
-                    setEditingTag(null);
-                  });
-                }}
-              />
-            )}
           </div>
           <SectionTabPanel
             id="roster-workspace-views"
@@ -1282,6 +1286,7 @@ export default function RosterWorkspace({
           >
             {canRoster && mode === "weights" && (
               <WeightQueue
+                toolbarActions={signupToolbarTarget}
                 onOrderChange={setDetailsOrder}
                 onClanWeights={onClanWeights}
                 onDirty={setWeightsDirty}
@@ -1312,6 +1317,8 @@ export default function RosterWorkspace({
             )}
             {canRoster && mode === "rules" && (
               <ClanSettings
+                toolbarScope={rosterPoolControl}
+                toolbarActions={signupToolbarTarget}
                 key={`${seasonId}:${discardToken}`}
                 focusClanTag={focusClanTag}
                 focusClanRequest={focusClanRequest}
@@ -1405,6 +1412,8 @@ export default function RosterWorkspace({
               )}
             {canRoster && mode === "compare" && (
               <CompareClans
+                toolbarScope={rosterPoolControl}
+                toolbarActions={signupToolbarTarget}
                 onOrderChange={setDetailsOrder}
                 memory={comparisonMemory}
                 refreshKey={refreshEpoch}

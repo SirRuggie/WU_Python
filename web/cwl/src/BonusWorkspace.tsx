@@ -1,3 +1,4 @@
+import ListToolbar from "./rosterUi/ListToolbar";
 import { SectionTabPanel } from "./SectionTabs";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
 import LoadError from "./LoadError";
@@ -1001,20 +1002,28 @@ export default function BonusWorkspace({
       {!seasonId && <p>Select a season to begin.</p>}
       {data && (
         <>
-          <CwlPoolTabs
-            mode="tabs"
-            id="bonus-pools"
-            value={pool}
-            disabled={busy || lookingUp}
-            onChange={async (next) => {
-              if (await canDiscard()) {
-                setPool(next);
-                resetContext(data, next);
-                emit({ pool: next, clan: undefined, step: undefined }, false);
-              }
-            }}
+          <ListToolbar
+            className="bonus-pool-toolbar"
+            scope={
+              <CwlPoolTabs
+                compactLabels
+                id="bonus-pools"
+                value={pool}
+                disabled={busy || lookingUp}
+                onChange={async (next) => {
+                  if (await canDiscard()) {
+                    setPool(next);
+                    resetContext(data, next);
+                    emit(
+                      { pool: next, clan: undefined, step: undefined },
+                      false,
+                    );
+                  }
+                }}
+              />
+            }
           />
-          <SectionTabPanel id="bonus-pools" value={pool}>
+          <SectionTabPanel id="bonus-pools" value={pool} enabled={false}>
             {clans.length > 0 && (
               <BonusClanSelect
                 clans={clans}

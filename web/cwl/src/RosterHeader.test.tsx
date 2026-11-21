@@ -159,7 +159,7 @@ describe("roster header counts", () => {
   });
 });
 
-it("omits all-pools noise when the selected pool has the same missing-weight count", () => {
+it("always names global missing-weight scope even when counts match", () => {
   const samePool = {
     ...roster,
     accounts: [
@@ -170,7 +170,7 @@ it("omits all-pools noise when the selected pool has the same missing-weight cou
   expect(render("main", "1", "November 2026", [], samePool)).toContain(
     "<strong>1</strong> no weight",
   );
-  expect(render("main", "1", "November 2026", [], samePool)).not.toContain(
+  expect(render("main", "1", "November 2026", [], samePool)).toContain(
     "(all pools)",
   );
   expect(render("lazy", "1", "November 2026", [], samePool)).toContain(
@@ -189,4 +189,14 @@ it("combines season, visible counts and status without an eyebrow or duplicate m
   expect(html).toContain('aria-label="Working roster counts"');
   expect(html).toContain('aria-label="Refresh"');
   expect(html).not.toContain("More roster actions");
+});
+
+it("names the selected pool while keeping global missing-weight counts explicit", () => {
+  expect(render("main")).toContain(
+    "2 Main signups · 1 unplaced · 2 no weight (all pools)",
+  );
+  expect(render("lazy")).toContain(
+    "1 Lazy signups · 1 unplaced · 2 no weight (all pools)",
+  );
+  expect(render("all")).toContain("3 signups · 2 unplaced · 2 no weight");
 });

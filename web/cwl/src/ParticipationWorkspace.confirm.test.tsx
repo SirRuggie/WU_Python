@@ -170,23 +170,15 @@ it("season change cancellation and double confirmation preserve callback value a
   expect(writes()).toHaveLength(0);
 });
 
-it("links every workflow pool tab to one labelled panel without mounting inactive content", async () => {
-  const tabs = [
-    ...host.querySelectorAll<HTMLButtonElement>(
-      '#participation-pools [role="tab"]',
-    ),
-  ];
-  expect(tabs).toHaveLength(2);
-  for (const tab of tabs) {
-    const panel = document.getElementById(tab.getAttribute("aria-controls")!)!;
-    expect(panel).toBeTruthy();
-    expect(panel.getAttribute("aria-labelledby")).toBe(tab.id);
-    expect(panel.hidden).toBe(tab.getAttribute("aria-selected") !== "true");
-    if (panel.hidden) expect(panel.textContent).toBe("");
-  }
+it("uses a controlled pressed-button pool group without inactive tab panels", async () => {
+  const group = host.querySelector("#participation-pools")!;
+  expect(group.getAttribute("role")).toBe("group");
+  const buttons = [...group.querySelectorAll<HTMLButtonElement>("button")];
+  expect(buttons).toHaveLength(2);
   expect(
-    host.querySelectorAll('[id^="participation-pools-panel-"]:not([hidden])'),
+    buttons.filter((item) => item.getAttribute("aria-pressed") === "true"),
   ).toHaveLength(1);
+  expect(group.querySelector('[role="tab"]')).toBeNull();
   expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
     true,
   );
