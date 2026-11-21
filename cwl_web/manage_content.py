@@ -79,11 +79,17 @@ def schema(item, template):
             field(f'sections.{slot}.body', f'{label}: message', section['body'])
     else:
         module = {'gauntlet': gauntlet, 'question': questions, 'war': war}[prefix]
-        for index, label in enumerate(module.BLOCK_LABELS[key]):
-            field(f'sections.{index}', label, template['sections'][index])
+        from utils.gauntlet_content import BOXES
+        if prefix == 'gauntlet' and key in BOXES:
+            for box, entries in BOXES[key]:
+                for index, label in entries:
+                    field(f'sections.{index}', label, template['sections'][index], group=box)
+        else:
+            for index, label in enumerate(module.BLOCK_LABELS[key]):
+                field(f'sections.{index}', label, template['sections'][index])
         slots = dict(gauntlet.MEDIA_SLOTS[key]) if prefix == 'gauntlet' else getattr(module, 'MEDIA_LABELS', {}).get(key, {})
         for slot, label in slots.items():
-            field(f'media.{slot}', label, template.get('media', {}).get(slot, ''), 'text', description='Public HTTPS image URL. Leave empty for original artwork.' if prefix == 'gauntlet' else 'Public HTTPS image URL.')
+            field(f'media.{slot}', label, template.get('media', {}).get(slot, ''), 'text', group='Images' if prefix == 'gauntlet' and key in BOXES else '', description='Public HTTPS image URL. Leave empty for original artwork.' if prefix == 'gauntlet' else 'Public HTTPS image URL.')
         if 'footer_url' in template and template['footer_url'] is not None:
             field('footer_url', 'Footer image', template['footer_url'], 'text')
         if 'accent' in template:
@@ -242,7 +248,16 @@ async def artwork(request):
 
 async def editor_document(item, template, *, mongo=None):
     result = schema(item, template)
-    if result['preview_supported']:
+    if item['id'] in {'gauntlet--about-us', 'gauntlet--wu-faq'}:
+        gauntlet, _, _, _ = modules()
+        rules, _, _ = await gauntlet.template_for(mongo, gauntlet.DOCUMENTS['family-rules'], GUILD_ID)
+        shared = [dict(key=f'shared_rules.{i}', label=label, value=value, type='textarea', readonly=True, group='Family Rules')
+                  for i, (label, value) in enumerate(zip(('Heading','Body'), rules, strict=True))]
+        fields = result['fields']
+        # Insert the read-only shared screen in public post order.
+        before = next((i for i, field in enumerate(fields) if field.get('group') in {'Next Step','Questions'}), len(fields))
+        result['fields'] = fields[:before] + shared + fields[before:]
+    if result['preview_supported'] and item['id'] != 'gauntlet--wu-faq':
         try:
             result['preview'] = await preview(item, template, mongo=mongo)
         except ValueError as error:
@@ -344,6 +359,8 @@ async def item_handler(request):
                 if not await gauntlet.supported_post_shape(document, components) or document.acknowledgement and not gauntlet.acknowledgement_id(components, document):
                     raise ValueError('The saved post no longer matches this message type')
                 sections = [node.content for node in gauntlet.editable_text_nodes(document, components)]
+                if key in gauntlet.BOXES:
+                    sections = gauntlet.merge_public(key, loaded['sections'], sections)
                 urls = gauntlet.media_snapshot(components)
                 if len(urls) != len(gauntlet.MEDIA_SLOTS[key]):
                     raise ValueError('The published artwork layout changed')

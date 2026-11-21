@@ -469,7 +469,7 @@ def test_desk_panel_components_and_registration():
     panel = setup.create_warrior_desk_embed()
     texts = _texts(panel)
     assert texts == [
-        "## 🛡 Warrior Desk",
+        "## 🛡 Warrior Help Desk",
         "Already a Warrior? Select a button.\n\n"
         "**Add another account:** add a Clash account to the family.\n"
         "**Contact staff:** conflicts, strike appeals and other questions.",

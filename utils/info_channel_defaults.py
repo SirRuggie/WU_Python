@@ -34,13 +34,7 @@ Treat others the way you want them to treat you. Everyone has bad days. Do not t
 
 WU_FAQ_QUESTIONS = (
     """## ❓ Questions""",
-    """**What is Warriors United?**
-An English-speaking Clash of Clans family with members from all over the world. We have 3 clan types:
-🎯 **Tactical:** serious wars. Plan, attack, and win.
-🎉 **Flexible Fun:** relaxed wars. Play when you can.
-💰 **FWA:** farm wars. Easy loot, low stress.
-
-**How do I join a clan?**
+    """**How do I join a clan?**
 Go to <#1553107113062965279> and follow the steps.
 
 **How do I link my account and get my roles?**
@@ -55,14 +49,29 @@ Sign up and see the rosters on the [dashboard](https://dash.warriorsunited.cc).
 **I need help with an attack.**
 Ask in <#1005916813378465832>, or look in <#1568000309177876480>.
 
-**I have a question about a strike.**
-Ask in <#780881554238865538>.
+**I have a question about a strike, or a conflict.**
+Go to <#1567967422118502441> and select **Contact staff**.
+
+**How do I add another account?**
+Go to <#1567967422118502441> and select **Add another account**.
 
 **Where can I chat?**
 <#671836698371424256>
 
 **How do I invite a friend?**
 Send them this link: https://discord.gg/U5ZKUd86cA""",
+)
+
+
+# Questions retain stored indices 0/1; additions are appended without migration.
+WU_FAQ_NEW_FIELDS = (
+    "## 🛡️ Warriors United",
+    "An adult, English-speaking Clash of Clans family. Members play from all over the world. Banter is welcome.\n**Want to join?** Go to <#1553107113062965279>.",
+    "## 🏰 Our Clans",
+    "**🎯 Tactical:** serious wars, 3-star attacks",
+    "**🎉 Flexible Fun:** relaxed wars, no heroes needed",
+    "**💰 FWA:** farm wars, easy loot",
+    "🏆 CWL every month, for every member.",
 )
 
 ABOUT_US_COPY = (

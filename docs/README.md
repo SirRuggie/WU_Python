@@ -184,3 +184,5 @@ before changing durable documentation.
 
 - [exports-history.md](exports-history.md) — Exports & history231: grouped rosters,
   imported winners, publication/working behavior and read-only safeguards.
+
+- [Member text style](member-text-style.md) — house style for member-facing Discord text.

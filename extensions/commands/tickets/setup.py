@@ -106,9 +106,8 @@ def create_public_ticket_embed(sections=None, *, media=None, action_id="preview"
             Text(content="## Warriors United Clan Entry"),
             Separator(divider=True),
             Text(content=(
-                "Begin your Rite of Passage and choose your path to Main or FWA.\n\n"
-                "Once your ticket is open, please wait patiently for one of our "
-                "Recruiters to respond."
+                "Begin your Rite of Passage. Select the path you want: Main or FWA.\n"
+                "A Recruiter replies in your ticket. Open only one ticket."
             )),
             Media(items=[MediaItem(media="assets/Gold_Footer.png")]),
             ActionRow(components=[
@@ -151,7 +150,7 @@ async def saved_public_ticket_embed(mongo, guild_id):
 def create_warrior_desk_embed(sections=None, *, media=None, action_id="preview", preview=False) -> List[Container]:
     """Create the public Warrior Desk panel (Add another account, Contact staff)."""
     components = [
-        Text(content="## 🛡 Warrior Desk"),
+        Text(content="## 🛡 Warrior Help Desk"),
         Separator(divider=True),
         Text(content=(
             "Already a Warrior? Select a button.\n\n"

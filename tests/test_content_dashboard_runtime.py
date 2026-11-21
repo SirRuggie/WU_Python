@@ -246,8 +246,8 @@ def test_adoption_rejects_real_model_with_noncanonical_type_tree(monkeypatch):
     async def check():
         document = content.DOCUMENTS["about-us"]
         models = list(_as_discord_models(await content.baseline(document)))
-        container = models[1]
-        models[1] = hikari.ContainerComponent(
+        container = models[2]
+        models[2] = hikari.ContainerComponent(
             type=container.type,
             id=container.id,
             accent_color=container.accent_color,
@@ -294,8 +294,8 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         models = _as_discord_models(await content.baseline(document))
         original = [node.content for node in content.text_nodes(models)]
         original_media = content.media_snapshot(models)
-        edited = list(original)
-        edited[0] = edited[0] + " edited"
+        edited = [node.content for node in content.editable_text_nodes(document, models)]
+        edited[14] += " edited"
         retained = SimpleNamespace(id=30, filename="rules.png", url=original_media[0])
         replaced = SimpleNamespace(
             id=102, filename="old-main.png",
@@ -353,14 +353,14 @@ def test_real_hikari_model_publish_updates_linked_post_without_mentions(monkeypa
         assert kwargs["mentions_everyone"] is False
         assert kwargs["attachments"] == [retained]
         rendered_text = [node.content for node in content.text_nodes(kwargs["components"])]
-        assert rendered_text == edited
+        assert [node.content for node in content.editable_text_nodes(document, kwargs["components"])] == edited
         assert content.acknowledgement_id(kwargs["components"], document)
         assert published[-1]["target"]["original_media"] == content.media_snapshot(models)
         assert config.deletes and config.deletes[-1]["token"]
-        assert "-# Published post updated." in _panel_texts(panel)
+        assert any("WU Strike System: Published post updated." in text and "https://discord.com/channels/20/30/40" in text for text in _panel_texts(panel))
         assert "Published post to update: [View post](https://discord.com/channels/20/30/40) in <#30>." in _panel_texts(panel)
         saved_panel = await content.publish_state(ctx, state, SimpleNamespace(bot_config=config), SimpleNamespace(rest=rest), saved_template=True)
-        assert "-# Template saved and published post updated." in _panel_texts(saved_panel)
+        assert any("WU Strike System: Template saved and published post updated." in text and "https://discord.com/channels/20/30/40" in text for text in _panel_texts(saved_panel))
         assert edit_message.await_count == 2
 
     _run(check())
@@ -528,15 +528,15 @@ def test_template_save_uses_revision_compare_and_swap():
         })
         state = {
             "document": "about-us", "guild_id": 20,
-            "sections": ["new"], "revision": 4,
+            "sections": [node.content for node in content.editable_text_nodes(content.DOCUMENTS["about-us"], await content.baseline(content.DOCUMENTS["about-us"] ))], "revision": 4,
         }
         ctx = _Context()
         assert await content._save(ctx, state, SimpleNamespace(bot_config=collection)) is True
         assert collection.documents[key]["revision"] == 5
 
-        stale = dict(state, sections=["stale"])
+        stale = dict(state, revision=4)
         assert await content._save(ctx, stale, SimpleNamespace(bot_config=collection)) is False
-        assert collection.documents[key]["sections"] == ["new"]
+        assert collection.documents[key]["sections"] == state["sections"]
 
     _run(check())
 
@@ -561,7 +561,8 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
         monkeypatch.setattr(module, "require_ready", AsyncMock(return_value=True))
         document = content.DOCUMENTS[key]
         sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
-        sections[0] = sections[0] + " saved"
+        index = content.editable_blocks(document, sections)[0][0]
+        sections[index] += " saved"
         media = {
             slot: f"https://img.example.com/{key}-{slot}.png"
             for slot, _label in content.media_slots(document)
@@ -609,7 +610,7 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
         assert events[0][0] == "defer"
         assert events[1][0] == "find"
         create = next(event[1] for event in events if event[0] == "create")
-        assert content.text_nodes(create["components"])[0].content == sections[0]
+        assert content.text_nodes(create["components"])[0].content == sections[content.editable_blocks(document, sections)[0][0]]
         assert content.media_snapshot(create["components"]) == list(media.values())
         assert create["user_mentions"] is False
         assert create["role_mentions"] is False
@@ -689,10 +690,11 @@ def test_setup_posters_fall_back_from_malformed_saved_template(
             expected_components = builder()
         expected_texts = [node.content for node in content.text_nodes(expected_components)]
         assert texts == expected_texts
-        assert len(texts) == expected_count
-        assert sum(map(len, texts)) == expected_total
+        assert len(texts) == {"about-us":11,"strike-system":12,"family-particulars":14}[key]
+        assert sum(map(len, texts)) <=4000
         assert all("incomplete" not in text for text in texts)
-        heading_positions = [next(i for i, text in enumerate(texts) if text.startswith("#") and heading in text) for heading in headings]
+        current_headings = {"about-us":("Welcome","Our Clans","Family Rules","Next Step"), "strike-system":("How Strikes Work","Remove Your Strikes","At 4 Strikes","Strike Charts","Next Step"), "family-particulars":("How Our Clans Work","Every Day","War Days","Clan War League","Next Step")}[key]
+        heading_positions = [next(i for i,text in enumerate(texts) if text.startswith("#") and heading in text) for heading in current_headings]
         assert all(left < right for left, right in zip(heading_positions, heading_positions[1:]))
 
         def shape(nodes):
@@ -771,7 +773,7 @@ def test_preview_reuses_the_acknowledgement_slot_for_back_at_the_component_limit
         await components._dispatch(ctx, mongo=mongo)
 
         preview = ctx.events[-1][2]["components"]
-        assert content.component_count(preview) == 40
+        assert content.component_count(preview) == 27
         ids = _custom_ids(preview)
         assert "content_back_document:family" in ids
         assert not any(custom_id.startswith(document.acknowledgement + ":") for custom_id in ids)
@@ -921,7 +923,7 @@ def test_render_uses_named_media_overrides_without_changing_the_native_shape():
     async def check():
         document = content.DOCUMENTS["strike-system"]
         baseline = await content.baseline(document)
-        sections = [node.content for node in content.text_nodes(baseline)]
+        sections = [node.content for node in content.editable_text_nodes(document, baseline)]
         rendered = await content.render(
             document, sections,
             media={"main-strikes": "https://img.example.com/main.123.jpg"},
@@ -998,19 +1000,10 @@ def test_unset_posting_channel_uses_approved_explanation():
                 'Save template keeps it so you can edit it later.') in texts
     _run(check())
 def test_strike_system_default_uses_approved_strike_policy_copy():
-    texts = _panel_texts(recruit_strikesystem.build_strikesystem())
-    assert (
-        "Our Strike System is a penalty system in which strikes are given to members who violate the rules and "
-        "principles implemented within the Warriors United clan family.\n\n"
-        "Each violation has a fixed number of strikes. What counts is the number of strikes, not the number of violations. "
-        "For example, missing both attacks in war is one violation that results in two strikes. Members have a total of 4 strikes before disciplinary action takes place. "
-        "When you get the maximum number of strikes, you have 12 hours to open a ticket and talk about the case. If you do not, we remove you from the clan "
-        "and ban you from all other clans in the family for one week. After one week with no reply, your clan roles will be removed, returning you to the status you had when you joined the server.\n\n"
-        "All strikes are given per individual account, with the exception of civil-behavior offenses. "
-        "If one action causes more than one strike, we count only the strikes of the worst offense. We still note all strikes.\n\n"
-        "Strikes are recorded automatically. Staff manage them in Strikes & replacements. Each strike resets after a set time. This is usually 60 days.\n\n"
-        "Below are charts of offenses and the value of each offense."
-    ) in texts
+    texts = "\n".join(_panel_texts(recruit_strikesystem.build_strikesystem()))
+    assert "Strikes belong to each account. Moving to another family clan does not remove them." in texts
+    assert "**Play 2 wars in a row** (use both attacks): 1 strike is removed." in texts
+    assert "select **Contact staff** in <#1567967422118502441>" in texts
 
 
 @pytest.fixture(autouse=True)

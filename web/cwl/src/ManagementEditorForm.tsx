@@ -26,6 +26,7 @@ type Props = {
   operationsWorkspace: boolean;
   onSave: (review?: boolean) => void;
   onOpenRecord?: (endpoint: string) => void;
+  onOpenSharedRules?: () => void;
   setFieldPage: Dispatch<SetStateAction<number>>;
   setMobilePane: Dispatch<SetStateAction<"edit" | "preview">>;
   setDocument: Dispatch<SetStateAction<ManagementDocument | null>>;
@@ -47,6 +48,7 @@ export default function ManagementEditorForm({
   operationsWorkspace,
   onSave,
   onOpenRecord,
+  onOpenSharedRules,
   setFieldPage,
   setMobilePane,
   setDocument,
@@ -57,6 +59,12 @@ export default function ManagementEditorForm({
   const creating = townHalls && !!document.create;
   const duplicate =
     creating && duplicateTownHall(document, Number(draft.level));
+  const boxEditor = [
+    "gauntlet--about-us",
+    "gauntlet--strike-system",
+    "gauntlet--family-particulars",
+    "gauntlet--wu-faq",
+  ].includes(document.id);
   const grouped = document.fields.some((field) => field.group);
   const groups = new Map<string, ManagementField[]>();
   for (const field of document.fields) {
@@ -176,6 +184,42 @@ export default function ManagementEditorForm({
               draft={draft}
               renderField={renderField}
             />
+          ) : boxEditor ? (
+            <>
+              <label className="manage-record-picker">
+                Message or setting to edit
+                <select
+                  value={Math.min(fieldPage, Math.max(0, groups.size - 1))}
+                  onChange={(event) => setFieldPage(Number(event.target.value))}
+                >
+                  {[...groups.keys()].map((name, index) => (
+                    <option key={name} value={index}>
+                      {name}
+                    </option>
+                  ))}
+                </select>
+                <small>
+                  Save applies all edits. Preview shows the whole post.
+                </small>
+              </label>
+              {renderGroup(
+                [...groups.values()][
+                  Math.min(fieldPage, Math.max(0, groups.size - 1))
+                ] || [],
+              )}
+              {[...groups.keys()][fieldPage] === "Family Rules" && (
+                <p className="small">
+                  Shared by WU FAQ and About Us.{" "}
+                  <button
+                    type="button"
+                    disabled={busy}
+                    onClick={onOpenSharedRules}
+                  >
+                    Edit shared Family Rules
+                  </button>
+                </p>
+              )}
+            </>
           ) : grouped ? (
             <div className="manage-grouped-fields">
               {[...groups].map(([name, fields]) =>

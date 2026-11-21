@@ -42,10 +42,10 @@ def test_family_particulars_default_copy_and_target_are_updated():
     assert "Select **I understand - Continue**" in acknowledgement
     assert "Reacting" not in acknowledgement
     assert "open an application ticket" in acknowledgement
-    assert "Select only one application ticket option." in acknowledgement
+    assert "There are 2 application ticket types. **Open only one.**" in acknowledgement
     assert family_particulars.CLAN_RULES_READ_ROLE_ID == 1553110621711634502
     assert family_particulars.APPLY_HERE_CHANNEL_ID == 1547242779711766528
-    assert len(content.text_nodes(parts)) == 28
+    assert len(content.text_nodes(parts)) == 14
 
 
 def test_family_particulars_action_is_stateless_and_persistent():
@@ -135,8 +135,8 @@ def test_family_particulars_role_grant_failure_is_private_and_keeps_public_post_
 
 
 def test_family_particulars_friendly_challenge_and_games_copy():
-    texts = [node.content for node in content.text_nodes(family_particulars.build_familyparticulars())]
-    assert "Every time you open the game, post a Friendly Challenge. Do this at any Town Hall level. It gives everyone a chance to practice." in texts
-    assert ("The goal is simple: each member must earn at least 1,000 points in Clan Games. "
-            "Builder Base challenges give you these points quickly. For example, 40 members who earn "
-            "1,250 points each make the 50,000 points that we need.") in texts
+    import json
+    from pathlib import Path
+    approved=json.loads((Path(__file__).parent/'fixtures/gauntlet270_copy.json').read_text())['family']
+    text="\n".join(node.content for node in content.text_nodes(family_particulars.build_familyparticulars()))
+    assert approved[4] in text and approved[6] in text

@@ -66,7 +66,7 @@ def test_publish_page_names_new_and_existing_channels_separately():
     async def scenario():
         import json
         from cwl_web import server_management as shared
-        data={'sections':['Saved']*len(content.BLOCK_LABELS['about-us']), 'destination':456, 'target':{'channel_id':789,'message_id':123}}
+        data={'sections':['Saved']*16, 'destination':456, 'target':{'channel_id':789,'message_id':123}}
         async def lookup(request,method,path):
             return {'guild_id':str(delivery.GUILD_ID),'name':'new-posts' if path.endswith('/456') else 'existing-posts'}
         request=NS(match_info={'document':'about-us'})
@@ -113,7 +113,7 @@ def test_wu_faq_update_uses_context_and_needs_no_acknowledgement_button():
         bot.rest.fetch_message=AsyncMock(return_value=message)
         with patch.object(content,'template_for',AsyncMock(return_value=(sections,{},1))), patch.object(content,'destination_for',AsyncMock(return_value=456)), patch.object(content,'published_for',AsyncMock(return_value=target)), patch.object(content,'loaded_published_target',AsyncMock(return_value=target)), patch.object(content,'render',AsyncMock(return_value=components)) as renderer:
             result=await delivery.publish(bot,db,row,ctx)
-            assert result['message']=='Existing post updated.'
+            assert result['message']=='WU FAQ: Existing post updated.'
             assert renderer.await_args.kwargs['mongo'] is db
             assert renderer.await_args.kwargs['guild_id']==delivery.GUILD_ID
             assert renderer.await_args.kwargs['action_id']=='public'

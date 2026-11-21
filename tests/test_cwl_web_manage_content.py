@@ -167,15 +167,18 @@ async def _load_published_returns_unsaved_draft_and_checks_bot_author():
     async def database(_request):
         yield mongo
     author = '555'
+    canonical = await content.load(mongo,content.descriptor('gauntlet--about-us'))
+    imported = canonical['sections'][:]
+    imported[12] = 'Published heading'
     async def discord(_request, method, path):
         if path == '/users/@me': return {'id':'555'}
         if '/messages/' in path:
             return {'author':{'id':author},'components':[{'type':17,'components':[{'type':10,'content':'Published heading'},{'type':12,'items':[{'media':{'url':'https://example.org/image.png'}}]}]}]}
         return {'guild_id':str(content.GUILD_ID)}
     request=SimpleNamespace(match_info={'item':'gauntlet--about-us','action':'load-published'},method='POST',path='/load-published',json=AsyncMock(return_value={'revision':0}))
-    with patch.object(server_management,'mongo',database),patch.object(server_management,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(server_management,'discord',discord),patch.object(gauntlet,'published_for',AsyncMock(return_value={'channel_id':1,'message_id':2})),patch.object(gauntlet,'component_shape',return_value='shape'),patch.object(gauntlet,'acknowledgement_id',return_value='ack'),patch.object(gauntlet,'render',AsyncMock(return_value=[])):
+    with patch.object(server_management,'mongo',database),patch.object(server_management,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(server_management,'discord',discord),patch.object(gauntlet,'published_for',AsyncMock(return_value={'channel_id':1,'message_id':2})),patch.object(gauntlet,'component_shape',return_value='shape'),patch.object(gauntlet,'acknowledgement_id',return_value='ack'),patch.object(gauntlet,'render',AsyncMock(return_value=[])),patch.object(gauntlet,'editable_text_nodes',return_value=[SimpleNamespace(content=value) for value in imported]):
         response=json.loads((await content.item_handler(request)).text)
-        assert response['draft_values']['sections.0']=='Published heading'
+        assert response['draft_values']['sections.12']=='Published heading'
         assert not mongo.bot_config.rows
         author='different'
         with pytest.raises(web.HTTPBadRequest):

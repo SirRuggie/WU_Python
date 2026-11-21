@@ -104,7 +104,7 @@ def state(monkeypatch, sections):
 def test_native_channel_select_persists_per_document_and_posts_current_draft_once(monkeypatch):
     document = content.DOCUMENTS["about-us"]
     sections = [node.content for node in content.editable_text_nodes(document, run(content.baseline(document)))]
-    sections[0] = "## Current unsaved draft"
+    sections[12] = "## Current unsaved draft"
     states = state(monkeypatch, sections)
     before = content.panel(states["initial"])[0].build()[0]
     before_buttons = [button for row in before["components"]

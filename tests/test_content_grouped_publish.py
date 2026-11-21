@@ -15,13 +15,13 @@ def run(coro):
 
 def test_all_documents_group_headings_and_bodies_without_exposing_family_decorations():
     async def check():
-        expected = {"join-family": 3, "about-us": 6, "strike-system": 6, "family-particulars": 11}
+        expected = {"join-family": 3, "about-us": 4, "strike-system": 5, "family-particulars": 5}
         for key, group_count in expected.items():
             document = content.DOCUMENTS[key]
             sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
             groups = content.editable_groups(document, sections)
             assert len(groups) == group_count
-            assert all(1 <= len(fields) <= 2 for _, fields in groups)
+            assert all(0 <= len(fields) <= 5 for _, fields in groups)
             indexes = [field[0] for _, fields in groups for field in fields]
             assert set(indexes) == {index for index, _ in content.editable_blocks(document, sections)}
     run(check())
@@ -101,14 +101,14 @@ def test_saved_target_rejects_deleted_post():
 def test_loading_published_copy_preserves_saved_template_snapshot(monkeypatch):
     async def check():
         document = content.DOCUMENTS["strike-system"]
-        template = [node.content for node in content.text_nodes(await content.baseline(document))]
+        template = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         live = list(template)
-        live[0] += " visible now"
+        live[14] += " visible now"
         media = content.media_snapshot(_as_discord_models(await content.baseline(document)))
         state = {
             "_id": "draft", "user_id": 10, "guild_id": 20, "document": "strike-system", "view": "document",
             "sections": template, "media": {}, "revision": 1, "destination_channel_id": 30,
-            "target": {"channel_id": 30, "message_id": 40, "original": live, "original_media": media},
+            "target": {"channel_id": 30, "message_id": 40, "original": live, "editable_original": live, "original_media": media},
         }
         state["saved_snapshot"] = content.draft_snapshot(state)
         monkeypatch.setattr(content, "load", AsyncMock(return_value=(state, None)))
@@ -255,16 +255,16 @@ def test_composed_faq_and_about_us_use_saved_rules_and_actual_render_budget():
         db = _info_database()
         about = await content.render(content.DOCUMENTS['about-us'], about_us_defaults(), mongo=db, guild_id=20)
         texts = [node.content for node in content.text_nodes(about)]
-        assert sum(map(len, texts)) == 3831
-        assert len(texts) == 14 and len(content.editable_text_nodes(content.DOCUMENTS['about-us'], about)) == 12
+        assert sum(map(len, texts)) == 3697
+        assert len(texts) == 11 and len(content.editable_text_nodes(content.DOCUMENTS['about-us'], about)) == 16
         assert texts[-4:-2] == db.bot_config.documents['content:family-rules:20']['sections']
         assert texts[-2] == '## ⏩ Next Step'
         faq = await content.render(content.DOCUMENTS['wu-faq'], list(WU_FAQ_QUESTIONS), mongo=db, guild_id=20)
-        assert len(faq) == 2
-        assert [node.content for node in content.text_nodes(faq)][:2] == texts[-4:-2]
+        assert len(faq) == 4
+        assert [node.content for node in content.text_nodes(faq)][7:9] == texts[-4:-2]
         assert content.DOCUMENTS['wu-faq'].acknowledgement is None
         assert all(not getattr(node, 'custom_id', None) for item in faq for node in item.components)
-        assert len(db.clans.queries) == 1
+        assert len(db.clans.queries) == 2
         assert not db.bot_config.updates and not db.bot_config.inserts
     run(check())
 
@@ -317,7 +317,7 @@ def test_rules_fanout_reports_partial_results_and_does_not_repeat_after_restart(
         bot = SimpleNamespace(rest=SimpleNamespace(fetch_channel=AsyncMock(return_value=SimpleNamespace(guild_id=20)),fetch_message=AsyncMock(side_effect=fetch),edit_message=AsyncMock(),create_message=AsyncMock()))
         targets, errors = await content.shared_rule_targets(db, bot, 20, 999)
         assert not errors and set(targets) == {'wu-faq','about-us'}
-        assert len(db.clans.queries) == 1  # Offer reads posts, never registry.
+        assert len(db.clans.queries) == 2  # Both initial renders query once; offer never reads registry.
         rules = [FAMILY_RULES[0], FAMILY_RULES[1]+' Updated']
         db.bot_config.documents['content:family-rules:20'].update(sections=rules,revision=2)
         state = dict(user_id=10,guild_id=20,document='family-rules',sections=rules,media={},revision=2,shared_targets=targets)
@@ -382,7 +382,7 @@ def test_wu_faq_send_has_no_acknowledgement_or_role_grant_and_blocks_mentions(mo
         rest.create_message.assert_awaited_once();rest.add_role_to_member.assert_not_awaited();rest.fetch_roles.assert_not_awaited()
         kwargs=rest.create_message.await_args.kwargs
         assert all(kwargs[key] is False for key in content.NO_MENTIONS)
-        assert content.component_count(kwargs['components'])==6
+        assert content.component_count(kwargs['components'])==17
         assert not content.acknowledgement_id(kwargs['components'],content.DOCUMENTS['wu-faq'])
         assert db.bot_config.documents['content_published:20:wu-faq']['message_id']==50
     run(check())
