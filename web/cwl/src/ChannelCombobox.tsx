@@ -2,9 +2,13 @@ import type { AnnouncementChannel } from "./announcements";
 import { filterChannels } from "./channelSearch";
 import SearchPicker, { type PickerOption } from "./SearchPicker";
 
+type ChannelChoice = Omit<AnnouncementChannel, "type"> & { type?: number };
+
 type Props = {
+  triggerId?: string;
+  describedBy?: string;
   label: string;
-  channels: AnnouncementChannel[];
+  channels: ChannelChoice[];
   value: string;
   disabled: boolean;
   onChange: (value: string) => void;
@@ -20,13 +24,13 @@ const LOOKUP_ID = /^[0-9]{15,22}$/;
 // Prefix so a lookup row never equals the saved value (a saved but hidden post).
 const LOOKUP = "lookup:";
 
-function typeWord(type: number) {
+function typeWord(type: number | undefined) {
   if (type === FORUM_POST) return "Forum post";
   if (type === FORUM) return "Forum";
   return undefined;
 }
 
-function channelOption(channel: AnnouncementChannel): PickerOption {
+function channelOption(channel: ChannelChoice): PickerOption {
   return {
     value: channel.id,
     label: channel.type === CATEGORY ? channel.name : `#${channel.name}`,
@@ -36,6 +40,8 @@ function channelOption(channel: AnnouncementChannel): PickerOption {
 
 /** Channel field with name search; a pasted ID finds the channel too. */
 export default function ChannelCombobox({
+  triggerId,
+  describedBy,
   label,
   channels,
   value,
@@ -68,6 +74,8 @@ export default function ChannelCombobox({
   return (
     <div className="channel-combobox">
       <SearchPicker
+        triggerId={triggerId}
+        describedBy={describedBy}
         label={label}
         value={value}
         options={options}

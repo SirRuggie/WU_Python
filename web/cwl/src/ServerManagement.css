@@ -296,3 +296,30 @@
   color: var(--wu-text);
   text-underline-offset: 0.2em;
 }
+
+.manage-selected-roles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+.manage-selected-roles > li {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
+  max-width: 100%;
+}
+.manage-selected-roles > li > span {
+  overflow-wrap: anywhere;
+}
+.manage-selected-roles button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  flex-shrink: 0;
+}

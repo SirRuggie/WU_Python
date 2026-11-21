@@ -1,6 +1,6 @@
 import type { PreviewPart } from "./DiscordPreview";
 export type ManagementValue = string | number | boolean | string[] | null;
-export type ManagementOption = { value: string; label: string };
+export type ManagementOption = { value: string; label: string; type?: number };
 export type ManagementField = {
   key: string;
   label: string;
