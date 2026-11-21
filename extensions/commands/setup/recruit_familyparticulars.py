@@ -38,8 +38,8 @@ FAMILY_PARTICULARS_GUILD_ID = 644963518025826315
 
 def build_familyparticulars(sections=None, *, media=None, action_id="preview", preview=False):
     """Keep saved field meanings and one topic per public box."""
-    from utils.gauntlet_content import sections_for, subtopic
-    fields = sections_for("family-particulars", sections)
+    from utils.gauntlet_content import logical_sections, subtopic
+    fields = logical_sections("family-particulars", sections)
     media = media or {}
     return [
         Media(items=[MediaItem(media=media.get("welcome", "assets/recruit/static/WU_FamilyParticulars.gif"))]),
