@@ -172,6 +172,92 @@ def visible_indexes(key):
     return tuple(index for _box, fields in BOXES[key] for index, _label in fields)
 
 
+# 272: logical keys keep their 270 meanings; raw saved positions never move.
+LAYOUT_VERSION = 272
+COMPACT_BODY_SLOTS = {5:4, 8:6, 12:9, 15:11, 18:13, 21:15, 24:17, 27:19}
+_DECORATIONS = (3, 6, 9, 13, 16, 19, 22, 25)
+_COMPACT_HEADINGS = {3:("friendly challenges",), 5:("clan games",),
+    8:("war status", "war eligibility"), 10:("prep day",), 12:("battle day",),
+    14:("clan war league cwl", "clan war league"),
+    16:("every cwl battle", "cwl principles"), 18:("acknowledgment", "acknowledgement")}
+COMPACT_NOTICE = "This legacy web-save layout uses corrected body mapping. An explicit Save stores the canonical layout; Preview and Update do not rewrite the saved text. Change history retains the original layout."
+AMBIGUOUS_NOTICE = "The saved field layout is ambiguous. Raw saved values are shown for staff review. Saving, Preview, Send and Update are blocked; no text was replaced."
+
+
+def _heading(value):
+    return " ".join(re.findall(r"[a-z0-9]+", re.sub(r"<a?:[^:>]+:[0-9]+>", "", value).casefold()))
+
+
+def layout_for(key, sections):
+    if key != "family-particulars":
+        return "standard"
+    values = list(PARTICULARS_LEGACY_DEFAULTS if sections is None else sections)
+    if len(values) not in (28, 34):
+        return "ambiguous"
+    genuine = all(bool(re.fullmatch(r"[\sᨖ]+", values[i])) for i in _DECORATIONS)
+    compact = all(_heading(values[i]) in headings for i, headings in _COMPACT_HEADINGS.items())
+    # A 270 Save can contain both the compact prefix and later intentional edits.
+    # There is no durable provenance that permits choosing between those meanings.
+    known_headings = {heading for headings in _COMPACT_HEADINGS.values() for heading in headings} | {
+        "family war rules", "every day", "war days", "golden rule", "read this first",
+        "how our clans work", "next step", "warriors united family particulars",
+        "warriors united clan war league cwl", "principles for every cwl battle"
+    }
+    if genuine and not compact:
+        if any(_heading(values[i]) in known_headings for i in COMPACT_BODY_SLOTS):
+            return "ambiguous"
+        return "standard"
+    if compact and not genuine and len(values) == 28:
+        if not any(_heading(values[i]) in known_headings for i in COMPACT_BODY_SLOTS.values()):
+            return "compact"
+    return "ambiguous"
+
+
+def layout_notice(key, sections):
+    layout = layout_for(key, sections)
+    return COMPACT_NOTICE if layout == "compact" else AMBIGUOUS_NOTICE if layout == "ambiguous" else None
+
+
+def require_writable(key, sections):
+    if layout_for(key, sections) == "ambiguous":
+        raise ValueError(AMBIGUOUS_NOTICE)
+
+
+def logical_sections(key, sections=None):
+    values = sections_for(key, sections)
+    layout = layout_for(key, values)
+    if layout == "ambiguous":
+        raise ValueError(AMBIGUOUS_NOTICE)
+    if layout == "compact":
+        projected = values + sections_for(key)[28:]
+        for logical, physical in COMPACT_BODY_SLOTS.items():
+            projected[logical] = values[physical]
+        return projected
+    return values
+
+
+
+def save_sections(key, sections):
+    """1330: canonicalize compact storage only on an explicit staff Save.
+
+    Every semantic value0..19 moves to its genuine renderer slot. The obsolete
+    duplicated tail20..27 is replaced; normal history retains the original raw
+    row before the revision-checked write. This pure projection also prepares explicit edit drafts; only Save persists it.
+    """
+    require_writable(key, sections)
+    if layout_for(key, sections) != "compact":
+        return sections_for(key, sections)
+    raw = list(sections)
+    canonical = raw + sections_for(key)[28:]
+    for target, source in {4:3, 7:5, 10:7, 11:8, 14:10, 17:12, 20:14, 23:16, 26:18,
+                           **COMPACT_BODY_SLOTS}.items():
+        canonical[target] = raw[source]
+    for index in _DECORATIONS:
+        canonical[index] = PARTICULARS_LEGACY_DEFAULTS[index]
+    assert layout_for(key, canonical) == "standard" and len(canonical) == 34
+    return canonical
+
+
 def sections_for(key, sections=None):
     if key == "wu-faq":
         from utils.info_channel_content import wu_faq_sections
@@ -181,6 +267,9 @@ def sections_for(key, sections=None):
     if sections is not None and (not isinstance(sections, (list,tuple)) or any(not isinstance(v,str) for v in sections)):
         raise ValueError("The saved info document has invalid text. Reopen it for review.")
     values = list(defaults[key] if sections is None else sections)
+    if key == "family-particulars" and len(values) in (28, 34) and layout_for(key, values) != "standard":
+        # Preserve raw28/34, including conflicting historical staff edits.
+        return values
     if len(values) == LENGTHS[key]:
         return values
     if len(values) != LEGACY_LENGTHS[key]:
@@ -209,12 +298,12 @@ def sections_for(key, sections=None):
 
 
 def validate_sections(key, sections):
-    fields = sections_for(key, sections)
+    fields = logical_sections(key, sections)
     if key == "strike-system" and not fields[13].strip():
         raise ValueError("Review the saved How Strikes Work text and complete Remove Your Strikes. The original text is retained; nothing was saved or posted.")
     if any(not fields[index].strip() for index in visible_indexes(key)):
         raise ValueError("Complete every visible box field before saving or posting.")
-    return fields
+    return sections_for(key, sections)
 
 
 def subtopic(label, body):
@@ -257,8 +346,9 @@ def project_public(key, texts, *, legacy=False):
 
 def merge_public(key, saved, imported):
     """Explicit Copy from Discord may change visible fields, never hidden data."""
-    fields = sections_for(key, saved)
-    imported = sections_for(key, imported)
+    require_writable(key, saved)
+    fields = save_sections(key, saved)
+    imported = logical_sections(key, imported)
     for index in visible_indexes(key):
         fields[index] = imported[index]
     return fields

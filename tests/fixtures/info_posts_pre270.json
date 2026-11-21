@@ -1,0 +1,147 @@
+{
+  "source_commit": "8165462e1b01065a8822aba7dc0d04ffad336897",
+  "hikari_version": "2.6.0",
+  "derivation": "Actual historical Hikari builder then historical editable_text_nodes; unique-sentinel round trip verified in isolated FSNET replay.",
+  "documents": {
+    "about-us": [
+      "## 🛡️ Warriors United Family 🛡️",
+      "We are an English-speaking clan family based in the USA, with Clashers from all over the world. You can play in wars while you upgrade your base.\n\n**Note:** Our CWL clans do not support accounts that need a Family Friendly clan. If your account needs one, find a different clan family.\n\n**What we offer:**\n🛡️ 1 tactical clan\n🛡️ 2 Flexible Fun war clans\n🛡️ 7 FWA clans for farmers\n🛡️ CWL every month, for everyone",
+      "## ☠️ Tactical Clan",
+      "**For:** players who want serious wars and 3-star attacks.\n**Requirements:**\n• TH13 or higher, with your previous Town Hall level fully maxed\n• No heroes upgrading during war. Wars are always at full strength.\n**What we expect:** Follow the war plan and work as a team. Not every attack will be perfect, but always try for 3 stars.",
+      "## 🪖 Flexible Fun War Clans",
+      "**For:** lower-level players and players who want relaxed wars. Wars are 50v50, or the largest size possible.\n**Requirements:** None. Heroes are not required.\n**What we expect:**\n• Use your first attack in every war. There is no performance target.\n• Relaxed does not mean inactive. We play to win.\n• If you do not war, you cannot stay in the clan.\n**Tip:** Heroes upgrading in the tactical clan? Move to a Flexible Fun clan for war loot. Move back when your upgrades are done.",
+      "## 💰 FWA Clans",
+      "**For:** farmers who want loot from back-to-back wars.\n**How it works:** FWA (Farm War Alliance) sets the result of each war before it starts. A simple war plan tells you how to get that result. Heroes are not required.\n**Requirements:**\n• TH12 or higher\n• War weight of 115 or higher\n• All buildings built for your Town Hall level",
+      "### ⚖️ Final decision",
+      "These requirements are a guide. Leadership looks at each recruit and makes the final decision. Your interview gives more detail about each clan type.",
+      "## ⏩ Next Step",
+      "Select **I understand - Continue** to confirm that you read about our clans and the Family Rules. Then read the WU Strike System."
+    ],
+    "strike-system": [
+      "## 📜 **Warriors United Basic Rules** 📜",
+      "🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little banter and joking is fine, but we do not allow some things...\n\n**1.** No form of sexism, racism, religious discrimination, or gender discrimination will be tolerated. We ban you permanently, without a warning, if we see this anywhere on this server.\n\n**2.** While cussing is allowed, do not cuss excessively or at someone. All such instances will be recorded. A warning will be issued to you for each instance.\n\n**3.** Do not post advertisements for free Nitro. We do not check if they are real, and we ban without a warning.\n\n**4.** Respect other members and their privacy. If you send direct messages to someone again and again after they tell you to stop, you get a warning.\n\n**5.** When you post a message, image, GIF or sticker, always follow the Discord Terms of Service: https://discord.com/terms. Not following Discord ToS will lead to a one-day mute, and a second instance will lead to a ban from the server.\n\nAfter two warnings: you get a one-day timeout.\nAfter three warnings: you get a one-week timeout.\nAfter four warnings: you are banned from the server for good and removed from the family in CoC.",
+      "## ❌ **Warriors United Strike System** ❌",
+      "Our Strike System is a penalty system in which strikes are given to members who violate the rules and principles implemented within the Warriors United clan family.\n\nEach violation has a fixed number of strikes. What counts is the number of strikes, not the number of violations. For example, missing both attacks in war is one violation that results in two strikes. Members have a total of 4 strikes before disciplinary action takes place. When you get the maximum number of strikes, you have 12 hours to open a ticket and talk about the case. If you do not, we remove you from the clan and ban you from all other clans in the family for one week. After one week with no reply, your clan roles will be removed, returning you to the status you had when you joined the server.\n\nAll strikes are given per individual account, with the exception of civil-behavior offenses. If one action causes more than one strike, we count only the strikes of the worst offense. We still note all strikes.\n\nStrikes are recorded automatically. Staff manage them in Strikes & replacements. Each strike resets after a set time. This is usually 60 days.\n\nBelow are charts of offenses and the value of each offense.",
+      "## ❌ **MAIN CLAN STRIKE SYSTEM** ❌",
+      "The rules for the Main clan strike system are below.",
+      "## ❌ **FWA STRIKE SYSTEM** ❌",
+      "The rules for the FWA clan strike system are below.",
+      "## ❌ **Terms and Conditions** ❌",
+      "• For all offenses except those in the Red Zone, we can give a warning before a strike. The leadership team decides if it gives a warning. We log all warnings.\n\n• Strikes can be withdrawn by leadership majority.\n\n• Leadership can change this system at any time between seasons.\n\n• A kicked person may be reinvited to the Family after a unanimous vote by Leadership.",
+      "## 📜 **ACKNOWLEDGMENT**",
+      "Select **I understand - Continue** to confirm you have read and agree to follow the Warriors United Strike System, then continue to Family Particulars for the next Recruit Gauntlet step."
+    ],
+    "family-particulars": [
+      "## <:warriorcat:947992348971905035> **Warriors United Family Particulars**",
+      "### **GOLDEN RULE**\n",
+      "The main rule for any group or gathering is: \"Treat and speak to others as you would expect to be treated or spoken to.\" We understand that not every day is a good day. Just don't bring your bad day in here.",
+      "ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "### 🛡 **FRIENDLY CHALLENGES**\n",
+      "Every time you open the game, post a Friendly Challenge. Do this at any Town Hall level. It gives everyone a chance to practice.",
+      "\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "### 🛡 **CLAN GAMES**\n",
+      "The goal is simple: each member must earn at least 1,000 points in Clan Games. Builder Base challenges give you these points quickly. For example, 40 members who earn 1,250 points each make the 50,000 points that we need.",
+      "ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "## <:warriorcat:947992348971905035> **Family War Rules**",
+      "### 🛡 **WAR ELIGIBILITY**\n",
+      "To be included in war, you must have GREEN ✅ 🛡️ (opt-in) as your War Status. FWA/No Stress is explained below.\n\nIf you cannot take part in war for a personal reason, or your Heroes are upgrading in a clan that needs Heroes in war, set your War Status to RED ❌ 🛡️ (opt-out).\n\nIf you do not tell us or do not change your war availability in one of these cases, you get a strike in the Warriors United Strike System.\n\nIf you are in one of our FWA Clans or one of our No Stress Clans, it's 50v50 wars, so no matter what your base is upgrading, you should be ✅ with your War Status.",
+      "\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "### 🛡 **PREP DAY**\n",
+      "Everyone must help fill Defensive CCs. Fill the Defensive CC of the member below you with the troops they ask for. Do not leave one person to fill all of them.",
+      "\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "### 🛡 **BATTLE DAY**\n",
+      "Our Clan War General will provide a scripted War Plan detailing your war assignment. Do not assume that you attack your mirror. Wait for the War Plan before you attack. If there is no plan after a long time, ping the War General role of your clan and ask. Do not attack alone without a plan. You have 24 hours to plan and attack. Always attack for stars, not for loot or Hero status (unless given specific direction by the War General).",
+      "ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "## <:warriorcat:947992348971905035> **Warriors United Clan War League**",
+      "CWL is our biggest team event. Your clan counts on you. Help the whole team to win. We split into different clans for this event. Three factors determine the league in which you'll be placed:\n1) War activity\n2) War performance\n3) Account strength.\n\nYou do not have to take part in CWL. To take part, sign up on the dashboard before the deadline: https://dash.warriorsunited.cc/signup. We make no exceptions. The signup information allows clan Leaders and War Generals to produce clan rosters. We have several clans in the family, so everyone can have a shot at some medals. If you have multiple accounts, only three are allotted to be in one clan roster.\n\nNo signup, no play.",
+      "\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "### 🛡 **Principles for Every CWL Battle**\n",
+      "• Be available to attack and make sure you request offensive CC troops.\n\n• Have your heroes ready for battle.\n\n• Write your defensive CC troop request clearly (for example, Ice Golem/Dragon or IG/Drag).\n\n• Donate Defensive CC troops to the player below you and/or at least one of your teammates, making sure they are max-level troops.\n\n• Make a plan of attack. You have 24 hours for one attack.\n\nAsk our Attack Trainers for help in the \"Help-Me-Attack-This-Base\" channels.",
+      "ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ",
+      "## 📜 **ACKNOWLEDGMENT**",
+      "Select **I understand - Continue** to confirm that you read the Family Particulars. Then select Apply to open an application ticket.\n\nSelect only one application ticket option."
+    ]
+  },
+  "old_family_schema": [
+    {
+      "key": "sections.0",
+      "label": "Family heading"
+    },
+    {
+      "key": "sections.1",
+      "label": "Intro heading"
+    },
+    {
+      "key": "sections.2",
+      "label": "Intro"
+    },
+    {
+      "key": "sections.3",
+      "label": "Friendly challenges heading"
+    },
+    {
+      "key": "sections.4",
+      "label": "Friendly challenges"
+    },
+    {
+      "key": "sections.5",
+      "label": "Clan games heading"
+    },
+    {
+      "key": "sections.6",
+      "label": "Clan games"
+    },
+    {
+      "key": "sections.7",
+      "label": "War rules heading"
+    },
+    {
+      "key": "sections.8",
+      "label": "War eligibility heading"
+    },
+    {
+      "key": "sections.9",
+      "label": "War eligibility"
+    },
+    {
+      "key": "sections.10",
+      "label": "Prep day heading"
+    },
+    {
+      "key": "sections.11",
+      "label": "Prep day"
+    },
+    {
+      "key": "sections.12",
+      "label": "Battle day heading"
+    },
+    {
+      "key": "sections.13",
+      "label": "Battle day"
+    },
+    {
+      "key": "sections.14",
+      "label": "CWL heading"
+    },
+    {
+      "key": "sections.15",
+      "label": "CWL overview"
+    },
+    {
+      "key": "sections.16",
+      "label": "CWL principles heading"
+    },
+    {
+      "key": "sections.17",
+      "label": "CWL principles"
+    },
+    {
+      "key": "sections.18",
+      "label": "Acknowledgement heading"
+    },
+    {
+      "key": "sections.19",
+      "label": "Acknowledgement"
+    }
+  ]
+}

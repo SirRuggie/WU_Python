@@ -55,6 +55,9 @@ async def review(request, key):
         raise web.HTTPNotFound(text='This message is only used in private ticket panels')
     async with mongo(request) as db:
         sections, media, revision = await content.template_for(db, content.DOCUMENTS[key], GUILD_ID)
+        from utils.gauntlet_content import layout_for, AMBIGUOUS_NOTICE
+        if layout_for(key, sections) == "ambiguous":
+            raise web.HTTPBadRequest(text=AMBIGUOUS_NOTICE)
         destination = await content.destination_for(db, GUILD_ID, key)
         target = await content.published_for(db, GUILD_ID, key)
         derived = {}
@@ -95,8 +98,10 @@ async def page(request):
         if str(existing.get('guild_id')) != str(GUILD_ID):
             raise web.HTTPForbidden(text='The existing post is not in this server.')
         existing_channel = '#' + existing.get('name', str(data['target']['channel_id']))
+    from utils.gauntlet_content import layout_for
+    writable = layout_for(key, data['sections']) == 'standard'
     actions = []
-    for action, label, enabled in [('send','Send new post',not _bound(key) and data['destination']), ('update','Update existing post',data['target'])]:
+    for action, label, enabled in [('send','Send new post',writable and not _bound(key) and data['destination']), ('update','Update existing post',data['target'])]:
         if enabled:
             actions.append({'id':action,'label':label,'confirm':f'{label} in Discord? Review the channel and saved message above first.', 'endpoint':API + f'/manage/publish/{key}/{action}'})
     response = {'id':'publish--'+key,'label':'Publish '+content.DOCUMENTS[key].label,'group':'Welcome messages','description':'Publish the saved message to Discord.', 'posting_channel':channel_name, 'existing_channel':existing_channel, 'destination_editor':API + '/manage/content/destination--' + key if not _bound(key) else None, 'target_url':f"https://discord.com/channels/{GUILD_ID}/{data['target']['channel_id']}/{data['target']['message_id']}" if data['target'] else None, 'revision':fingerprint(data),'fields':fields,'readonly':True,'actions':actions}
@@ -116,6 +121,12 @@ async def queue(request):
     body = await request.json()
     if not isinstance(body, dict) or body.get('revision') != fingerprint(data):
         raise web.HTTPConflict(text='The message, post, or channel changed. Reload and review before publishing.')
+    if action == 'send':
+        from utils.gauntlet_content import require_writable
+        try:
+            require_writable(key, data['sections'])
+        except ValueError as exc:
+            raise web.HTTPBadRequest(text=str(exc)) from None
     if action == 'send' and (_bound(key) or not data['destination']):
         raise web.HTTPBadRequest(text="Select a posting channel. Apply and Warrior Desk posts are created in Ticket settings.")
     if action == 'update' and not data['target']:
@@ -141,6 +152,9 @@ async def publish(bot, mongo, row, ctx):
         raise ValueError("Select a public onboarding message")
     document = content.DOCUMENTS[key]
     sections, media, revision = await content.template_for(mongo, document, GUILD_ID)
+    from utils.gauntlet_content import layout_for, AMBIGUOUS_NOTICE
+    if layout_for(key, sections) == "ambiguous":
+        raise ValueError(AMBIGUOUS_NOTICE)
     if revision != values['template_revision'] or fingerprint({'sections':sections,'media':media}) != values['template']:
         raise ValueError('The saved message changed. Reload and review before publishing.')
     destination = await content.destination_for(mongo, GUILD_ID, key)
@@ -149,6 +163,9 @@ async def publish(bot, mongo, row, ctx):
     target = await content.published_for(mongo, GUILD_ID, key)
     if target != values['target']:
         raise ValueError('The published post changed. Reload before publishing.')
+    if action == 'send':
+        from utils.gauntlet_content import require_writable
+        require_writable(key, sections)
     if action == 'send' and target:
         existing = await bot.rest.fetch_message(target['channel_id'], target['message_id'])
         if snapshot(existing.components) != values['post']:

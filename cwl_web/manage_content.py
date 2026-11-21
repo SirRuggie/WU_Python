@@ -79,11 +79,17 @@ def schema(item, template):
             field(f'sections.{slot}.body', f'{label}: message', section['body'])
     else:
         module = {'gauntlet': gauntlet, 'question': questions, 'war': war}[prefix]
-        from utils.gauntlet_content import BOXES
+        from utils.gauntlet_content import BOXES, layout_for, logical_sections
         if prefix == 'gauntlet' and key in BOXES:
-            for box, entries in BOXES[key]:
-                for index, label in entries:
-                    field(f'sections.{index}', label, template['sections'][index], group=box)
+            layout = layout_for(key, template['sections'])
+            if layout == 'ambiguous':
+                for index, value in enumerate(template['sections']):
+                    field(f'sections.{index}', f'Raw saved field {index + 1}', value, group='Raw saved values', readonly=True)
+            else:
+                values = logical_sections(key, template['sections'])
+                for box, entries in BOXES[key]:
+                    for index, label in entries:
+                        field(f'sections.{index}', label, values[index], group=box)
         else:
             for index, label in enumerate(module.BLOCK_LABELS[key]):
                 field(f'sections.{index}', label, template['sections'][index])
@@ -115,18 +121,46 @@ def schema(item, template):
         for slot, section in template['sections'].items():
             if slot.startswith('custom_'):
                 actions.append(dict(id='remove-' + slot, label='Remove ' + staff.section_label(slot, section), confirm='Remove this additional staff message?', endpoint=API + '/manage/content/' + item['id'] + '/remove-' + slot))
-    return {**{k: v for k, v in item.items() if k != 'permission'}, 'endpoint': API + '/manage/content/' + item['id'], 'revision': template['revision'], 'fields': fields, 'preview_supported': prefix != 'destination', 'publish_endpoint': API + '/manage/publish/' + key if prefix == 'gauntlet' and not gauntlet.is_template_only(key) else None, 'actions': actions}
+    result = {**{k: v for k, v in item.items() if k != 'permission'}, 'endpoint': API + '/manage/content/' + item['id'], 'revision': template['revision'], 'fields': fields, 'preview_supported': prefix != 'destination', 'publish_endpoint': API + '/manage/publish/' + key if prefix == 'gauntlet' and not gauntlet.is_template_only(key) else None, 'actions': actions}
 
 
-def candidate(item, loaded, body):
+    if prefix == 'gauntlet':
+        from utils.gauntlet_content import layout_for, layout_notice
+        layout = layout_for(key, template['sections'])
+        if layout != 'standard':
+            # Transport-only token rejects already-open 270 forms. The raw CAS
+            # revision remains the integer loaded from the storage owner.
+            result.update(warning=layout_notice(key, template['sections']),
+                          revision=f"272:{layout}:{template['revision']}")
+            if layout == 'ambiguous':
+                result.update(action_only=True, preview_supported=False, publish_endpoint=None, actions=[])
+                for entry in result['fields']:
+                    entry['readonly'] = True
+                    entry.pop('upload_endpoint', None)
+    return result
+
+
+def candidate(item, loaded, body, *, preview_only=False):
     if not isinstance(body, dict) or set(body) - {'revision', 'values', 'request_id'} or not isinstance(body.get('values'), dict):
         raise ValueError('Provide the fields to save and their revision')
-    if type(body.get('revision')) is not type(loaded['revision']) or body['revision'] != loaded['revision']:
+    document = schema(item, loaded)
+    expected_revision = document['revision']
+    if type(body.get('revision')) is not type(expected_revision) or body['revision'] != expected_revision:
         raise web.HTTPConflict(text='Someone changed this message. Reload it before saving.')
-    allowed = {field['key'] for field in schema(item, loaded)['fields']}
+    allowed = {field['key'] for field in document['fields']}
     if set(body['values']) - allowed:
         raise ValueError('Unknown message fields')
+    if document.get('action_only'):
+        if not preview_only or not document.get('preview_supported'):
+            raise ValueError(document['warning'])
+        expected = {field['key']: field['value'] for field in document['fields']}
+        if any(expected[path] != value for path, value in body['values'].items()):
+            raise ValueError(document['warning'])
+        return deepcopy(loaded)
     result = deepcopy(loaded)
+    if item['id'] == 'gauntlet--family-particulars':
+        from utils.gauntlet_content import save_sections
+        result['sections'] = save_sections('family-particulars', loaded['sections'])
     for path, value in body['values'].items():
         if not isinstance(value, str):
             raise ValueError('Message fields must be text')
@@ -333,7 +367,7 @@ async def item_handler(request):
         try:
             body = await request.json()
             action = request.match_info.get('action')
-            updated = candidate(item, loaded, dict(body, values=body.get('values', {})))
+            updated = candidate(item, loaded, dict(body, values=body.get('values', {})), preview_only=request.path.endswith('/preview'))
             if getattr(request, 'history_template', None) is not None:
                 updated = deepcopy(request.history_template)
                 updated['revision'] = loaded['revision']
@@ -436,8 +470,11 @@ async def upload(request):
     await require_manage(request, item['permission'], write=True)
     async with mongo(request) as db:
         loaded = await load(db, item)
+    document = schema(item, loaded)
+    if document.get('action_only'):
+        raise web.HTTPBadRequest(text=document['warning'])
     revision = request.query.get('revision')
-    if revision != str(loaded['revision']):
+    if revision != str(document['revision']):
         raise web.HTTPConflict(text='This message changed. Reload before uploading.')
     slot = request.match_info['slot']
     fields = schema(item, loaded)['fields']

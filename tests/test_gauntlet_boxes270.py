@@ -26,6 +26,10 @@ def test_legacy_prefix_is_lossless_through_explicit_save_and_reopen(key):
     async def check():
         mongo = db()
         legacy = [f'Legacy {key} field {index}\nexact spaces  ' for index in range(LEGACY_LENGTHS[key])]
+        if key == 'family-particulars':
+            from utils.gauntlet_content import PARTICULARS_LEGACY_DEFAULTS
+            for i in (3,6,9,13,16,19,22,25):
+                legacy[i] = PARTICULARS_LEGACY_DEFAULTS[i]
         if key == 'strike-system':
             legacy[1] = 'Custom how.\n### ✅ Remove your strikes\nCustom removal.'
         original = copy.deepcopy(legacy)
@@ -128,40 +132,11 @@ def test_public_boxes_components_media_and_acknowledgements(key,accents,media_co
     run(check())
 
 
-def legacy_post(key, fields):
-    """Concrete pre-270 layouts from the base builders, with live-shaped saved text.
-
-    About has 12 editable + 2 shared-rule text nodes. Strikes has 12;
-    Particulars has all 28 including its eight decorative nodes. These are
-    actual nested Hikari payloads, not mocked supported_post_shape results.
-    """
-    from utils.info_channel_defaults import FAMILY_RULES
-    Text=hikari.impl.TextDisplayComponentBuilder
-    Container=hikari.impl.ContainerComponentBuilder
-    Media=hikari.impl.MediaGalleryComponentBuilder
-    Item=hikari.impl.MediaGalleryItemBuilder
-    def image(path):return Media(items=[Item(media=path)])
-    def text(index):return Text(content=fields[index])
-    def separator():return hikari.impl.SeparatorComponentBuilder(divider=True)
-    def box(children):return Container(accent_color=WU_GOLD,components=children)
-    row=hikari.impl.MessageActionRowBuilder()
-    row.add_interactive_button(hikari.ButtonStyle.SUCCESS,content.DOCUMENTS[key].acknowledgement+':existing',label='I understand - Continue')
-    if key=='about-us':
-        return [image('assets/branding/banners/Warriors_United.gif'),
-            box([text(0),separator(),text(1),separator(),text(2),text(3)]),box([text(4),text(5)]),
-            box([text(6),text(7),separator(),text(8),text(9)]),
-            box([Text(content=value) for value in FAMILY_RULES]),box([text(10),text(11),row])]
-    if key=='strike-system':
-        return [image('assets/recruit/strikes/WU_Strikes.gif'),
-            box([text(0),separator(),text(1)]),box([text(2),separator(),text(3)]),
-            box([text(4),separator(),text(5),image('assets/recruit/strikes/WU_Main_Strikes.jpg')]),
-            box([text(6),separator(),text(7),image('assets/recruit/strikes/WU_FWA_Strikes.jpg')]),
-            box([text(8),separator(),text(9)]),box([text(10),separator(),text(11),row])]
-    return [image('assets/recruit/static/WU_FamilyParticulars.gif'),
-        box([text(0),separator(),*[text(i) for i in range(1,10)]]),
-        box([text(10),separator(),*[text(i) for i in range(11,20)]]),
-        box([text(20),separator(),*[text(i) for i in range(21,26)],image('assets/branding/banners/warriors_united_.gif')]),
-        box([text(26),separator(),text(27),row])]
+def legacy_post(key,fields):
+    """Execute the actual pre-270 builder, not a hand-authored slot tree."""
+    from fixtures.info_posts_pre270 import build_aboutus, build_strikesystem, build_familyparticulars
+    builder = {'about-us':build_aboutus,'strike-system':build_strikesystem,'family-particulars':build_familyparticulars}[key]
+    return builder(fields[:LEGACY_LENGTHS[key]], action_id="existing")
 
 
 @pytest.mark.parametrize('key,index', [('about-us',1),('strike-system',12),('family-particulars',21)])

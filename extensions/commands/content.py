@@ -61,7 +61,7 @@ DOCUMENTS = {
     "family-rules": Document("family-rules", "Family Rules", None),
     "wu-faq": Document("wu-faq", "WU FAQ", None),
 }
-from utils.gauntlet_content import BOXES, LENGTHS, LEGACY_LENGTHS, sections_for as box_sections, validate_sections, project_public, merge_public
+from utils.gauntlet_content import BOXES, LENGTHS, LEGACY_LENGTHS, sections_for as box_sections, validate_sections, project_public, merge_public, layout_for, layout_notice, logical_sections, require_writable, save_sections, LAYOUT_VERSION
 
 BLOCK_LABELS = {
     "join-family": ("Heading", "Welcome", "What happens next", "Call to action"),
@@ -630,6 +630,8 @@ async def new_draft(mongo, state):
         state["sections"] = normalize(state["sections"])
         if state.get("saved_snapshot"):
             state["saved_snapshot"] = dict(state["saved_snapshot"], sections=normalize(state["saved_snapshot"]["sections"]))
+    if state.get("document") == "family-particulars":
+        state["layout_version"] = LAYOUT_VERSION
     state["_id"] = uuid.uuid4().hex
     await insert_state(mongo, state, ttl=timedelta(minutes=30))
     return state
@@ -679,6 +681,21 @@ def panel(state, notice=None):
         ))
     if notice:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content=f"-# {notice}"))
+    readonly_notice = layout_notice(document.key, state["sections"]) if layout_for(document.key, state["sections"]) == "ambiguous" else None
+    if layout_for(document.key, state["sections"]) == "compact":
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=layout_notice(document.key, state["sections"])))
+    if readonly_notice:
+        rows.append(hikari.impl.TextDisplayComponentBuilder(content=readonly_notice))
+        choose = hikari.impl.MessageActionRowBuilder()
+        menu = choose.add_text_menu(f"content_block:{sid}", min_values=1, placeholder="View saved values")
+        for index in range(min(25, len(state["sections"]))):
+            menu.add_option(f"Raw saved fields 25–{len(state['sections'])}" if index == 24 and len(state["sections"]) > 25 else f"Raw saved field {index + 1}", str(index))
+        # Remaining fields are included together in the final paged raw screen.
+        rows.append(choose)
+        buttons = hikari.impl.MessageActionRowBuilder()
+        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_root:{sid}", label="Back")
+        rows.append(buttons)
+        return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=rows)]
     blocks = hikari.impl.MessageActionRowBuilder()
     menu = blocks.add_text_menu(f"content_block:{sid}", min_values=1, placeholder="Select a section to edit")
     for index, (label, _fields) in enumerate(editable_groups(document, state["sections"])):
@@ -880,6 +897,8 @@ async def initial_panel(ctx, mongo, state, notice=None):
 async def load(ctx, mongo, sid):
     state = await get_state(mongo, sid)
     problem = state_problem(ctx, state)
+    if not problem and state.get("document") == "family-particulars" and state.get("layout_version") != LAYOUT_VERSION:
+        return state, "This content draft predates the corrected field mapping. Reopen Family Particulars before editing or updating it."
     if not problem and state.get("document") in BOXES:
         state = copy.deepcopy(state)
         normalize = lambda values: box_sections(state["document"], values)
@@ -1041,6 +1060,8 @@ async def choose_document(ctx, action_id, mongo: MongoClient = lightbulb.di.INJE
 @lightbulb.di.with_di
 async def load_published_copy(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     state, problem = await load(ctx, mongo, action_id)
+    if not problem:
+        problem = layout_notice(state.get("document"), state.get("sections")) if layout_for(state.get("document"), state.get("sections")) == "ambiguous" else None
     if problem:
         return error_panel(problem)
     if not target_matches_destination(state) or state.get("document") not in DOCUMENTS:
@@ -1068,6 +1089,8 @@ async def choose_destination(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_,
 ):
     state, problem = await load(ctx, mongo, action_id)
+    if not problem:
+        problem = layout_notice(state.get("document"), state.get("sections")) if layout_for(state.get("document"), state.get("sections")) == "ambiguous" else None
     if problem:
         return error_panel(problem)
     document_key = state.get("document")
@@ -1122,6 +1145,8 @@ async def send_to_channel(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_,
 ):
     state, problem = await load(ctx, mongo, action_id)
+    if not problem:
+        problem = layout_notice(state.get("document"), state.get("sections")) if layout_for(state.get("document"), state.get("sections")) == "ambiguous" else None
     if problem:
         return error_panel(problem)
     document_key = state.get("document")
@@ -1242,6 +1267,18 @@ async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
     if problem:
         await edit_modal_source(ctx, error_panel(problem)); return
     document = DOCUMENTS.get(state.get("document"))
+    readonly_notice = layout_notice(document.key, state["sections"]) if document and layout_for(document.key, state["sections"]) == "ambiguous" else None
+    if readonly_notice:
+        if len(values) != 1 or not values[0].isdigit():
+            await edit_modal_source(ctx, panel(state, readonly_notice)); return
+        selected = int(values[0])
+        if not 0 <= selected < min(25, len(state["sections"])):
+            await edit_modal_source(ctx, panel(state, readonly_notice)); return
+        indexes = range(selected, len(state["sections"])) if selected == 24 else (selected,)
+        text = "\n\n".join(f"Raw saved field {i + 1}\n{state['sections'][i]}" for i in indexes)
+        draft = await new_draft(mongo, dict(state, raw_view_text=text, raw_view_page=0))
+        await edit_modal_source(ctx, raw_view_panel(draft))
+        return
     groups = editable_groups(document, state["sections"]) if document else ()
     if values == ("images",) or values == ["images"]:
         if not document or not media_slots(document):
@@ -1260,10 +1297,11 @@ async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
             *[hikari.impl.TextDisplayComponentBuilder(content=value) for value in rules],
             hikari.impl.TextDisplayComponentBuilder(content="Shared by WU FAQ and About Us. Save this draft before opening the shared editor."), row])])
         return
+    edit_sections = save_sections(document.key, state["sections"]) if document.key in BOXES else state["sections"]
     try:
         modal_rows = [
             hikari.impl.ModalActionRowBuilder().add_text_input(
-                f"content_{position}", label, value=modal_field_value(state["sections"][index], part),
+                f"content_{position}", label, value=modal_field_value(edit_sections[index], part),
                 required=True, min_length=1, max_length=4000,
                 style=hikari.TextInputStyle.SHORT if label == "Heading" else hikari.TextInputStyle.PARAGRAPH,
             )
@@ -1271,8 +1309,49 @@ async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
         ]
     except ValueError as exc:
         await edit_modal_source(ctx, panel(state, str(exc))); return
-    draft = await new_draft(mongo, dict(state, selected_fields=[list(field) for field in fields], selected_box=title, selected_media_slot=None))
+    draft = await new_draft(mongo, dict(state, sections=edit_sections, selected_fields=[list(field) for field in fields], selected_box=title, selected_media_slot=None))
     await ctx.respond_with_modal(title=title[:45], custom_id=f"content_submit:{draft['_id']}", components=modal_rows)
+
+
+def raw_view_panel(state):
+    """Read-only paging keeps every original byte under Discord's text budget."""
+    text = state["raw_view_text"]
+    page = state.get("raw_view_page", 0)
+    pages = max(1, (len(text) + 2999) // 3000)
+    page = max(0, min(page, pages - 1))
+    buttons = hikari.impl.MessageActionRowBuilder()
+    if page:
+        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_raw_previous:{state['_id']}", label="Previous")
+    if page + 1 < pages:
+        buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_raw_next:{state['_id']}", label="Next")
+    buttons.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_document:{state['_id']}", label="Back to document")
+    return [hikari.impl.ContainerComponentBuilder(components=[
+        hikari.impl.TextDisplayComponentBuilder(content=layout_notice(state["document"], state["sections"])),
+        hikari.impl.TextDisplayComponentBuilder(content=f"Read-only saved values · {page + 1}/{pages}"),
+        hikari.impl.TextDisplayComponentBuilder(content=text[page * 3000:(page + 1) * 3000] or "(empty)"), buttons])]
+
+
+async def raw_view_page(ctx, action_id, mongo, step):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if layout_for(state.get("document"), state.get("sections")) != "ambiguous" or not isinstance(state.get("raw_view_text"), str):
+        return panel(state, "Select saved values to view.")
+    pages = max(1, (len(state["raw_view_text"]) + 2999) // 3000)
+    draft = await new_draft(mongo, dict(state, raw_view_page=max(0, min(pages - 1, state.get("raw_view_page", 0) + step))))
+    return raw_view_panel(draft)
+
+
+@register_action("content_raw_next", preload_state=False)
+@lightbulb.di.with_di
+async def raw_view_next(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    return await raw_view_page(ctx, action_id, mongo, 1)
+
+
+@register_action("content_raw_previous", preload_state=False)
+@lightbulb.di.with_di
+async def raw_view_previous(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    return await raw_view_page(ctx, action_id, mongo, -1)
 
 
 @register_action("content_rules_editor", preload_state=False)
@@ -1296,6 +1375,8 @@ async def open_shared_rules(ctx, action_id, mongo: MongoClient = lightbulb.di.IN
 @lightbulb.di.with_di
 async def choose_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     state, problem = await load(ctx, mongo, action_id)
+    if not problem:
+        problem = layout_notice(state.get("document"), state.get("sections")) if layout_for(state.get("document"), state.get("sections")) == "ambiguous" else None
     if problem:
         return error_panel(problem)
     values = getattr(ctx.interaction, "values", ())
@@ -1314,6 +1395,8 @@ async def choose_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
 @lightbulb.di.with_di
 async def open_upload_modal(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     state, problem = await load(ctx, mongo, action_id)
+    if not problem:
+        problem = layout_notice(state.get("document"), state.get("sections")) if layout_for(state.get("document"), state.get("sections")) == "ambiguous" else None
     if problem:
         await edit_modal_source(ctx, error_panel(problem)); return
     document = DOCUMENTS.get(state.get("document"))
@@ -1377,6 +1460,8 @@ async def submit_upload(
         # gets a private response instead of failing the interaction silently.
         await ctx.defer(ephemeral=True)
     state, problem = await load(ctx, mongo, action_id)
+    if not problem:
+        problem = layout_notice(state.get("document"), state.get("sections")) if layout_for(state.get("document"), state.get("sections")) == "ambiguous" else None
     if problem:
         await interaction.edit_initial_response(components=error_panel(problem), **NO_MENTIONS); return
     document = DOCUMENTS.get(state.get("document"))
@@ -1429,6 +1514,8 @@ async def submit_upload(
 @lightbulb.di.with_di
 async def reset_media(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     state, problem = await load(ctx, mongo, action_id)
+    if not problem:
+        problem = layout_notice(state.get("document"), state.get("sections")) if layout_for(state.get("document"), state.get("sections")) == "ambiguous" else None
     if problem:
         return error_panel(problem)
     document = DOCUMENTS.get(state.get("document"))
@@ -1455,6 +1542,8 @@ async def submit_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
     state, problem = await load(ctx, mongo, action_id)
     if problem:
         await interaction.edit_initial_response(components=error_panel(problem), **NO_MENTIONS); return
+    if layout_for(state["document"], state["sections"]) == "ambiguous":
+        await interaction.edit_initial_response(components=panel(state), **NO_MENTIONS); return
     fields = state.get("selected_fields")
     if not fields and isinstance(state.get("selected_block"), int):
         # Modals opened before the rollout may still be submitted.
@@ -1509,6 +1598,7 @@ def update_prompt(state):
 
 
 async def _save(ctx, state, mongo, *, dashboard=False):
+    require_writable(state["document"], state["sections"])
     if dashboard:return await _save_untracked(ctx,state,mongo)
     from utils.dashboard_native_history import save_message
     async def writer(*args):return await _save_untracked(ctx,state,mongo)
@@ -1516,10 +1606,11 @@ async def _save(ctx, state, mongo, *, dashboard=False):
 
 
 async def _save_untracked(ctx, state, mongo):
+    require_writable(state["document"], state["sections"])
     key = f"content:{state['document']}:{state['guild_id']}"; revision = state["revision"]
     document = DOCUMENTS[state["document"]]
     if document.key in BOXES:
-        state = dict(state, sections=validate_sections(document.key, state["sections"]))
+        state = dict(state, sections=validate_sections(document.key, save_sections(document.key, state["sections"])))
     update = {
         "sections": state["sections"], "media": normal_media(document, state.get("media")),
         "revision": revision + 1, "updated_by": int(ctx.user.id), "updated_at": utcnow(),
@@ -1543,6 +1634,10 @@ async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
         await validate_template(DOCUMENTS[state["document"]], state["sections"], media=state.get("media"))
     except ValueError as exc:
         return panel(state, str(exc))
+    if layout_for(state["document"], state["sections"]) == "ambiguous":
+        return panel(state, layout_notice(state["document"], state["sections"]))
+    if state["document"] in BOXES:
+        state = dict(state, sections=save_sections(state["document"], state["sections"]))
     if not await _save(ctx, state, mongo):
         return panel(state, "The template changed. Reopen the dashboard. If you save now, you replace the new template.")
     saved_state = dict(state, revision=state["revision"] + 1)
@@ -1590,6 +1685,10 @@ async def save_and_publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
         await validate_template(DOCUMENTS[state["document"]], state["sections"], media=state.get("media"))
     except ValueError as exc:
         return panel(state, str(exc))
+    if layout_for(state["document"], state["sections"]) == "ambiguous":
+        return panel(state, layout_notice(state["document"], state["sections"]))
+    if state["document"] in BOXES:
+        state = dict(state, sections=save_sections(state["document"], state["sections"]))
     if not await _save(ctx, state, mongo):
         return panel(state, "The template changed. Reopen the dashboard. The post was not updated.")
     saved_state = dict(state, revision=state["revision"] + 1)
@@ -1622,6 +1721,8 @@ async def publish_state(ctx, state, mongo, bot, *, saved_template=False, return_
         return answer("Rite of Passage is private. Save the template to update future choice panels."
                       if state.get("document") == "rite-of-passage" else
                       "Family Rules is shared. Save it, then review its linked posts.")
+    if layout_for(state.get("document"), state.get("sections")) == "ambiguous":
+        return answer(layout_notice(state["document"], state["sections"]))
     target = state.get("target")
     if state.get("document") in _BOUND_PANELS:
         authoritative = await published_for(mongo, state["guild_id"], state["document"])

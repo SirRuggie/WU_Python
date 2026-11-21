@@ -428,7 +428,7 @@ def test_publish_refuses_stale_real_model_without_edit(monkeypatch):
         )
         state = {
             "_id": "draft", "user_id": 10, "guild_id": 20, "document": document.key,
-            "sections": ([node.content for node in content.editable_text_nodes(document, await content.baseline(document))] if document.key == "about-us" else original), "revision": 0,
+            "sections": [node.content for node in content.editable_text_nodes(document, await content.baseline(document))], "revision": 0,
             "target": {"channel_id": 30, "message_id": 40, "original": original},
         }
 
@@ -758,6 +758,7 @@ def test_preview_reuses_the_acknowledgement_slot_for_back_at_the_component_limit
         sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         state = {
             "_id": "family", "user_id": 10, "guild_id": 20,
+            "layout_version": 272,
             "view": "document", "document": document.key,
             "sections": sections, "revision": 0,
         }
