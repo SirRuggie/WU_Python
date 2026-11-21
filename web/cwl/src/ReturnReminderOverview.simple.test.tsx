@@ -41,9 +41,10 @@ const row = (
 });
 let root: Root, host: HTMLDivElement;
 const button = (label: string) =>
-  [...document.querySelectorAll("button")].find(
-    (node) => node.textContent?.trim() === label,
-  )!;
+  [
+    ...document.querySelectorAll(".return-selection-bar button"),
+    ...document.querySelectorAll("button"),
+  ].find((node) => node.textContent?.trim() === label)!;
 async function press(element: Element) {
   await act(async () => {
     element.dispatchEvent(

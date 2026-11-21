@@ -141,6 +141,10 @@ public.
   Phase 2 implemented locally: [routing and clan audit](mongodb-phase2-routing-2026-09-26.md).
   Deployment, migration, and off-machine recurring backups remain outstanding.
 
+### P2 — Return history local times
+
+- return-batches: add ISO created_at so History can show local time (backend; needs Ruggie)
+
 ## Completed hardening
 
 ### `REL-003` — Bounded BAND calendar DM delivery

@@ -1,6 +1,9 @@
 import { searchInputProps } from "./inputProps";
 import { formatDateTime, formatTime } from "./format";
-import SectionTabs from "./SectionTabs";
+import SectionTabs, { SectionTabPanel } from "./SectionTabs";
+import ReturnReminderStatus from "./returns/ReturnReminderStatus";
+import ReturnReminderMessage from "./returns/ReturnReminderMessage";
+import ReturnReminderHistory from "./returns/ReturnReminderHistory";
 import ListToolbar from "./rosterUi/ListToolbar";
 import FiltersTrigger from "./rosterUi/FiltersTrigger";
 import ActionPanel from "./ActionPanel";
@@ -69,6 +72,7 @@ export default function ReturnReminderOverview({
   onOpen: (section: ManagementSection) => void;
   onDirty?: (dirty: boolean) => void;
 }) {
+  const [tab, setTab] = useState<"clans" | "message" | "history">("clans");
   const [records, setRecords] = useState<ReturnClan[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -93,6 +97,21 @@ export default function ReturnReminderOverview({
   const destinationRequest = useRef(0);
   const focusTarget = useRef<HTMLElement | null>(null);
   const request = useRef(0);
+  const [accessRevision, setAccessRevision] = useState(0);
+  const loseAccess = useCallback((message: string) => {
+    setAccessRevision((value) => value + 1);
+    ++request.current;
+    ++destinationRequest.current;
+    setRecords([]);
+    setSelected([]);
+    setDestinationIds({ MAIN: null, FWA: null });
+    setChannelNames({});
+    setLoading(false);
+    setDestinationLoading(false);
+    setLoadedAt("");
+    setDestinationError(message);
+    setError(message);
+  }, []);
   const loadDestinations = useCallback(async () => {
     const id = ++destinationRequest.current;
     setDestinationLoading(true);
@@ -122,9 +141,7 @@ export default function ReturnReminderOverview({
           setChannelNames({});
           setDestinationError("Channel names could not be loaded.");
           if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
-            setRecords([]);
-            setSelected([]);
-            setError(cause.message);
+            loseAccess(cause.message);
           }
         }
       }
@@ -134,14 +151,12 @@ export default function ReturnReminderOverview({
       setChannelNames({});
       setDestinationError("Destination settings could not be loaded.");
       if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
-        setRecords([]);
-        setSelected([]);
-        setError(cause.message);
+        loseAccess(cause.message);
       }
     } finally {
       if (id === destinationRequest.current) setDestinationLoading(false);
     }
-  }, []);
+  }, [loseAccess]);
   useEffect(() => {
     if (active) focusTarget.current?.focus();
   }, [active]);
@@ -152,7 +167,21 @@ export default function ReturnReminderOverview({
     try {
       const result = await api<ManagementDocument>("/manage/return-reminders");
       if (id !== request.current) return;
-      setRecords(result.documents || []);
+      if (
+        !Array.isArray(result.documents) ||
+        !result.documents.every(
+          (row) =>
+            row &&
+            typeof row.id === "string" &&
+            typeof row.label === "string" &&
+            (!row.return_status ||
+              (typeof row.return_status.state === "string" &&
+                typeof row.return_status.label === "string")),
+        )
+      ) {
+        throw new Error("Return reminder overview is unavailable.");
+      }
+      setRecords(result.documents);
       setLoadedAt(formatTime(new Date()));
       setSelected((current) =>
         current.filter((id) => result.documents?.some((row) => row.id === id)),
@@ -160,9 +189,7 @@ export default function ReturnReminderOverview({
     } catch (cause) {
       if (id !== request.current) return;
       if (cause instanceof ApiError && [401, 403].includes(cause.status)) {
-        setRecords([]);
-        setSelected([]);
-        setLoadedAt("");
+        loseAccess(cause.message);
       }
       setError(
         cause instanceof Error
@@ -172,7 +199,7 @@ export default function ReturnReminderOverview({
     } finally {
       if (id === request.current) setLoading(false);
     }
-  }, []);
+  }, [loseAccess]);
   useEffect(() => {
     if (active) {
       void load();
@@ -265,6 +292,30 @@ export default function ReturnReminderOverview({
       }}
     >
       <p className="return-cycle">{captureMonth()}</p>
+      <ReturnReminderStatus
+        clans={clans}
+        loading={loading}
+        error={error}
+        busy={!!batch}
+        onAction={(action, targets) =>
+          setBatch({ action, clans: targets, hiddenIds: [] })
+        }
+      />
+      <SectionTabs
+        id="return-sections"
+        className="tabs workflow-tabs section-tabs--flow"
+        label="Return reminder sections"
+        items={[
+          { id: "clans", label: "Clans" },
+          { id: "message", label: "Message" },
+          { id: "history", label: "History" },
+        ]}
+        value={tab}
+        disabled={!!batch}
+        onChange={setTab}
+        allPanelsMounted
+        revealSelection
+      />
       {helpSlot &&
         createPortal(
           <HelpButton title="About this page" className="return-about-panel">
@@ -313,277 +364,319 @@ export default function ReturnReminderOverview({
           }}
         />
       )}
-      <fieldset disabled={!!batch || loading || (!!error && !records.length)}>
-        <div className="members-search-line return-search-line">
-          <label>
-            <span className="members-search-label">Find a clan</span>
-            <input
-              {...searchInputProps}
-              type="search"
-              value={query}
-              placeholder="Find a clan"
-              onChange={(event) => {
-                setQuery(event.target.value);
-              }}
-            />
-          </label>
-        </div>
-        <ListToolbar
-          className="return-list-toolbar"
-          scope={
-            <SectionTabs
-              mode="segmented"
-              label="Home clan type"
-              value={section}
-              items={(["FWA", "MAIN"] as const).map((value) => ({
-                id: value,
-                label: (
-                  <>
-                    {value === "MAIN" ? "Main" : value}
-                    <span className="return-scope-count">
-                      {" "}
-                      ·{" "}
-                      {clans.filter((row) => clanSection(row) === value).length}
-                    </span>
-                  </>
-                ),
-              }))}
-              disabled={!!batch}
-              onChange={(value) => {
-                setSection(value);
-                setFilter("all");
-                setSelected([]);
-              }}
-            />
-          }
-          filters={
-            <FiltersTrigger
-              className="return-filters-trigger"
-              count={Number(filter !== "all")}
-              open={filtersOpen}
-              disabled={!!batch}
-              onClick={(event) => {
-                setFilterTrigger(event.currentTarget);
-                setFiltersOpen(true);
-              }}
-            />
-          }
-          actions={
-            <ActionMenu
-              name="Return reminders"
-              disabled={!!batch}
-              items={[
-                {
-                  id: "refresh",
-                  label: "Refresh",
-                  disabled: loading,
-                  onAction: () => {
-                    void load();
-                    void loadDestinations();
-                  },
-                },
-                {
-                  id: "channels",
-                  label: "Return channels",
-                  disabled: loading,
-                  onAction: () => utility("return-channels"),
-                },
-              ]}
-            />
-          }
-        />
-        {filtersOpen && (
-          <ActionPanel
-            title="Filter return reminders"
-            trigger={filterTrigger}
-            onClose={() => setFiltersOpen(false)}
-          >
+      <SectionTabPanel
+        id="return-sections"
+        value="clans"
+        hidden={tab !== "clans"}
+      >
+        <fieldset disabled={!!batch || loading || (!!error && !records.length)}>
+          <div className="members-search-line return-search-line">
             <label>
-              Status
-              <select
-                value={filter}
-                onChange={(event) => setFilter(event.target.value)}
-              >
-                <option value="all">All statuses</option>
-                {(section === "FWA"
-                  ? [
-                      ["scheduled", "Running / scheduled"],
-                      ["paused", "Paused"],
-                      ["idle", "Not started"],
-                      ["not_saved", "No saved list"],
-                      ["expired", "Window ended"],
-                    ]
-                  : [
-                      ["manual", "Ready for manual sends"],
-                      ["not_saved", "No saved list"],
-                      ["expired", "Window ended"],
-                    ]
-                ).map(([value, label]) => (
-                  <option key={value} value={value}>
-                    {label}
-                  </option>
-                ))}
-              </select>
+              <span className="members-search-label">Find a clan</span>
+              <input
+                {...searchInputProps}
+                type="search"
+                value={query}
+                placeholder="Find a clan"
+                onChange={(event) => {
+                  setQuery(event.target.value);
+                }}
+              />
             </label>
-          </ActionPanel>
-        )}
-        {chosen.length > 0 && (
-          <SelectionActionBar
-            className="return-selection-bar"
-            name="Clan selection"
-            busy={!!batch || loading}
-            label={`${chosen.length} selected${hidden.length ? ` (${hidden.length} hidden)` : ""}`}
-            shortLabel={`${chosen.length} selected${hidden.length ? ` · ${hidden.length} hidden` : ""}`}
-            onShow={() => {
-              setQuery("");
-              setFilter("all");
-            }}
-            actions={primaryIds.map(menuAction)}
-            overflowActions={overflow}
-            selectionActions={[
-              {
-                id: "all",
-                label: "Select all",
-                onAction: () =>
-                  setSelected((current) => [
-                    ...new Set([...current, ...visible.map((row) => row.id)]),
-                  ]),
-              },
-              {
-                id: "none",
-                label: "Select none",
-                onAction: () => setSelected([]),
-              },
-            ]}
-            desktopSelection={
-              <>
-                <button
-                  onClick={() =>
-                    setSelected((current) => [
-                      ...new Set([...current, ...visible.map((row) => row.id)]),
-                    ])
-                  }
-                >
-                  Select all
-                </button>
-                <button onClick={() => setSelected([])}>Select none</button>
-              </>
+          </div>
+          <ListToolbar
+            className="return-list-toolbar"
+            scope={
+              <SectionTabs
+                mode="segmented"
+                label="Home clan type"
+                value={section}
+                items={(["FWA", "MAIN"] as const).map((value) => ({
+                  id: value,
+                  label: (
+                    <>
+                      {value === "MAIN" ? "Main" : value}
+                      <span className="return-scope-count">
+                        {" "}
+                        ·{" "}
+                        {
+                          clans.filter((row) => clanSection(row) === value)
+                            .length
+                        }
+                      </span>
+                    </>
+                  ),
+                }))}
+                disabled={!!batch}
+                onChange={(value) => {
+                  setSection(value);
+                  setFilter("all");
+                  setSelected([]);
+                }}
+              />
+            }
+            filters={
+              <FiltersTrigger
+                className="return-filters-trigger"
+                count={Number(filter !== "all")}
+                open={filtersOpen}
+                disabled={!!batch}
+                onClick={(event) => {
+                  setFilterTrigger(event.currentTarget);
+                  setFiltersOpen(true);
+                }}
+              />
+            }
+            actions={
+              <ActionMenu
+                name="Return reminders"
+                disabled={!!batch}
+                items={[
+                  {
+                    id: "refresh",
+                    label: "Refresh",
+                    disabled: loading,
+                    onAction: () => {
+                      void load();
+                      void loadDestinations();
+                    },
+                  },
+                  {
+                    id: "channels",
+                    label: "Return channels",
+                    disabled: loading,
+                    onAction: () => utility("return-channels"),
+                  },
+                ]}
+              />
             }
           />
-        )}
-        {chosen.length > 50 && (
-          <p role="alert">Select up to 50 clans per action.</p>
-        )}
-        {section === "FWA" && chosen.length > 0 && (
-          <details className="return-maintenance">
-            <summary>Optional scheduling settings</summary>
-            <p>
-              Need a different window? Select one or more clans, then set their
-              start and stop dates.
-            </p>
-            <button
-              disabled={
-                chosen.length > 50 ||
-                chosen.some((row) => !canApply(row, "schedule"))
-              }
-              onClick={() => openBatch("schedule")}
+          {filtersOpen && (
+            <ActionPanel
+              title="Filter return reminders"
+              trigger={filterTrigger}
+              onClose={() => setFiltersOpen(false)}
             >
-              Schedule for later ({chosen.length})
-            </button>
-          </details>
-        )}
-        <div className="return-clan-list">
-          {visible.map((row) => (
-            <article key={row.id} className="return-clan-row">
-              <label className="return-clan-name">
-                <input
-                  type="checkbox"
-                  checked={selected.includes(row.id)}
-                  aria-label={`Select ${row.clan_name || row.label}`}
-                  onChange={(event) =>
-                    setSelected((current) =>
-                      event.target.checked
-                        ? [...current, row.id]
-                        : current.filter((id) => id !== row.id),
-                    )
-                  }
-                />
-                <span>
-                  <strong>{row.clan_name || row.label}</strong>
-                  <small>
-                    {row.clan_tag || row.id.replace(/^(MAIN|FWA)/, "")} ·{" "}
-                    {row.return_status!.players} saved players
-                  </small>
-                </span>
+              <label>
+                Status
+                <select
+                  value={filter}
+                  onChange={(event) => setFilter(event.target.value)}
+                >
+                  <option value="all">All statuses</option>
+                  {(section === "FWA"
+                    ? [
+                        ["scheduled", "Running / scheduled"],
+                        ["paused", "Paused"],
+                        ["idle", "Not started"],
+                        ["not_saved", "No saved list"],
+                        ["expired", "Window ended"],
+                      ]
+                    : [
+                        ["manual", "Ready for manual sends"],
+                        ["not_saved", "No saved list"],
+                        ["expired", "Window ended"],
+                      ]
+                  ).map(([value, label]) => (
+                    <option key={value} value={value}>
+                      {label}
+                    </option>
+                  ))}
+                </select>
               </label>
-              <div>
-                <strong>{row.return_status!.label}</strong>
-                <small>
-                  {section === "FWA"
-                    ? row.return_status!.every_minutes
-                      ? returnFrequency(row.return_status!.every_minutes)
-                      : "No schedule"
-                    : "Manual sends only"}
-                </small>
-              </div>
-              <div className="return-window">
-                {section === "FWA" && row.return_status!.starts_at && (
+            </ActionPanel>
+          )}
+          {chosen.length > 0 && (
+            <SelectionActionBar
+              className="return-selection-bar"
+              name="Clan selection"
+              busy={!!batch || loading}
+              label={`${chosen.length} selected${hidden.length ? ` (${hidden.length} hidden)` : ""}`}
+              shortLabel={`${chosen.length} selected${hidden.length ? ` · ${hidden.length} hidden` : ""}`}
+              onShow={() => {
+                setQuery("");
+                setFilter("all");
+              }}
+              actions={primaryIds.map(menuAction)}
+              overflowActions={overflow}
+              selectionActions={[
+                {
+                  id: "all",
+                  label: "Select all",
+                  onAction: () =>
+                    setSelected((current) => [
+                      ...new Set([...current, ...visible.map((row) => row.id)]),
+                    ]),
+                },
+                {
+                  id: "none",
+                  label: "Select none",
+                  onAction: () => setSelected([]),
+                },
+              ]}
+              desktopSelection={
+                <>
+                  <button
+                    onClick={() =>
+                      setSelected((current) => [
+                        ...new Set([
+                          ...current,
+                          ...visible.map((row) => row.id),
+                        ]),
+                      ])
+                    }
+                  >
+                    Select all
+                  </button>
+                  <button onClick={() => setSelected([])}>Select none</button>
+                </>
+              }
+            />
+          )}
+          {chosen.length > 50 && (
+            <p role="alert">Select up to 50 clans per action.</p>
+          )}
+          {section === "FWA" && chosen.length > 0 && (
+            <details className="return-maintenance">
+              <summary>Optional scheduling settings</summary>
+              <p>
+                Need a different window? Select one or more clans, then set
+                their start and stop dates.
+              </p>
+              <button
+                disabled={
+                  chosen.length > 50 ||
+                  chosen.some((row) => !canApply(row, "schedule"))
+                }
+                onClick={() => openBatch("schedule")}
+              >
+                Schedule for later ({chosen.length})
+              </button>
+            </details>
+          )}
+          <div className="return-clan-list">
+            {visible.map((row) => (
+              <article key={row.id} className="return-clan-row">
+                <label className="return-clan-name">
+                  <input
+                    type="checkbox"
+                    checked={selected.includes(row.id)}
+                    aria-label={`Select ${row.clan_name || row.label}`}
+                    onChange={(event) =>
+                      setSelected((current) =>
+                        event.target.checked
+                          ? [...current, row.id]
+                          : current.filter((id) => id !== row.id),
+                      )
+                    }
+                  />
+                  <span>
+                    <strong>{row.clan_name || row.label}</strong>
+                    <small>
+                      {row.clan_tag || row.id.replace(/^(MAIN|FWA)/, "")} ·{" "}
+                      {row.return_status!.players} saved players
+                    </small>
+                  </span>
+                </label>
+                <div>
+                  <strong>{row.return_status!.label}</strong>
                   <small>
-                    Started / scheduled:{" "}
-                    {displayDate(row.return_status!.starts_at)}
+                    {section === "FWA"
+                      ? row.return_status!.every_minutes
+                        ? returnFrequency(row.return_status!.every_minutes)
+                        : "No schedule"
+                      : "Manual sends only"}
                   </small>
-                )}
-                {row.return_status!.expires_at && (
+                </div>
+                <div className="return-window">
+                  {section === "FWA" && row.return_status!.starts_at && (
+                    <small>
+                      Started / scheduled:{" "}
+                      {displayDate(row.return_status!.starts_at)}
+                    </small>
+                  )}
+                  {row.return_status!.expires_at && (
+                    <small>
+                      {section === "FWA"
+                        ? "Automatically stops"
+                        : "List expires"}
+                      : {displayDate(row.return_status!.expires_at)}
+                    </small>
+                  )}
                   <small>
-                    {section === "FWA" ? "Automatically stops" : "List expires"}
-                    : {displayDate(row.return_status!.expires_at)}
+                    Last sent:{" "}
+                    {row.return_status!.last_sent_at
+                      ? displayDate(row.return_status!.last_sent_at)
+                      : "None recorded"}
                   </small>
-                )}
-                <small>
-                  Last sent:{" "}
-                  {row.return_status!.last_sent_at
-                    ? displayDate(row.return_status!.last_sent_at)
-                    : "None recorded"}
-                </small>
-              </div>
-              <div className="return-row-actions">
-                <button onClick={() => onOpen(row)}>
-                  Members &amp; details
-                </button>
-              </div>
-            </article>
-          ))}
-        </div>
-      </fieldset>
-      {!loading && !error && !visible.length && (
-        <p>
-          {group.length
-            ? "No clans match these filters."
-            : "No home clans are available yet."}
+                </div>
+                <div className="return-row-actions">
+                  <button onClick={() => onOpen(row)}>
+                    Members &amp; details
+                  </button>
+                </div>
+              </article>
+            ))}
+          </div>
+        </fieldset>
+        {!loading && !error && !visible.length && (
+          <p>
+            {group.length
+              ? "No clans match these filters."
+              : "No home clans are available yet."}
+          </p>
+        )}
+        <p className="return-health-note">
+          {loadedAt && `Updated ${loadedAt}. `}Times are in your time zone.
         </p>
-      )}
-      <p className="return-health-note">
-        {loadedAt && `Updated ${loadedAt}. `}Times are in your time zone.
-      </p>
-      <details className="return-maintenance">
-        <summary>Recent actions &amp; list maintenance</summary>
-        <div>
-          <button disabled={!!batch} onClick={() => utility("return-history")}>
-            Recent actions and results
-          </button>
-          {["replace", "clear"].map((operation) => (
+        <details className="return-maintenance">
+          <summary>Recent actions &amp; list maintenance</summary>
+          <div>
             <button
-              key={operation}
               disabled={!!batch}
-              onClick={() => utility("return-bulk-" + operation)}
+              onClick={() => utility("return-history")}
             >
-              {operation === "replace"
-                ? "Replace saved member lists"
-                : "Clear member list"}
+              Recent actions and results
             </button>
-          ))}
-        </div>
-      </details>
+            {["replace", "clear"].map((operation) => (
+              <button
+                key={operation}
+                disabled={!!batch}
+                onClick={() => utility("return-bulk-" + operation)}
+              >
+                {operation === "replace"
+                  ? "Replace saved member lists"
+                  : "Clear member list"}
+              </button>
+            ))}
+          </div>
+        </details>
+      </SectionTabPanel>
+      <SectionTabPanel
+        id="return-sections"
+        value="message"
+        hidden={tab !== "message"}
+      >
+        <ReturnReminderMessage
+          destinations={destinationIds}
+          names={channelNames}
+          loading={destinationLoading}
+          error={destinationError}
+        />
+      </SectionTabPanel>
+      <SectionTabPanel
+        id="return-sections"
+        value="history"
+        hidden={tab !== "history"}
+      >
+        <ReturnReminderHistory
+          active={active && tab === "history" && !batch}
+          disabled={!!batch}
+          onOpen={onOpen}
+          onAccessLost={loseAccess}
+          accessRevision={accessRevision}
+        />
+      </SectionTabPanel>
     </section>
   );
 }
