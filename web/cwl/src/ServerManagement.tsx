@@ -247,7 +247,16 @@ export default function ServerManagement({
           (result.id !== "town_halls" || !result.endpoint)
         ) {
           setDocuments(
-            result.documents.map((record) => ({ ...section, ...record })),
+            result.documents
+              .filter(
+                (record) =>
+                  !(
+                    area === "applications-settings" &&
+                    result.id === "ticket_settings" &&
+                    record.id === "desk"
+                  ),
+              )
+              .map((record) => ({ ...section, ...record })),
           );
           setDocument(null);
         } else {

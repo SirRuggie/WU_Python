@@ -140,7 +140,11 @@ REQUIRED_HUB_RECRUITER_PERMISSIONS = (
 )
 
 MAX_OPEN_PICKER = 25
-HUB_PAGE_SIZE = 3
+HUB_TYPE_GROUPS: tuple[tuple[str, str, tuple[str, ...]], ...] = (
+    ("recruits", "New recruits", ("main", "fwa")),
+    ("account", "Add account", ("account",)),
+    ("staff", "Staff", ("staff",)),
+)
 HUB_STATS_COMPONENT_ID = 809001
 HUB_ACTIONS_COMPONENT_ID = 809002
 MAX_SEARCH_RESULTS = 10
@@ -315,17 +319,23 @@ def _timestamp(value, style: str = "R") -> str:
     return f"<t:{int(value.timestamp())}:{style}>"
 
 
-def _status_meta(status) -> tuple[str, str, int]:
+def _status_meta(status, ticket_type=None) -> tuple[str, str, int]:
     key = str(status or "unknown").casefold()
+    if key == "closed" and ticket_type == "staff":
+        return ("Done", "✅", ACCENT_GREEN)
     if key in STATUS_META:
         return STATUS_META[key]
     label = _clean(key.replace("_", " ").title(), limit=40)
     return (label, "❔", ACCENT_GREY)
 
 
+_TICKET_TYPE_PREFIX = {"fwa": "FWA", "main": "Main", "account": "Account", "staff": "Staff"}
+_TICKET_TYPE_EMOJI = {"fwa": "💎", "main": "🏆", "account": "➕", "staff": "💬"}
+
+
 def _ticket_type(ticket_doc: Mapping) -> str:
     value = str(ticket_doc.get("ticket_type") or "").casefold()
-    return value if value in {"main", "fwa"} else "unknown"
+    return value if value in schema.TICKET_TYPES else "unknown"
 
 
 def _ticket_number(ticket_doc: Mapping) -> str:
@@ -350,7 +360,7 @@ def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool
     default, where a mention is used instead of the stored name.
     """
     kind = _ticket_type(ticket_doc)
-    prefix = "FWA" if kind == "fwa" else "Main" if kind == "main" else "Ticket"
+    prefix = _TICKET_TYPE_PREFIX.get(kind, "Ticket")
     label = (
         f"{prefix} {_ticket_number(ticket_doc)}"
         if testing_service.is_test_ticket(ticket_doc)
@@ -492,7 +502,7 @@ def _modal_value(ctx, custom_id: str) -> str:
 
 
 async def _require_recruiter(ctx, mongo: MongoClient) -> bool:
-    if await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return True
     await ctx.respond(
         "Only recruiters can use the ticket console.",
@@ -619,7 +629,7 @@ def _confirm_panel(
     )
 
 
-_TICKET_TYPE_LABEL = {"main": "Main", "fwa": "FWA"}
+_TICKET_TYPE_LABEL = {"main": "Main", "fwa": "FWA", "account": "Account", "staff": "Staff"}
 
 
 def _approve_confirm_panel(
@@ -678,7 +688,7 @@ def _open_picker_options(open_tickets: Sequence[Mapping]) -> list[SelectOption]:
             label=_ticket_label(ticket_doc, username=True, markdown=False),
             value=ticket_id,
             description=description[:100],
-            emoji="💎" if _ticket_type(ticket_doc) == "fwa" else "🏆",
+            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(ticket_doc), "🏆"),
         ))
     if options:
         return options
@@ -775,7 +785,7 @@ def build_hub_components(
         id=HUB_STATS_COMPONENT_ID,
         accent_color=ACCENT_BLUE,
         components=[
-            Text(content="# Ticket Console"),
+            Text(content="# Ticket Command"),
             Media(items=[MediaItem(
                 media=attachment,
                 description="Approved, open, and denied ticket totals.",
@@ -787,6 +797,17 @@ def build_hub_components(
             Section(components=[Text(content=clan_line("fwa", "FWA clan", "💎"))],
                     accessory=thumbnail("clan_fwa.png")),
             clan_bar("fwa"),
+            Separator(divider=True),
+            Text(content=("### 🛡 Warrior Desk\n"
+                f"**Add account:** {_int(counts.by_type.get('account', {}).get('approved'))} approved · "
+                f"{_int(counts.by_type.get('account', {}).get('open'))} open · "
+                f"{_int(counts.by_type.get('account', {}).get('denied'))} denied\n"
+                f"**Contact staff:** {_int(counts.by_type.get('staff', {}).get('closed'))} done · "
+                f"{_int(counts.by_type.get('staff', {}).get('open'))} open")),
+            Media(items=[MediaItem(media=hikari.Bytes(
+                clan_bars.get("desk") or render_clan_status_bar_sync(_desk_bar_counts(counts.by_type)),
+                "ticket_desk_status.png", "image/png"),
+                description="Warrior Desk approved or done, open, and denied status distribution.")]),
             Separator(divider=True),
             Text(content="### Flags"),
             flag_row("blacklisted"),
@@ -804,61 +825,67 @@ def build_hub_components(
 
 
 
+def _desk_bar_counts(by_type):
+    account, staff = by_type.get("account", {}), by_type.get("staff", {})
+    return {
+        "approved": _int(account.get("approved")) + _int(staff.get("closed")),
+        "open": _int(account.get("open")) + _int(staff.get("open")),
+        "denied": _int(account.get("denied")),
+    }
+
+
+def _age_label(created_at) -> str:
+    if not isinstance(created_at, datetime):
+        return "time unknown"
+    if created_at.tzinfo is None:
+        created_at = created_at.replace(tzinfo=timezone.utc)
+    return created_at.astimezone(timezone.utc).strftime("%Y-%m-%d UTC")
+
+
+def _hub_type_select(
+    key: str, label: str, tickets: Sequence[Mapping], open_count: int
+) -> ActionRow:
+    options = [
+        SelectOption(
+            label=(
+                f"{_TICKET_TYPE_LABEL.get(_ticket_type(doc), 'Ticket')} #{doc.get('ticket_number', '?')} · "
+                f"{_clean_code_span(doc.get('display_name') or doc.get('username') or 'Member', limit=70)}"
+            )[:100],
+            value=_ticket_id(doc),
+            description=(
+                f"{_TICKET_TYPE_LABEL.get(_ticket_type(doc), 'Ticket')} · "
+                f"opened {_age_label(doc.get('created_at'))}"
+            )[:100],
+            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(doc), "🏆"),
+        )
+        for doc in tickets[:MAX_OPEN_PICKER]
+        if _ticket_id(doc) and len(_ticket_id(doc)) <= 100
+    ]
+    placeholder = f"{label} ({open_count} open)"
+    if open_count > len(options) and options:
+        placeholder += f" · {len(options)} shown"
+    return ActionRow(components=[TextSelectMenu(
+        custom_id=f"ticket_v2_hub_open:{key}",
+        placeholder=placeholder,
+        min_values=1, max_values=1,
+        is_disabled=not options,
+        options=options or [SelectOption(label="No open tickets", value="none")],
+    )])
+
+
 def build_hub_actions(
-    open_tickets: Sequence[Mapping],
+    open_by_group: Mapping[str, Sequence[Mapping]],
     *,
-    page: int,
+    counts: Mapping[str, int],
     total: int,
     total_tickets: int | None = None,
     updated_at: datetime | None = None,
 ) -> list[Container]:
-    pages = max(1, (total + HUB_PAGE_SIZE - 1) // HUB_PAGE_SIZE)
     children = [Text(content="## Open tickets")]
-    for index, doc in enumerate(open_tickets):
-        if index:
-            children.append(Separator(divider=True))
-        ticket_id = _ticket_id(doc)
+    for key, label, _types in HUB_TYPE_GROUPS:
+        tickets = open_by_group.get(key) or ()
         children.append(
-            Text(content=f"### {_clean(doc.get('_console_name'), limit=100)}")
-        )
-        buttons = [
-            Button(
-                style=hikari.ButtonStyle.SECONDARY,
-                custom_id=f"ticket_v2_hub_details:{ticket_id}",
-                label="View Details",
-                emoji="📋",
-            )
-        ]
-        for staff, label in ((False, "Recruit Thread"), (True, "Staff Thread")):
-            url = ticket_jump_url(doc, staff=staff)
-            buttons.append(
-                LinkButton(
-                    url=url, label=label, emoji=hikari.Snowflake(1553091643639468213)
-                )
-                if url
-                else Button(
-                    style=hikari.ButtonStyle.SECONDARY,
-                    custom_id=f"ticket_v2_console_unavailable:{ticket_id}:{staff}",
-                    label=label,
-                    is_disabled=True,
-                )
-            )
-        children.append(ActionRow(components=buttons))
-        children.append(ActionRow(components=[TextSelectMenu(
-            custom_id=f"ticket_v2_hub_closure:{ticket_id}",
-            placeholder="Closure options",
-            min_values=1, max_values=1,
-            options=[
-                SelectOption(label="Approve", value="approve", description="Accept this recruit", emoji="✅"),
-                SelectOption(label="Deny", value="deny", description="Deny with a reason", emoji="❌"),
-                SelectOption(label="Close", value="close", description="Close without a decision", emoji="📁"),
-            ],
-        )]))
-    if not open_tickets:
-        children.append(
-            Text(
-                content="No open tickets right now. Find and Browse still search ticket history."
-            )
+            _hub_type_select(key, label, tickets, _int(counts.get(key, len(tickets))))
         )
     children.extend(
         [
@@ -902,36 +929,14 @@ def build_hub_actions(
         label="Admin Settings",
         emoji="⚙️",
     )]))
-    if pages > 1:
-        children.append(
-            ActionRow(
-                components=[
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id="ticket_v2_hub_page:previous",
-                        label="Previous",
-                        emoji=hikari.Snowflake(1536793616863862784),
-                        is_disabled=page <= 0,
-                    ),
-                    Button(
-                        style=hikari.ButtonStyle.SECONDARY,
-                        custom_id="ticket_v2_hub_page:next",
-                        label="Next",
-                        emoji=hikari.Snowflake(1536793616004022403),
-                        is_disabled=page >= pages - 1,
-                    ),
-                ]
-            )
-        )
     freshness = (
         f"Updated {_timestamp(updated_at)}" if updated_at else "Updated just now"
     )
     total_copy = total if total_tickets is None else total_tickets
     open_label = "open ticket" if total == 1 else "open tickets"
-    page_copy = f"Page {page + 1}/{pages} · " if pages > 1 else ""
     children.append(
         Text(
-            content=f"{page_copy}**{total} {open_label}** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
+            content=f"**{total} {open_label}** · Oldest first\n{freshness} · **{total_copy:,} tickets**"
         )
     )
     return [
@@ -941,25 +946,20 @@ def build_hub_actions(
     ]
 
 async def _hub_actions_payload(mongo: MongoClient, state: Mapping) -> list[Container]:
-    raw_counts = await store.console_counts(mongo)
-    statuses, _ = _coerce_counts(raw_counts)
-    total = statuses.get("open", 0)
-    page = max(0, min(_int(state.get("page")), max(0, (total - 1) // HUB_PAGE_SIZE)))
-    tickets = await store.list_open_page(
-        mongo, offset=page * HUB_PAGE_SIZE, limit=HUB_PAGE_SIZE
+    raw_counts, *lists = await asyncio.gather(
+        store.console_counts(mongo),
+        *(store.list_open_by_types(mongo, types, limit=MAX_OPEN_PICKER)
+          for _key, _label, types in HUB_TYPE_GROUPS),
     )
-    names = await asyncio.gather(
-        *(thread_service.thread_names_for_ticket(mongo, doc) for doc in tickets)
-    )
-    for doc, names_pair in zip(tickets, names):
-        doc['_console_name'] = names_pair[0]
-    await mongo.ticket_setup.update_one(
-        {"_id": HUB_STATE_ID, "page": state.get("page", 0)}, {"$set": {"page": page}}
-    )
+    statuses, by_type = _coerce_counts(raw_counts)
+    tickets = [doc for group in lists for doc in group]
     return build_hub_actions(
-        tickets,
-        page=page,
-        total=total,
+        {key: group for (key, _label, _types), group in zip(HUB_TYPE_GROUPS, lists)},
+        counts={
+            key: sum(_int(by_type.get(kind, {}).get("open")) for kind in types)
+            for key, _label, types in HUB_TYPE_GROUPS
+        },
+        total=statuses.get("open", 0),
         total_tickets=sum(statuses.values()),
         updated_at=utcnow(),
     )
@@ -967,7 +967,7 @@ async def _hub_actions_payload(mongo: MongoClient, state: Mapping) -> list[Conta
 
 def _coerce_counts(raw) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
     if not isinstance(raw, Mapping):
-        return {}, {"main": {}, "fwa": {}}
+        return {}, {kind: {} for kind in sorted(schema.TICKET_TYPES)}
     statuses = raw.get("statuses") or raw.get("status") or {}
     by_type = raw.get("by_type") or raw.get("ticket_types") or {}
     if not isinstance(statuses, Mapping):
@@ -981,7 +981,7 @@ def _coerce_counts(raw) -> tuple[dict[str, int], dict[str, dict[str, int]]]:
                 str(key): _int(value)
                 for key, value in (by_type.get(kind) or {}).items()
             }
-            for kind in ("main", "fwa")
+            for kind in sorted(schema.TICKET_TYPES)
         },
     )
 
@@ -1001,11 +1001,12 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
     )
     # Pillow decodes and resizes the fixed artwork only in worker threads;
     # subsequent thumbnail reads use the tiny process-local cache.
-    png, thumbnails, main_bar, fwa_bar, *flag_rows = await asyncio.gather(
+    png, thumbnails, main_bar, fwa_bar, desk_bar, *flag_rows = await asyncio.gather(
         render_status_strip(counts),
         asyncio.to_thread(_hub_thumbnail_assets),
         render_clan_status_bar(by_type["main"]),
         render_clan_status_bar(by_type["fwa"]),
+        render_clan_status_bar(_desk_bar_counts(by_type)),
         *(render_flag_row(
             label=label,
             count=_int(counts.flags.get(kind)),
@@ -1019,7 +1020,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
         total_open=statuses.get("open", len(open_tickets)),
         counts=counts,
         thumbnails=thumbnails,
-        clan_bars={"main": main_bar, "fwa": fwa_bar},
+        clan_bars={"main": main_bar, "fwa": fwa_bar, "desk": desk_bar},
         flag_rows={
             kind: payload
             for (kind, _label, _color, _filename), payload in zip(HUB_FLAG_ROWS, flag_rows)
@@ -1030,7 +1031,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 14
+HUB_LAYOUT_VERSION = 16
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
@@ -1100,7 +1101,6 @@ async def _ensure_hub_state(mongo: MongoClient) -> None:
             "desired_revision": 0,
             "applied_revision": -1,
             "force_pending": True,
-            "page": 0,
             "created_at": utcnow(),
         }},
         upsert=True,
@@ -1303,7 +1303,6 @@ async def _publish_hub(
     # during either Discord publish must survive for the next drain.
     entry_revision = _int(state.get("desired_revision"))
     signature = await _chart_signature(mongo)
-    signature += ":page=" + str(_int(state.get("page")))
     bindings = (
         ("message_id", HUB_STATS_COMPONENT_ID),
         ("actions_message_id", HUB_ACTIONS_COMPONENT_ID),
@@ -1855,20 +1854,20 @@ def _filter_selects(
             custom_id=f"ticket_v2_console_type:{action_id}",
             placeholder="Any clan type",
             min_values=0,
-            max_values=2,
+            max_values=4,
             options=[
                 SelectOption(
-                    label="Main clan",
-                    value="main",
-                    emoji="🏆",
-                    is_default="main" in selected_types,
-                ),
-                SelectOption(
-                    label="FWA clan",
-                    value="fwa",
-                    emoji="💎",
-                    is_default="fwa" in selected_types,
-                ),
+                    label=label,
+                    value=value,
+                    emoji=emoji,
+                    is_default=value in selected_types,
+                )
+                for value, label, emoji in (
+                    ("main", "Main clan", "🏆"),
+                    ("fwa", "FWA clan", "💎"),
+                    ("account", "Add account", "➕"),
+                    ("staff", "Contact staff", "💬"),
+                )
             ],
         )]),
     ]
@@ -1913,7 +1912,9 @@ def build_search_panel(
     else:
         result_rows: list[tuple[str, object]] = []
         for index, ticket_doc in enumerate(results[:MAX_SEARCH_RESULTS]):
-            status_label, status_emoji, _accent = _status_meta(ticket_doc.get("status"))
+            status_label, status_emoji, _accent = _status_meta(
+                ticket_doc.get("status"), ticket_doc.get("ticket_type")
+            )
             tags = _player_tags(ticket_doc)
             identity = f" · `{_clean_code_span(tags[0], limit=15)}`" if tags else ""
             body = (
@@ -2033,6 +2034,8 @@ BROWSE_TYPE_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("all", "All clan types", "📋"),
     ("main", "Main clan", "🏆"),
     ("fwa", "FWA clan", "💎"),
+    ("account", "Add account", "➕"),
+    ("staff", "Contact staff", "💬"),
 )
 BROWSE_PERIOD_OPTIONS: tuple[tuple[str, str, str], ...] = (
     ("all", "All time", "📋"),
@@ -2126,7 +2129,9 @@ def _browse_option_label(options: Sequence[tuple[str, str, str]], value: str) ->
 
 
 def _browse_row_line(ticket_doc: Mapping) -> str:
-    status_label, status_emoji, _accent = _status_meta(ticket_doc.get("status"))
+    status_label, status_emoji, _accent = _status_meta(
+                ticket_doc.get("status"), ticket_doc.get("ticket_type")
+            )
     return (
         f"{_ticket_label(ticket_doc)} · {_mention(ticket_doc.get('user_id'))} · "
         f"{status_emoji} {status_label} · {_timestamp(ticket_doc.get('created_at'))}"
@@ -2142,7 +2147,7 @@ def _browse_picker_options(results: Sequence[Mapping]) -> list[SelectOption]:
         options.append(SelectOption(
             label=_ticket_label(ticket_doc, username=True, markdown=False),
             value=ticket_id,
-            emoji="💎" if _ticket_type(ticket_doc) == "fwa" else "🏆",
+            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(ticket_doc), "🏆"),
         ))
     if options:
         return options
@@ -2443,7 +2448,7 @@ def _active_flags(flags: Iterable[Mapping]) -> list[Mapping]:
 
 
 def _history_entry_content(prior: Mapping) -> str:
-    label, emoji, _accent = _status_meta(prior.get("status"))
+    label, emoji, _accent = _status_meta(prior.get("status"), prior.get("ticket_type"))
     reason = prior.get("denial_reason") or prior.get("reason")
     reason_copy = f" — {_clean(reason, limit=100)}" if reason else ""
     return (
@@ -2670,7 +2675,7 @@ def build_ticket_detail(
     history: Sequence[Mapping],
 ) -> list[Container]:
     status = str(ticket_doc.get("status") or "unknown").casefold()
-    status_label, status_emoji, accent = _status_meta(status)
+    status_label, status_emoji, accent = _status_meta(status, ticket_doc.get("ticket_type"))
     tags = _player_tags(ticket_doc)
     mentioned = _mentioned_tags(ticket_doc)
     user_id = _int(ticket_doc.get("user_id"))
@@ -2860,21 +2865,25 @@ def build_ticket_detail(
     if status == "open":
         if blacklist_warning:
             components.append(Text(content=blacklist_warning))
+        is_staff_request = ticket_doc.get("ticket_type") == "staff"
         components.append(ActionRow(components=[
-            Button(
-                style=hikari.ButtonStyle.SUCCESS,
-                custom_id=f"ticket_v2_console_approve:{action_id}",
-                label="Approve",
-                is_disabled=blacklisted,
-            ),
-            Button(
-                style=hikari.ButtonStyle.DANGER,
-                custom_id=f"ticket_v2_console_deny:{action_id}",
-                label="Deny",
-            ),
+            *([] if is_staff_request else [
+                Button(
+                    style=hikari.ButtonStyle.SUCCESS,
+                    custom_id=f"ticket_v2_console_approve:{action_id}",
+                    label="Approve",
+                    is_disabled=blacklisted,
+                ),
+                Button(
+                    style=hikari.ButtonStyle.DANGER,
+                    custom_id=f"ticket_v2_console_deny:{action_id}",
+                    label="Deny",
+                ),
+            ]),
             Button(style=hikari.ButtonStyle.SECONDARY,
                    custom_id=f"ticket_lifecycle_open:close|{action_id}",
-                   label="Close without a decision", emoji="📁"),
+                   label="Done" if is_staff_request else "Close without a decision",
+                   emoji="✅" if is_staff_request else "📁"),
         ]))
     elif status == "closed":
         components.append(ActionRow(components=[Button(
@@ -3011,6 +3020,8 @@ def build_flag_manager(
         "Select a flag type to add it or change its reason. "
         "To remove a flag, select it below and write why."
     )
+    if ticket_doc.get("status") == "open" and ticket_doc.get("ticket_type") != "staff":
+        guidance += " Setting Ghosted also closes this ticket with the same reason."
     tag_copy = _bounded_tag_display(tags, limit=DISCORD_MESSAGE_TEXT_LIMIT) if tags else "none"
     flag_copy = _flag_manager_content(active_flags)
     tag_budget, flag_budget = _allocate_message_text(
@@ -3044,6 +3055,7 @@ def build_flag_manager(
                 is_disabled=not has_identity,
             )
             for kind, (label, glyph, _blocks) in FLAG_META.items()
+            if kind != flag_store.FLAG_GHOSTED or ticket_doc.get("ticket_type") != "staff"
         ]),
     ]
     removable = active_flags[:MAX_FLAG_MANAGER_OPTIONS]
@@ -4722,10 +4734,12 @@ async def _shared_ticket(ctx, mongo: MongoClient, ticket_id: str) -> Mapping | N
         or not _is_shared_actions_source(ctx, state)
     ):
         return None
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return None
     doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
     if doc is None or str(doc.get("status")) != "open":
+        return None
+    if not await perms.can_handle(getattr(ctx, "member", None), mongo, doc.get("ticket_type")):
         return None
     return doc
 
@@ -4768,115 +4782,44 @@ async def ticket_hub_details(
     await _execute_private_panel(ctx, components)
 
 
-@register_action("ticket_v2_hub_approve", no_return=True, preload_state=False)
+@register_action("ticket_v2_hub_open", no_return=True, preload_state=False)
 @lightbulb.di.with_di
-async def ticket_hub_approve(
+async def ticket_hub_open(
     ctx: lightbulb.components.MenuContext,
     action_id: str,
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ) -> None:
-    doc = await _shared_ticket(ctx, mongo, action_id)
-    components = (
-        _approve_confirm_panel(
-            doc, action_id=await _shared_detail_state(ctx, mongo, doc)
+    """A Ticket Command dropdown selection opens the same private details."""
+    values = tuple(getattr(ctx.interaction, "values", ()) or ())
+    ticket_id = str(values[0]) if values else ""
+    if not ticket_id or ticket_id == "none":
+        await _execute_private_panel(
+            ctx, _notice("No open tickets", "There are no open tickets of this type.")
         )
-        if doc
-        else _notice(
-            "Ticket unavailable",
-            "You must be a recruiter, and the ticket must be open.",
-        )
-    )
-    await _execute_private_panel(ctx, components)
+        return
+    await ticket_hub_details(ctx, ticket_id, mongo=mongo)
 
 
-@register_action(
-    "ticket_v2_hub_deny", opens_modal=True, no_return=True, preload_state=False
-)
+@register_action("ticket_v2_hub_approve", aliases=("ticket_v2_hub_deny", "ticket_v2_hub_closure"),
+                 no_return=True, preload_state=False)
 @lightbulb.di.with_di
-async def ticket_hub_deny(
-    ctx: lightbulb.components.MenuContext, action_id: str, **_kwargs
-) -> None:
-    # No database work before the modal acknowledgement. Submit independently
-    # validates guild, recruiter access and the current status before the CAS.
-    await ctx.respond_with_modal(
-        title="Reason for denial",
-        custom_id=f"ticket_v2_hub_deny_submit:{action_id}",
-        components=[
-            ModalActionRow().add_text_input(
-                "reason",
-                "Reason the applicant will see",
-                placeholder="Write a clear reason",
-                required=True,
-                style=hikari.TextInputStyle.PARAGRAPH,
-                min_length=5,
-                max_length=1000,
-            )
-        ],
-    )
+async def ticket_hub_legacy_refresh(ctx, action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_kwargs):
+    """Old shared decision IDs can refresh Ticket Command, never decide."""
+    await ticket_hub_page(ctx, "refresh", mongo=mongo, bot=bot)
 
 
-@register_action(
-    "ticket_v2_hub_deny_submit", is_modal=True, no_return=True, preload_state=False
-)
+@register_action("ticket_v2_hub_deny_submit", aliases=("ticket_v2_hub_close_submit",),
+                 is_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
-async def ticket_hub_deny_submit(
-    ctx: lightbulb.components.ModalContext,
-    action_id: str,
-    mongo: MongoClient = lightbulb.di.INJECTED,
-    bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-    **_kwargs,
-) -> None:
-    # A modal originating on the shared message MUST create an ephemeral
-    # response; DEFERRED_MESSAGE_UPDATE would overwrite that shared message.
+async def ticket_hub_legacy_submit(ctx, action_id: str, **_kwargs):
+    """An already-open old modal cannot write against the replacement UI."""
     await ctx.defer(ephemeral=True)
-    doc = await _shared_ticket(ctx, mongo, action_id)
-    reason = _modal_value(ctx, "reason")
-    if doc is None:
-        components = _notice(
-            "Ticket unavailable",
-            "You must be a recruiter, and the ticket must be open.",
-        )
-    elif not 5 <= len(reason) <= 1000:
-        components = _notice(
-            "Ticket not denied", "Write a clear reason with 5 to 1000 characters."
-        )
-    else:
-        try:
-            result = await resolve.deny_ticket(
-                bot,
-                mongo,
-                ticket_id=action_id,
-                member=ctx.member,
-                actor_name=ctx.user.username,
-                kind=resolve.KIND_DENY_CUSTOM,
-                reason=reason,
-                expected_status="open",
-            )
-            if result.outcome in {store.WON, store.EFFECT_FAILED}:
-                await request_hub_refresh_best_effort(
-                    bot, mongo, reason="ticket denied"
-                )
-            components = await _transition_result_panel(
-                result,
-                verb="denied",
-                mongo=mongo,
-                owner_id=int(ctx.user.id),
-                guild_id=_int(ctx.guild_id),
-            )
-        except Exception:
-            _log.exception("shared console denial failed ticket=%s", action_id)
-            components = _notice(
-                "Decision not saved",
-                "Open the ticket again. Then try again.",
-                accent=ACCENT_RED,
-            )
-    await ctx.interaction.edit_initial_response(
-        components=components,
-        user_mentions=False,
-        role_mentions=False,
-        mentions_everyone=False,
-    )
+    await ctx.interaction.edit_initial_response(components=_notice(
+        "Ticket Command changed", "Open the current Ticket Command and select this ticket again."),
+        user_mentions=False, role_mentions=False, mentions_everyone=False)
 
 
 @register_action("ticket_v2_hub_page", no_return=True, preload_state=False)
@@ -4892,7 +4835,7 @@ async def ticket_hub_page(
     if (
         not _is_shared_actions_source(ctx, state)
         or _int(state.get("guild_id")) != _int(getattr(ctx, "guild_id", 0))
-        or not await perms.is_recruiter(getattr(ctx, "member", None), mongo)
+        or not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo)
     ):
         await _execute_private_panel(
             ctx,
@@ -4902,11 +4845,7 @@ async def ticket_hub_page(
             ),
         )
         return
-    delta = {"next": 1, "previous": -1}.get(action_id, 0)
-    if delta:
-        await mongo.ticket_setup.update_one(
-            {"_id": HUB_STATE_ID}, {"$inc": {"page": delta}}
-        )
+    # Old messages may still carry Previous/Next; every id now just refreshes.
     await request_hub_refresh(bot, mongo, reason="console page", force=True)
 
 
@@ -4918,7 +4857,7 @@ async def ticket_console_pick(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ) -> None:
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await _execute_private_panel(
             ctx,
             _notice(
@@ -4937,7 +4876,9 @@ async def ticket_console_pick(
         )
         return
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None or str(ticket_doc.get("status")) != "open":
+    if ticket_doc is None or str(ticket_doc.get("status")) != "open" or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         await _execute_private_panel(
             ctx,
             _notice(
@@ -5027,14 +4968,16 @@ async def ticket_console_view(
             "Run your own search to open this ticket.",
             accent=ACCENT_RED,
         )
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return _notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
             accent=ACCENT_RED,
         )
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -5053,9 +4996,12 @@ async def _latest_flag_ticket(
     *,
     ticket_id: str,
     guild_id: int,
+    member=None,
 ) -> dict | None:
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
     if ticket_doc is None or _int(ticket_doc.get("guild_id")) != int(guild_id):
+        return None
+    if not await perms.can_handle(member, mongo, ticket_doc.get("ticket_type")):
         return None
     return ticket_doc
 
@@ -5184,6 +5130,7 @@ async def ticket_console_manage_flags(
         mongo,
         ticket_id=str(ticket_id or ""),
         guild_id=_int(guild_id),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         return _notice(
@@ -5232,6 +5179,7 @@ async def ticket_flag_back(
         mongo,
         ticket_id=str(ticket_id or ""),
         guild_id=_int(guild_id),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         return _notice(
@@ -5263,8 +5211,8 @@ async def ticket_flag_set(
         custom_id=f"ticket_v2_flag_set_submit:{manager_id}|{kind}",
         components=[ModalActionRow().add_text_input(
             "reason",
-            "Why this flag applies",
-            placeholder="Write a reason that staff can check",
+            "Reason (Ghosted closes an open ticket)" if kind == flag_store.FLAG_GHOSTED else "Why this flag applies",
+            placeholder="Use at least 5 characters for an open ticket" if kind == flag_store.FLAG_GHOSTED else "Write a reason that staff can check",
             required=True,
             style=hikari.TextInputStyle.PARAGRAPH,
             min_length=2,
@@ -5329,6 +5277,7 @@ async def ticket_flag_set_submit(
         mongo,
         ticket_id=str(data.get("ticket_id") or ""),
         guild_id=_int(data.get("guild_id")),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         await _edit_flag_modal(ctx, _notice(
@@ -5361,6 +5310,23 @@ async def ticket_flag_set_submit(
             "Flag not saved",
             "This ticket has no saved Discord ID or player tag.",
             accent=ACCENT_RED,
+        ))
+        return
+    if kind == flag_store.FLAG_GHOSTED and ticket_doc.get("ticket_type") == "staff":
+        await _edit_flag_modal(ctx, _notice("Flag not saved", "Contact staff requests cannot be Ghosted.", accent=ACCENT_RED))
+        return
+    if kind == flag_store.FLAG_GHOSTED and ticket_doc.get("status") == "open":
+        from . import inactivity
+        result = await inactivity.apply_manual_ghosted(
+            bot, mongo, ticket=ticket_doc, member=ctx.member, actor_name=ctx.user.username,
+            reason=reason, expected_flag_id=str(expected.get("flag_id") or "") or None,
+            expected_rev=max(0, _int(expected.get("rev"))) if expected else None,
+            check_expected=True,
+        )
+        await _edit_flag_modal(ctx, _notice(
+            "Ticket closed as Ghosted" if result.won else "Ticket not changed",
+            result.reason or "The ticket changed. Open its details again.",
+            accent=ACCENT_GREEN if result.won else ACCENT_YELLOW,
         ))
         return
     try:
@@ -5446,6 +5412,7 @@ async def ticket_flag_remove_submit(
         mongo,
         ticket_id=str(data.get("ticket_id") or ""),
         guild_id=_int(data.get("guild_id")),
+        member=getattr(ctx, "member", None),
     )
     if ticket_doc is None:
         await _edit_flag_modal(ctx, _notice(
@@ -5584,7 +5551,7 @@ async def ticket_console_find_submit(
             mentions_everyone=False,
         )
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(
             components=_notice(
                 "Recruiter access required",
@@ -5656,7 +5623,7 @@ async def ticket_console_find_root_submit(
             mentions_everyone=False,
         )
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(
             components=_notice(
                 "Recruiter access required",
@@ -5791,7 +5758,7 @@ async def ticket_console_type(
         statuses=statuses,
         ticket_types=ticket_types,
         field="ticket_types",
-        allowed={"main", "fwa"},
+        allowed=set(schema.TICKET_TYPES),
     )
 
 
@@ -5803,7 +5770,7 @@ async def ticket_console_browse(
     mongo: MongoClient = lightbulb.di.INJECTED,
     **_kwargs,
 ) -> None:
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await _execute_private_panel(
             ctx,
             _notice(
@@ -6452,7 +6419,7 @@ async def ticket_console_browse_pick(
             "Run your own browse to open this ticket.",
             accent=ACCENT_RED,
         )
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return _notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -6466,7 +6433,9 @@ async def ticket_console_browse_pick(
             "No tickets match those filters.",
         )
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -6587,7 +6556,9 @@ async def ticket_console_approve(
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -6649,7 +6620,9 @@ async def ticket_console_confirm_cancel(
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -6673,14 +6646,16 @@ async def ticket_console_overturn(
 ):
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return _notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
             accent=ACCENT_RED,
         )
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None or ticket_doc.get("status") not in schema.TERMINAL_STATUSES:
+    if ticket_doc is None or ticket_doc.get("status") not in schema.TERMINAL_STATUSES or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket changed",
             "This ticket has no decision now. Open it again from the console.",
@@ -6703,7 +6678,9 @@ async def ticket_console_overturn_approve_confirm(
     if (denied := await _owner_only_notice(ctx, owner_id)) is not None:
         return denied
     ticket_doc = await store.find_one(mongo, {"_id": ticket_id, "type": "ticket"})
-    if ticket_doc is None:
+    if ticket_doc is None or not await perms.can_handle(
+        getattr(ctx, "member", None), mongo, ticket_doc.get("ticket_type")
+    ):
         return _notice(
             "Ticket not found",
             "The ticket record is no longer available.",
@@ -6823,7 +6800,7 @@ async def ticket_overturn_deny_submit(
             accent=ACCENT_RED,
         ))
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(components=_notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -6960,7 +6937,7 @@ async def ticket_console_deny_submit(
             accent=ACCENT_RED,
         ))
         return
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         await ctx.interaction.edit_initial_response(components=_notice(
             "Recruiter access required",
             "Only recruiters can use the ticket console.",
@@ -7128,7 +7105,7 @@ class FindCommand(
             )
             return
         await ctx.defer(ephemeral=True)
-        if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
             await ctx.interaction.edit_initial_response(
                 content="Only recruiters can use the ticket console.",
                 user_mentions=False,
@@ -7174,7 +7151,7 @@ class HistoryCommand(
         mongo: MongoClient = lightbulb.di.INJECTED,
     ) -> None:
         await ctx.defer(ephemeral=True)
-        if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
             await ctx.interaction.edit_initial_response(
                 content="Only recruiters can use the ticket console.",
                 user_mentions=False,
@@ -7238,14 +7215,21 @@ async def recover_ticket_console(
 
 @register_action("ticket_lifecycle_open", opens_modal=True, no_return=True, preload_state=False)
 @lightbulb.di.with_di
-async def ticket_lifecycle_open(ctx, action_id: str, **_kwargs):
+async def ticket_lifecycle_open(ctx, action_id: str,
+        mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
     kind, _, state_id = action_id.partition("|")
     if kind not in {"close", "reopen"}:
         return
+    done = False
+    if kind == "close":
+        # Staff requests end with "Done"; the panel state names the ticket.
+        data = await get_state(mongo, state_id)
+        ticket_doc = await store.find_one(mongo, {"_id": (data or {}).get("ticket_id"), "type": "ticket"})
+        done = bool(ticket_doc and ticket_doc.get("ticket_type") == "staff")
     await ctx.respond_with_modal(
-        title="Close without a decision" if kind == "close" else "Reopen ticket",
+        title="Done" if done else "Close without a decision" if kind == "close" else "Reopen ticket",
         custom_id=f"ticket_lifecycle_submit:{kind}|{state_id}",
-        components=[ModalActionRow().add_text_input("reason", "Reason shown in both threads",
+        components=[ModalActionRow().add_text_input("reason", "Note for the member (shown in their thread)" if done else "Reason shown in both threads",
             required=True, style=hikari.TextInputStyle.PARAGRAPH, min_length=5, max_length=1000)],
     )
 
@@ -7281,61 +7265,11 @@ async def ticket_lifecycle_submit(ctx, action_id: str,
         user_mentions=False, role_mentions=False, mentions_everyone=False)
 
 
-@register_action("ticket_v2_hub_closure", opens_modal=True, no_return=True, preload_state=False)
-@lightbulb.di.with_di
-async def ticket_hub_closure(ctx, action_id: str,
-        mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
-    values = tuple(getattr(ctx.interaction, "values", ()) or ())
-    choice = values[0] if len(values) == 1 else None
-    if choice == "approve":
-        await ctx.defer(edit=True)
-        await ticket_hub_approve(ctx, action_id, mongo=mongo)
-    elif choice == "deny":
-        await ticket_hub_deny(ctx, action_id)
-    elif choice == "close":
-        await ctx.respond_with_modal(
-            title="Close without a decision",
-            custom_id=f"ticket_v2_hub_close_submit:{action_id}",
-            components=[ModalActionRow().add_text_input(
-                "reason", "Reason shown in both threads", required=True,
-                style=hikari.TextInputStyle.PARAGRAPH, min_length=5, max_length=1000,
-            )],
-        )
-    else:
-        await ctx.defer(ephemeral=True)
-        await ctx.interaction.edit_initial_response(components=_notice(
-            "Select an option", "Select Approve, Deny, or Close for this ticket."))
-
-
-@register_action("ticket_v2_hub_close_submit", is_modal=True, no_return=True, preload_state=False)
-@lightbulb.di.with_di
-async def ticket_hub_close_submit(ctx, action_id: str,
-        mongo: MongoClient = lightbulb.di.INJECTED,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_kwargs):
-    from . import lifecycle
-    await ctx.defer(ephemeral=True)
-    doc = await _shared_ticket(ctx, mongo, action_id)
-    if doc is None:
-        components = _notice("Ticket unavailable", "You must be a recruiter, and the ticket must be open.")
-    else:
-        try:
-            result = await lifecycle.change(bot, mongo, ticket_id=action_id, member=ctx.member,
-                actor_name=ctx.user.username, kind="close", reason=_modal_value(ctx, "reason"),
-                expected_rev=_int(doc.get("rev")))
-            components = await _transition_result_panel(result, verb="closed", mongo=mongo,
-                owner_id=int(ctx.user.id), guild_id=_int(ctx.guild_id))
-        except Exception:
-            _log.exception("Shared console closure failed ticket=%s", action_id)
-            components = _notice("Ticket update interrupted", "Open the ticket details again. Check the current status before you try again.")
-    await ctx.interaction.edit_initial_response(components=components,
-        user_mentions=False, role_mentions=False, mentions_everyone=False)
-
-
 @register_action('ticket_v2_member_history', opens_modal=True, preload_state=False, no_return=True)
 @lightbulb.di.with_di
 async def member_history_open(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_):
     await ctx.defer(ephemeral=True)
-    if not await perms.is_recruiter(getattr(ctx, 'member', None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, 'member', None), mongo):
         await ctx.interaction.edit_initial_response(components=_notice('Recruiter access required','Only recruiters can view member history.'))
         return
     token=uuid.uuid4().hex
@@ -7352,7 +7286,7 @@ async def member_history_open(ctx, action_id: str, mongo: MongoClient = lightbul
 async def member_history_pick(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
     data=await get_state(mongo,action_id)
     if (not data or data.get('type')!='ticket_member_history' or data.get('owner_id')!=int(ctx.user.id)
-        or data.get('guild_id')!=int(ctx.guild_id) or not await perms.is_recruiter(getattr(ctx,'member',None),mongo)):
+        or data.get('guild_id')!=int(ctx.guild_id) or not await perms.is_ticket_staff(getattr(ctx,'member',None),mongo)):
         await ctx.respond('Open your own Member History panel from the recruiter console.',ephemeral=True)
         return
     user_id=int(ctx.interaction.values[0])

@@ -19,6 +19,7 @@ from pymongo.errors import DuplicateKeyError
 
 from extensions.commands.tickets import loader, thread_intake_ready, ticket
 from extensions.commands.tickets import resolve
+from extensions.commands.tickets import schema
 from extensions.commands.tickets import store
 from extensions.commands.tickets import thread_service, testing_service
 from extensions.commands import ticket_runtime
@@ -65,11 +66,16 @@ async def _show_created_ticket(ctx, ticket, *, resumed=False):
     kind = str(ticket.get("ticket_type") or "main").upper()
     wording = "already open" if resumed else "created"
     number = f" #{ticket['ticket_number']}" if ticket.get("ticket_number") is not None else ""
+    desk = kind.lower() in schema.DESK_TICKET_TYPES
     row = hikari.impl.MessageActionRowBuilder().add_link_button(
-        f"https://discord.com/channels/{guild_id}/{location_id}", label="Open your ticket"
+        f"https://discord.com/channels/{guild_id}/{location_id}",
+        label="Open your request" if desk else "Open your ticket",
     )
     await ctx.interaction.edit_initial_response(
-        content=f"✅ Your {kind} ticket{number} is {wording}.",
+        content=(
+            f"✅ Your request{number} is {wording}."
+            if desk else f"✅ Your {kind} ticket{number} is {wording}."
+        ),
         components=[row], user_mentions=False, role_mentions=False, mentions_everyone=False,
     )
 
@@ -241,6 +247,15 @@ async def capture_candidate_thread_activity(
         await _remove_bot_thread_created_notice(event, bot, mongo)
         return
     mongo, bot, ticket = await _ticket_scope_for_location(mongo, bot, int(event.channel_id))
+    if ticket is not None and ticket.get("status") == "closed":
+        from . import lifecycle
+        try:
+            result = await lifecycle.reopen_from_member_message(bot, mongo, ticket, event.message)
+            if result.won:
+                ticket = result.doc
+        except Exception:
+            _log.exception("Member message reopen failed ticket=%s", ticket.get("_id"))
+            return
     if ticket is None or ticket.get("status") != "open":
         return
     if _ticket_location(ticket) != int(event.channel_id):
@@ -274,6 +289,21 @@ async def capture_candidate_thread_activity(
         await thread_service.notify_console_after_change(
             bot, mongo, result.doc, reason="candidate activity", force=False,
         )
+
+
+@loader.listener(hikari.MemberUpdateEvent)
+@lightbulb.di.with_di
+async def reconcile_ticket_role_change(event: hikari.MemberUpdateEvent,
+        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
+        mongo: MongoClient = lightbulb.di.INJECTED) -> None:
+    if event.old_member is not None and event.old_member.role_ids == event.member.role_ids:
+        return
+    from . import staff_access
+    try:
+        async with asyncio.timeout(30):
+            await staff_access.member_changed(bot,mongo,event.member)
+    except Exception:
+        _log.exception("Ticket role reconciliation deferred to bounded maintenance")
 
 
 @loader.listener(hikari.GuildThreadDeleteEvent)
@@ -330,10 +360,11 @@ async def handle_create_ticket(
     """Create or safely resume a private candidate/public staff thread pair."""
     await ctx.defer(ephemeral=True)
 
+    noun = "request" if action_id.rpartition(":")[2] in schema.DESK_TICKET_TYPES else "ticket"
     if not thread_intake_ready():
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ Tickets are not ready yet. No ticket was created. Try again soon."
+                f"❌ {noun.capitalize()}s are not ready yet. No {noun} was created. Try again soon."
             )
         )
         return
@@ -341,10 +372,10 @@ async def handle_create_ticket(
     intake_surface, separator, ticket_type = action_id.partition(":")
     if separator != ":" or intake_surface not in {"pilot", "public"}:
         await edit_error(ctx, rest=bot.rest,
-            content="❌ This ticket panel is unavailable. Ask staff for the current panel."
+            content=f"❌ This {'panel' if noun == 'request' else 'ticket panel'} is unavailable. Ask staff for the current panel."
         )
         return
-    if ticket_type not in {"main", "fwa"}:
+    if ticket_type not in schema.TICKET_TYPES:
         await edit_error(ctx, rest=bot.rest,
             content="❌ That ticket type is not available."
         )
@@ -374,7 +405,9 @@ async def handle_create_ticket(
             f"message={message_id} error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Tickets are not available now. No ticket was created."
+            content="❌ Requests are not available now. No request was created."
+            if noun == "request" else
+            "❌ Tickets are not available now. No ticket was created."
         )
         return
     if not route.allowed or route.route != ticket_runtime.ROUTE_THREAD:
@@ -382,7 +415,9 @@ async def handle_create_ticket(
             "❌ This test panel is not active for you. "
             "Use the current public ticket panel or ask a recruiter."
             if intake_surface == "pilot"
-            else "❌ This ticket panel is not active. Use the current panel or ask a recruiter."
+            else "❌ This panel is not active. Use the current panel or ask staff."
+            if noun == "request" else
+            "❌ This ticket panel is not active. Use the current panel or ask a recruiter."
         )
         await edit_error(ctx, rest=bot.rest, content=message)
         return
@@ -402,7 +437,7 @@ async def handle_create_ticket(
                 content=f"⏳ You can try again <t:{retry_at}:R>."
             )
             return
-    await ctx.interaction.edit_initial_response(content="🎫 Creating your ticket…")
+    await ctx.interaction.edit_initial_response(content=f"🎫 Creating your {noun}…")
     workflow_id = f"thread:{user_id}:{ticket_type}"
     try:
         slot_claim = await ticket_runtime.claim_open_slot(
@@ -439,13 +474,15 @@ async def handle_create_ticket(
             f"error={type(error).__name__}"
         )
         await edit_error(ctx, rest=bot.rest,
-            content="❌ Tickets are not available now. No ticket was created."
+            content="❌ Requests are not available now. No request was created."
+            if noun == "request" else
+            "❌ Tickets are not available now. No ticket was created."
         )
         return
     if not slot_claim.won:
         location_id = store.as_int(slot_claim.slot.get("location_id"))
         if slot_claim.slot.get("state") == ticket_runtime.SLOT_CLEANUP_REQUIRED:
-            sentences = ["⚠️ A recruiter still needs to finish your earlier ticket."]
+            sentences = [f"⚠️ A recruiter still needs to finish your earlier {noun}."]
             if location_id:
                 # A bare <#id> mention only resolves in the channel's own
                 # guild, and this slot's channel is not necessarily in
@@ -474,7 +511,7 @@ async def handle_create_ticket(
             ):
                 await _release_slot_for_missing_thread(mongo, existing_ticket["_id"])
                 message = (
-                    "⚠️ Your earlier ticket's thread was removed. "
+                    f"⚠️ Your earlier {noun}'s thread was removed. "
                     "Select the button again to start a new one."
                 )
             else:
@@ -497,12 +534,13 @@ async def handle_create_ticket(
                     store.as_int(existing_ticket.get("guild_id"))
                     if existing_ticket is not None else None
                 ) or int(ctx.guild_id)
+                noun = "request" if ticket_type in schema.DESK_TICKET_TYPES else "ticket"
                 message = (
-                    f"✅ You already have an open {ticket_type.upper()} ticket: "
+                    f"✅ You already have an open {ticket_type.upper()} {noun}: "
                     f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
                 )
         else:
-            message = "⏳ We are already creating your ticket. Try again in a moment."
+            message = f"⏳ We are already creating your {noun}. Try again in a moment."
         await ctx.interaction.edit_initial_response(content=message)
         return
     user_cooldowns[user_id] = now
@@ -550,19 +588,19 @@ async def handle_create_ticket(
     except thread_service.ThreadCreationBusy:
         user_cooldowns.pop(user_id, None)
         await ctx.interaction.edit_initial_response(
-            content="⏳ We are already creating your ticket. Try again in a moment."
+            content=f"⏳ We are already creating your {noun}. Try again in a moment."
         )
         return
     except thread_service.ThreadConfigurationError as error:
         user_cooldowns.pop(user_id, None)
         await edit_error(ctx, rest=bot.rest,
-            content=f"❌ Tickets are not ready: {error}. Ask an administrator."
+            content=f"❌ {noun.capitalize()}s are not ready: {error}. Ask an administrator."
         )
         return
     except hikari.RateLimitTooLongError:
         user_cooldowns[user_id] = now + timedelta(seconds=RATE_LIMIT_BACKOFF)
         await edit_error(ctx, rest=bot.rest,
-            content="⏰ Discord is rate-limiting ticket creation. Please try again in a few minutes."
+            content=f"⏰ Discord is rate-limiting {noun} creation. Please try again in a few minutes."
         )
         return
     except Exception as error:
@@ -575,8 +613,8 @@ async def handle_create_ticket(
             return
         await edit_error(ctx, rest=bot.rest,
             content=(
-                "❌ We could not finish your ticket. We saved your attempt. Try again. "
-                "We will not make a second ticket. If it fails again, ask an administrator."
+                f"❌ We could not finish your {noun}. We saved your attempt. Try again. "
+                f"We will not make a second {noun}. If it fails again, ask an administrator."
             )
         )
         return
@@ -584,44 +622,6 @@ async def handle_create_ticket(
     await _show_created_ticket(
         ctx, result.ticket, resumed=result.resumed
     )
-
-
-MAX_MY_TICKET_HISTORY = 5
-
-
-def _my_ticket_history_line(prior: dict) -> str:
-    """One "My ticket" history row. Applicant-facing only: no flags or notes."""
-    kind = "FWA" if str(prior.get("ticket_type") or "").casefold() == "fwa" else "Main"
-    try:
-        number = int(prior.get("ticket_number"))
-    except (TypeError, ValueError):
-        number = "?"
-    raw_status = str(prior.get("status") or "unknown")
-    status = raw_status.replace("_", " ").title()
-    # Only label the decision's own timestamp as its date. Updates and ticket
-    # creation are not the time an applicant was approved or denied.
-    at = prior.get(f"{raw_status}_at") if raw_status in {"approved", "denied", "closed"} else None
-    when = resolve.ts(at, "f") if at is not None else "Date unavailable"
-    return f"### {kind} #{number} · {status}\n**{status}:** {when}"
-
-
-def _my_ticket_history_components(history: list[dict]):
-    items = [
-        hikari.impl.TextDisplayComponentBuilder(content="## 🎟️ Your ticket history"),
-        hikari.impl.TextDisplayComponentBuilder(content="You have no open ticket."),
-    ]
-    for prior in history:
-        items.append(hikari.impl.SeparatorComponentBuilder())
-        items.append(hikari.impl.TextDisplayComponentBuilder(content=_my_ticket_history_line(prior)))
-        guild_id = store.as_int(prior.get("guild_id"))
-        location_id = store.as_int((prior.get("location") or {}).get("id") or prior.get("channel_id"))
-        if guild_id and location_id:
-            items.append(hikari.impl.MessageActionRowBuilder().add_link_button(
-                f"https://discord.com/channels/{guild_id}/{location_id}",
-                label="View Ticket", emoji=hikari.Snowflake(ICONS["open"]),
-            ))
-    return [hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=items)]
-
 
 
 @register_action(
@@ -647,74 +647,42 @@ async def handle_my_ticket(
     await ctx.defer(ephemeral=True)
     user_id = int(ctx.user.id)
 
-    open_ticket = None
-    for kind in ("main", "fwa"):
-        open_ticket = await store.find_open_for_applicant(
-            mongo, user_id=user_id, ticket_type=kind,
-        )
-        if open_ticket is not None:
-            break
-
-    if open_ticket is not None and ticket_runtime.thread_missing_has_role(
-        open_ticket, "candidate"
-    ):
-        await _release_slot_for_missing_thread(mongo, open_ticket["_id"])
-        await ctx.interaction.edit_initial_response(
-            content=(
-                "⚠️ Your earlier ticket's thread was removed. "
-                "Select Main or FWA to start a new one."
-            )
-        )
-        return
-
-    if open_ticket is not None:
-        location_id = _ticket_location(open_ticket)
-        try:
-            await thread_service.ensure_candidate_thread_access(
-                bot.rest, open_ticket, user_id=user_id,
-            )
-        except Exception as error:
-            print(
-                "[Tickets] v2_my_ticket_reaccess_failed "
-                f"user={user_id} error={type(error).__name__}"
-            )
-        # A bare <#id> mention only resolves in the channel's own guild, and
-        # the applicant's open ticket is not necessarily in the guild they
-        # clicked "My ticket" in (the pilot/public panels span two servers
-        # during rollout) -- a jump URL resolves anywhere.
-        ticket_guild_id = (
-            store.as_int(open_ticket.get("guild_id")) or int(ctx.guild_id)
-        )
-        await ctx.interaction.edit_initial_response(
-            components=[hikari.impl.ContainerComponentBuilder(
-                accent_color=WU_GOLD,
-                components=[
-                    hikari.impl.TextDisplayComponentBuilder(content="## 🎟️ Your open ticket"),
-                    hikari.impl.TextDisplayComponentBuilder(
-                        content="Use the button below to continue your application."
-                    ),
-                    hikari.impl.MessageActionRowBuilder().add_link_button(
-                        f"https://discord.com/channels/{ticket_guild_id}/{location_id}",
-                        label="Open My Ticket",
-                        emoji=hikari.Snowflake(ICONS["open"]),
-                    ),
-                ],
-            )],
-            user_mentions=False, role_mentions=False, mentions_everyone=False,
-        )
-        return
-
-    history = await store.history_for(
-        mongo, user_id=user_id, limit=MAX_MY_TICKET_HISTORY,
+    config = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
+    ticket_guild_id = store.as_int(config.get("ticket_target_guild_id"))
+    tickets = await store.member_visible_tickets(
+        mongo, user_id=user_id, guild_id=ticket_guild_id, at=datetime.now(timezone.utc), limit=10,
     )
-    if not history:
-        await ctx.interaction.edit_initial_response(
-            content="You have no ticket yet. Select Main or FWA to start one."
-        )
+    items = [hikari.impl.TextDisplayComponentBuilder(content="## 🎟️ Your tickets")]
+    for ticket in tickets:
+        if ticket_runtime.thread_missing_has_role(ticket, "candidate"):
+            if ticket.get("status") == "open":
+                await _release_slot_for_missing_thread(mongo, ticket["_id"])
+            continue
+        location_id = _ticket_location(ticket)
+        if not location_id:
+            continue
+        if ticket.get("status") == "open":
+            try:
+                await thread_service.ensure_candidate_thread_access(bot.rest, ticket, user_id=user_id)
+            except Exception:
+                _log.exception("My ticket access check failed ticket=%s", ticket["_id"])
+        # Closed and open tickets use the exact same presentation. Do not
+        # unarchive a closed thread merely because its member opened My Tickets.
+        ticket_guild_id = store.as_int(ticket.get("guild_id")) or int(ctx.guild_id)
+        kind = {"main": "Main", "fwa": "FWA", "account": "Add account", "staff": "Contact staff"}.get(ticket.get("ticket_type"), "Ticket")
+        items.extend([
+            hikari.impl.SeparatorComponentBuilder(),
+            hikari.impl.TextDisplayComponentBuilder(content=f"**{kind} #{ticket.get('ticket_number', '?')}**"),
+            hikari.impl.MessageActionRowBuilder().add_link_button(
+                f"https://discord.com/channels/{ticket_guild_id}/{location_id}",
+                label="Open My Ticket", emoji=hikari.Snowflake(ICONS["open"]),
+            ),
+        ])
+    if len(items) == 1:
+        await ctx.interaction.edit_initial_response(content="You have no ticket available. Select a ticket type to start one.")
         return
-
     await ctx.interaction.edit_initial_response(
-        components=_my_ticket_history_components(history),
+        components=[hikari.impl.ContainerComponentBuilder(accent_color=WU_GOLD, components=items)],
         user_mentions=False, role_mentions=False, mentions_everyone=False,
     )
 

@@ -2,6 +2,8 @@
 
 import hashlib
 import uuid
+from datetime import datetime, timedelta, timezone
+from types import SimpleNamespace
 
 import hikari
 from hikari.impl import (
@@ -10,11 +12,67 @@ from hikari.impl import (
 )
 
 from extensions.commands import ticket_runtime
-from . import perms, resolve, store, testing_service
+from . import perms, resolve, schema, store, testing_service
+
+
+MEMBER_REOPEN_DAYS = 60
+
+
+def member_reopen_eligible(ticket, *, at=None):
+    at = at or datetime.now(timezone.utc)
+    closed = ticket.get("closed_at")
+    if not isinstance(closed, datetime) or ticket.get("status") != "closed":
+        return False
+    if closed.tzinfo is None:
+        closed = closed.replace(tzinfo=timezone.utc)
+    return closed <= at <= closed + timedelta(days=MEMBER_REOPEN_DAYS)
+
+
+def _member_message_authorized(ticket, message, member):
+    if not member_reopen_eligible(ticket):
+        return False
+    author = getattr(message, "author", None)
+    if author is None or getattr(author, "is_bot", True) or getattr(message, "webhook_id", None):
+        return False
+    closed = ticket["closed_at"]
+    closed = closed.replace(tzinfo=timezone.utc) if closed.tzinfo is None else closed
+    sent = getattr(message, "timestamp", None)
+    if not isinstance(sent, datetime) or sent.tzinfo is None:
+        return False
+    return bool(
+        int(getattr(author, "id", 0)) == int(ticket.get("user_id") or 0) == int(member.id)
+        and int(getattr(message, "guild_id", 0) or 0) == int(ticket["guild_id"]) == int(member.guild_id)
+        and int(getattr(message, "channel_id", 0)) == int((ticket.get("location") or {}).get("id") or 0)
+        and isinstance(sent, datetime) and sent >= closed
+    )
+
+
+async def reopen_from_member_message(bot, mongo, ticket, message):
+    author = message.author
+    member = SimpleNamespace(id=int(author.id), guild_id=int(message.guild_id),
+                             role_ids=(), permissions=hikari.Permissions.NONE)
+    if not _member_message_authorized(ticket, message, member):
+        return store.Transition(store.UNAUTHORIZED, None)
+    result = await change(
+        bot, mongo, ticket_id=ticket["_id"], member=member,
+        actor_name=str(getattr(author, "username", None) or author.id),
+        kind="reopen", reason="Member continued the conversation in their ticket.",
+        expected_rev=int(ticket.get("rev") or 0), member_message=message,
+    )
+    if result.outcome == store.BLOCKED and "active ticket" in (result.reason or ""):
+        # Claim before transport: an uncertain Discord acceptance is not retried.
+        if await store.claim_member_reopen_notice(mongo, ticket):
+            await bot.rest.create_message(
+                int(message.channel_id),
+                "This ticket was not reopened because you already have an active ticket. Continue there or ask staff for help.",
+                user_mentions=False, role_mentions=False, mentions_everyone=False,
+            )
+    return result
 
 
 def components(ticket, kind, *, staff=False):
     closing = kind == "close"
+    desk = ticket.get("ticket_type") in schema.DESK_TICKET_TYPES
     title = "📁 Ticket closed" if closing else "🆕 Ticket reopened"
     reason = (
         ticket.get("closure_reason" if closing else "reopen_reason")
@@ -25,6 +83,24 @@ def components(ticket, kind, *, staff=False):
         if closing
         else "Recruitment staff reopened this application. You can continue the conversation here."
     )
+    if desk:
+        title = "📁 Request closed" if closing else "🆕 Request reopened"
+        text = (
+            "Staff closed this request. They did not approve or deny it."
+            if closing
+            else "Staff reopened this request. You can continue the conversation here."
+        )
+        if ticket.get("ticket_type") == "staff":
+            title = "✅ Done" if closing else title
+            text = (
+                "Staff marked this request as done."
+                if closing
+                else "Staff reopened this request. You can continue the conversation here."
+            )
+    if closing and member_reopen_eligible(ticket):
+        text += " You can still read this thread. Send a message here within 60 days of Close to reopen it, if you have no other active ticket of this type."
+    elif not closing and (ticket.get("reopen_trigger") or {}).get("kind") == "member_message":
+        text = "The member continued this conversation and reopened it."
     return [
         Container(
             accent_color=hikari.Color(0x808080),
@@ -38,7 +114,7 @@ def components(ticket, kind, *, staff=False):
                     else []
                 ),
                 Text(
-                    content=f"**Recruit:** <@{ticket['user_id']}>\n**Handled by:** <@{ticket['handled_by']}>\n**Time:** {resolve.ts(ticket['handled_at'], 'F')}"
+                    content=f"**{'Member' if desk else 'Recruit'}:** <@{ticket['user_id']}>\n**Handled by:** <@{ticket['handled_by']}>\n**Time:** {resolve.ts(ticket['handled_at'], 'F')}"
                 ),
                 Text(content=f"{text}\n\n**Reason:** {reason}"),
             ],
@@ -82,11 +158,12 @@ async def finish_effects(bot, mongo, ticket, kind):
             continue
         channel = await bot.rest.fetch_channel(channel_id)
         desired = kind == "close"
-        if bool(channel.is_archived) != desired or bool(channel.is_locked) != desired:
+        locked = desired and not (role == "candidate" and member_reopen_eligible(ticket))
+        if bool(channel.is_archived) != desired or bool(channel.is_locked) != locked:
             await bot.rest.edit_channel(
                 channel_id,
                 archived=desired,
-                locked=desired,
+                locked=locked,
                 reason=(
                     "Closing application without decision"
                     if desired
@@ -107,8 +184,9 @@ async def change(
     expected_rev=None,
     expected_activity_revision=None,
     expected_inactivity_token=None,
+    member_message=None,
 ):
-    if not await perms.is_recruiter(member, mongo):
+    if member_message is None and not await perms.is_ticket_staff(member, mongo):
         return store.Transition(
             store.UNAUTHORIZED, None, "Recruiter permission required."
         )
@@ -124,6 +202,12 @@ async def change(
         return store.Transition(store.MISSING, None)
     if int(ticket["guild_id"]) != int(member.guild_id):
         return store.Transition(store.UNAUTHORIZED, ticket, "Use this ticket’s server.")
+    member_authorized = (kind == "reopen" and member_message is not None
+                         and _member_message_authorized(ticket, member_message, member))
+    if not member_authorized and not await perms.can_handle(member, mongo, ticket.get("ticket_type")):
+        return store.Transition(
+            store.UNAUTHORIZED, None, "Permission required for this request type."
+        )
     source = "open" if kind == "close" else "closed"
     if ticket.get("status") != source:
         return store.Transition(
@@ -167,6 +251,10 @@ async def change(
             "The recruit thread was deleted. Create a new ticket instead.",
         )
     extra = {"closure_reason" if kind == "close" else "reopen_reason": reason.strip()}
+    if kind == "reopen":
+        extra["reopen_trigger"] = {"kind": "staff"}
+    if member_authorized:
+        extra["reopen_trigger"] = {"kind": "member_message", "message_id": int(member_message.id)}
     claim = None
     if kind == "reopen":
         workflow = f"reopen:{ticket_id}:{uuid.uuid4().hex}"
@@ -225,6 +313,7 @@ async def change(
         expected_inactivity_token=expected_inactivity_token,
         effect_kind=kind,
         extra=extra,
+        member_reopen=member_authorized,
     )
     if result.won:
         resolve._schedule_resolution_effects(bot, mongo, result.doc)

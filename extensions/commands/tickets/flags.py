@@ -108,11 +108,13 @@ async def flag_identity_from_context(ctx, mongo, discord_ids, player_tags):
     """Infer only when neither identity option was supplied; never mix targets."""
     if discord_ids or player_tags:
         return discord_ids, player_tags
-    if not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+    if not await perms.is_ticket_staff(getattr(ctx, "member", None), mongo):
         return (), ()  # The authoritative write authorization returns the denial.
     document = await store.find_by_location(mongo, ctx.channel_id)
     if not document or int(document.get("guild_id") or 0) != int(ctx.guild_id or 0):
         raise ValueError("Run this command in the recruit's ticket or staff thread, or supply discord-ids or player-tags.")
+    if not await perms.can_handle(getattr(ctx, "member", None), mongo, document.get("ticket_type")):
+        raise ValueError("You cannot manage flags from this request type.")
     applicant = document.get("user_id")
     if not applicant:
         raise ValueError("This ticket has no applicant identity. Supply discord-ids or player-tags.")
@@ -140,7 +142,7 @@ class FlagAddCommand(
     )
     reason = lightbulb.string(
         "reason",
-        "Short staff reason. Staff see it on every matching ticket",
+        "Staff reason. Ghosted also closes the matching open ticket in this channel.",
         min_length=2,
         max_length=500,
     )
@@ -172,6 +174,27 @@ class FlagAddCommand(
             discord_ids = _discord_ids(self.discord_ids)
             player_tags = _tags(self.player_tags)
             discord_ids, player_tags = await flag_identity_from_context(ctx, mongo, discord_ids, player_tags)
+            if self.kind == flag_store.FLAG_GHOSTED:
+                current = await store.find_by_location(mongo, ctx.channel_id)
+                canonical_id = str((current or {}).get("user_id") or "")
+                canonical_tags = set((current or {}).get("player_tags") or ())
+                exact_current_target = bool(current and
+                    int(current.get("guild_id") or 0) == int(ctx.guild_id or 0) and
+                    ((set(map(str, discord_ids)) == {canonical_id} and set(player_tags) <= canonical_tags)
+                     or (not discord_ids and player_tags and set(player_tags) <= canonical_tags)))
+                if exact_current_target:
+                    if current.get("ticket_type") == "staff":
+                        raise ValueError("Contact staff requests cannot be Ghosted.")
+                    if current.get("status") == "open":
+                        from . import inactivity
+                        closed = await inactivity.apply_manual_ghosted(
+                            bot, mongo, ticket=current, member=ctx.member,
+                            actor_name=ctx.user.username, reason=self.reason,
+                        )
+                        await _reply(ctx, "Ticket closed as Ghosted" if closed.won else "Ticket not changed",
+                            closed.reason or "The ticket changed. Open its details again.",
+                            accent=ACCENT_GREEN if closed.won else ACCENT_RED)
+                        return
             result = await flag_store.set_flag_authorized(
                 mongo,
                 member=ctx.member,

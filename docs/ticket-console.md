@@ -31,29 +31,48 @@ link-out rather than an automatic verdict.
 
 ## 1. One console for both clan types
 
-Main and FWA share the Recruiter HQ console. It consists of two stacked,
-bot-owned messages: a read-only statistics panel and an open-ticket action panel.
+The staff console is "Ticket Command". It consists of two stacked, bot-owned
+messages: a read-only statistics panel and an open-ticket action panel. All
+four ticket types (Main, FWA, Add account, Staff) appear in the action panel.
 
 ## 2. Two persistent panels with private ticket actions
 
 The first panel contains the current totals, Main/FWA breakdowns, charts, and
 flag summaries. It has no buttons, dropdowns, or footer.
 
-The second panel lists open tickets directly, oldest first, three per page. Each
-entry shows the ticket's readable name and applicable Ghosted prefix, followed by:
+The second panel has an "Open tickets" header and three type dropdowns, one
+row each:
 
-- **View Details** — the same private ticket details formerly opened by the dropdown.
-- **Recruit Thread** — a direct link to the applicant's thread.
-- **Staff Thread** — a direct link to its recruiter workspace.
-- **Approve** — the existing private approval confirmation and decision safeguards.
-- **Deny** — the reason form, followed by the existing authorized denial workflow.
+| Dropdown     | Placeholder             | Tickets                |
+| ------------ | ----------------------- | ---------------------- |
+| New recruits | `New recruits (N open)` | types `main` and `fwa` |
+| Add account  | `Add account (N open)`  | type `account`         |
+| Staff        | `Staff (N open)`        | type `staff`           |
 
-Each ticket has one row for Details and thread links, then a separate row for
-Approve/Deny. Separators divide tickets and the Console tools section.
-Previous/Next appear only when multiple pages exist and navigate the shared ticket list. Find, Browse, Refresh, and Create for Recruit remain
-available below it. The update timestamp and total-ticket footer appear only in
-this second panel. Pagination keeps every open ticket reachable within Discord's
-component limits; it does not truncate the queue at 25 tickets.
+Each dropdown lists up to 25 open tickets, oldest first (`created_at`, then
+`_id`), via `store.list_open_by_types`. An option shows the ticket's readable
+label `Type #n · name`, the type emoji (🏆 main, 💎 fwa, ➕ account, 💬 staff),
+and `type · opened YYYY-MM-DD UTC`. Labels use the stored display name rather
+than making a per-row flag/name lookup. When more than 25
+are open the placeholder adds ` · 25 shown`; the rest stay reachable through
+Find and Browse. A type with no open tickets shows one "No open tickets"
+option and the dropdown is disabled. N comes from `console_counts`.
+
+Selecting an option opens the same private details panel that View Details
+formerly opened (`ticket_v2_hub_open` delegates to `ticket_hub_details`). It
+rechecks recruiter access, `perms.can_handle` for that ticket's type, and that
+the ticket is still open; otherwise the clicker gets a private notice and
+nothing is written. The details panel holds the thread links and the
+Approve / Deny / Close (Done for staff) actions. The shared message never
+changes for one person's selection.
+
+Below the dropdowns: Console tools (Find Ticket, Browse Tickets, Member History,
+Flags, Refresh), then Create for Recruit and Admin Settings, then a footer
+"**N open tickets** · Oldest first", the update time and the total-ticket
+count. There is no paging. Old `ticket_v2_hub_page:previous` / `next` and the
+old `ticket_v2_hub_details` / `ticket_v2_hub_closure` ids stay registered so
+components on older messages still answer (page ids just refresh). The panel
+uses 20 components, well under Discord's limit of 40.
 
 Ticket decisions and details are private to the clicking recruiter. They never
 replace the shared action panel with a personal result. Each private action gets
@@ -63,7 +82,7 @@ status/revision safeguards.
 Both messages have durable bindings in the console's MongoDB state. Creation,
 approval, denial, and flag changes refresh the shared panels automatically.
 Interrupted publishing and missing messages are repaired without creating another
-console. Private detail panels remain snapshots; reopen View Details to see the
+console. Private detail panels remain snapshots; select the ticket again in Ticket Command to see the
 latest state.
 
 ## Staff-created tickets
@@ -103,7 +122,7 @@ The pragmatic/max-flash split in the original proposal (§2.4–2.5) is
 resolved: **build max-flash.** Every "free" item in the old flash column
 (state-driven accent color, `<t:…:R>` relative timestamps) ships. The one
 item flagged as a real dependency — the server-rendered PNG chart — ships
-too, as the header, not as an addition to a text Section: it *replaces* the
+too, as the header, not as an addition to a text Section: it _replaces_ the
 Section+Thumbnail+stat-text block from §2.4 entirely. One Pillow image
 (`ticket_overview.png`, redrawn by `refresh_hub()`, no Cloudinary needed —
 it's a message attachment, not a stable-URL asset) carries the open/
@@ -119,24 +138,24 @@ space. Nothing changed there.
 
 Worth stating plainly because it was a live source of confusion during
 review: `ticket_overview.png` is a **PNG attachment**, not components. The
-40-component / ~4000-character budget in §4 governs the message *around* it
+40-component / ~4000-character budget in §4 governs the message _around_ it
 and nothing inside it. Layout, color, typography and iconography in the
 chart are unconstrained — the only real limits are Pillow and the fonts
 present on the deploy box.
 
 ### 3.2 Palette — vibrant, no colorblind constraint
 
-| Role | Hex | Notes |
-|---|---|---|
-| Approved | `#4bce7a` | |
-| New / open | `#4a90f5` | |
-| Denied | `#f0555a` | |
-| Blacklisted | `#dd1c1d` | sampled from the supplied flag icon |
-| Previously denied | `#ffcc00` | sampled from the supplied flag icon |
-| Not loyal to WU | `#f17511` | sampled from the supplied flag icon |
-| Ghosted | `#08c3fa` | sampled from the supplied flag icon |
-| Canvas / card | `#0b1018` / `#111822` | |
-| Ink / muted / faint | `#f2f3f5` / `#b5bac1` / `#80848e` | |
+| Role                | Hex                               | Notes                               |
+| ------------------- | --------------------------------- | ----------------------------------- |
+| Approved            | `#4bce7a`                         |                                     |
+| New / open          | `#4a90f5`                         |                                     |
+| Denied              | `#f0555a`                         |                                     |
+| Blacklisted         | `#dd1c1d`                         | sampled from the supplied flag icon |
+| Previously denied   | `#ffcc00`                         | sampled from the supplied flag icon |
+| Not loyal to WU     | `#f17511`                         | sampled from the supplied flag icon |
+| Ghosted             | `#08c3fa`                         | sampled from the supplied flag icon |
+| Canvas / card       | `#0b1018` / `#111822`             |                                     |
+| Ink / muted / faint | `#f2f3f5` / `#b5bac1` / `#80848e` |                                     |
 
 Card fills are the accent blended toward the background (`tint()`, 16–18%)
 with a 1px accent outline — not flat gray panels.
@@ -145,9 +164,9 @@ with a 1px accent outline — not flat gray panels.
 (`#43a25a` / `#7b83f0` / `#e0656a`) validated with the `dataviz`
 colorblind/CVD six-check battery. That is rescinded and must not be
 reinstated.** Colorblind safety was never a requirement here — it was
-self-imposed during design and explicitly struck: *"I don't like the
+self-imposed during design and explicitly struck: _"I don't like the
 colorblind version and we don't have color blind and I never made that
-something for you to follow. I just said Non Native English speakers."*
+something for you to follow. I just said Non Native English speakers."_
 The four flag hexes above are sampled directly from the artwork rather
 than chosen, so they match their icons exactly. The only standing
 audience requirement is the plain-English copy rule in §8.
@@ -166,13 +185,13 @@ Top to bottom, full width (`1400×740`, 2× supersampled then downscaled):
    top-right of each tile, oversized count, label beneath.
 3. **By clan type** — one row per type. Real Main/FWA badge artwork, the
    type name, a plain-English breakdown line (`1 approved · 1 new/open · 1
-   denied`), a segmented bar, and `N total`. This retained full-overview
+denied`), a segmented bar, and `N total`. This retained full-overview
    reference uses its original shared comparison scale; the current native hub
    uses separate per-clan bar images described above.
-4. **Flags** — directly *underneath* by-clan-type (moved there deliberately),
+4. **Flags** — directly _underneath_ by-clan-type (moved there deliberately),
    as four slim full-width artwork rows: icon, label, count.
 5. **Footer** — one monospace line: `drawn by WU Wizard · attached to the
-   message · redrawn when a ticket changes`.
+message · redrawn when a ticket changes`.
 
 ### 3.4 Icons: real PNG assets or hand-drawn shapes — never emoji glyphs
 
@@ -185,15 +204,15 @@ nothing at all on the Hetzner box. Two sanctioned approaches only:
   content via `getbbox()` and centered) — seven assets, all verified as
   genuine RGBA transparency, not white-matted:
 
-  | Asset | Used for |
-  |---|---|
-  | `flag_blacklisted.png` | Blacklisted — red slash over WU wings |
+  | Asset                    | Used for                                    |
+  | ------------------------ | ------------------------------------------- |
+  | `flag_blacklisted.png`   | Blacklisted — red slash over WU wings       |
   | `flag_denied_before.png` | Previously denied — yellow warning triangle |
-  | `flag_not_loyal.png` | Not loyal to WU — orange broken heart |
-  | `flag_ghosted.png` | Ghosted — cyan supplied artwork |
-  | `flag_flew_the_coop.png` | Flew the Coop — purple supplied artwork |
-  | `clan_main.png` | Main clan badge |
-  | `clan_fwa.png` | FWA clan badge |
+  | `flag_not_loyal.png`     | Not loyal to WU — orange broken heart       |
+  | `flag_ghosted.png`       | Ghosted — cyan supplied artwork             |
+  | `flag_flew_the_coop.png` | Flew the Coop — purple supplied artwork     |
+  | `clan_main.png`          | Main clan badge                             |
+  | `clan_fwa.png`           | FWA clan badge                              |
 
 - **Hand-drawn PIL primitives** for everything else — plain geometry, no
   font dependency, identical on any box. In use: check, plus and × (the
@@ -218,12 +237,12 @@ worker threads with the existing overview image, never on the gateway loop.
 **Inputs, and only these three:** Discord ID, player tag, or username.
 Nothing else. The bot validates the text after submit:
 
-| Input | Rule | Rejection copy |
-|---|---|---|
-| Discord ID | 17–20 digits, numeric only | "That is not a Discord ID. A Discord ID has 17 to 20 numbers. Ticket numbers do not work here." |
-| Player tag | starts `#`, then 3–9 alphanumerics | "That is not a player tag. A player tag is 3 to 9 letters and numbers after the #." |
-| Username | 2–32 chars, `[\w .-]` | falls through to username, no separate error |
-| anything else | — | "Use a Discord ID, a player tag (start it with #), or a username. Enter only one of these values." |
+| Input         | Rule                               | Rejection copy                                                                                     |
+| ------------- | ---------------------------------- | -------------------------------------------------------------------------------------------------- |
+| Discord ID    | 17–20 digits, numeric only         | "That is not a Discord ID. A Discord ID has 17 to 20 numbers. Ticket numbers do not work here."    |
+| Player tag    | starts `#`, then 3–9 alphanumerics | "That is not a player tag. A player tag is 3 to 9 letters and numbers after the #."                |
+| Username      | 2–32 chars, `[\w .-]`              | falls through to username, no separate error                                                       |
+| anything else | —                                  | "Use a Discord ID, a player tag (start it with #), or a username. Enter only one of these values." |
 
 Entry points: the `🔍 Find a ticket` button on the console, and a
 `/tickets find` slash command reachable from anywhere (not just the channel
@@ -234,13 +253,13 @@ Archive's).
 
 ### ⚠️ Correction: Status/Clan-type cannot live inside the modal
 
-The mockup's "Find a ticket" modal shows a text field *and* two select
+The mockup's "Find a ticket" modal shows a text field _and_ two select
 dropdowns (Status, Clan type) in one submit. **That is not buildable on this
 stack.** [`components-v2-in-hikari.md`](components-v2-in-hikari.md) already
 established why, for a different feature, and it applies verbatim here:
 
 > `ModalActionRowBuilderComponentsT = TextInputBuilder` — that is the entire
-> allowed set, at 2.3.5 *and* at 2.5.0. `LabelComponentBuilder` does not
+> allowed set, at 2.3.5 _and_ at 2.5.0. `LabelComponentBuilder` does not
 > exist in any hikari version, and Discord requires selects in modals to be
 > Label-wrapped. Multi-axis filtering must therefore use select menus on a
 > message (one interaction per axis), with modals reserved for **free-text
@@ -277,11 +296,11 @@ Entry point: the `📋 Browse tickets` button opens a fresh ephemeral panel with
 every filter defaulted to "All" and page 1, the same `_execute_private_panel`
 mechanism Find already uses. From there, the three selects
 (`min_values: 1`, always one value chosen — never the clearable
-`min_values: 0` selects Search uses, since Browse always shows *some* list)
+`min_values: 0` selects Search uses, since Browse always shows _some_ list)
 each re-render the panel in place and reset to page 1; Prev/Next re-render
 one page over, clamped at the ends. Choosing a ticket from the **Open a
 ticket** select opens the same ticket detail panel Search's View buttons and
-the shared console’s View Details buttons open (`_ticket_detail_panel`).
+the Ticket Command dropdowns open (`_ticket_detail_panel`).
 
 Each row: `{TYPE} #{number} · {mention} · {status emoji + word} · <t:created:R>`,
 one page per Text block (not a Section per row — Browse has no per-row
@@ -323,7 +342,7 @@ survives each individual selection.
 
 `_browse_since` returns a `(since, until)` pair: every preset keeps `until`
 `None` (open-ended), while Custom range sets `since` to the first moment
-(UTC) of the From month and `until` to the first moment of the month *after*
+(UTC) of the From month and `until` to the first moment of the month _after_
 the To month — exclusive, so a December `custom_to` rolls into the following
 January correctly. `store._browse_filter` takes `until` alongside `since` and
 adds it to the same `created_at` sub-document as `$lt`; `store.browse`/
@@ -343,12 +362,12 @@ hint only and never joins this identity, so it cannot bind an applicant to
 someone else's flag. Either identity match is sufficient, and only one kind
 blocks approval:
 
-| Kind | Blocks Approve? | Source |
-|---|---|---|
-| Blacklisted | **Yes** | FWA ban verified by a recruiter on FWA Chocolate |
-| Previously denied | No — caution only | Warriors United ticket history |
-| Not loyal to WU | No — caution only | Warriors United recruiter note |
-| Ghosted | No — caution only | Warriors United recruiter ghosting report |
+| Kind              | Blocks Approve?   | Source                                           |
+| ----------------- | ----------------- | ------------------------------------------------ |
+| Blacklisted       | **Yes**           | FWA ban verified by a recruiter on FWA Chocolate |
+| Previously denied | No — caution only | Warriors United ticket history                   |
+| Not loyal to WU   | No — caution only | Warriors United recruiter note                   |
+| Ghosted           | No — caution only | Warriors United recruiter ghosting report        |
 
 The chart uses **PREVIOUSLY DENIED** for the
 `Previously denied` count. **Blacklisted**, not “On blacklist,” is the
@@ -435,6 +454,7 @@ includes prior-ticket links independently of the flag system. Un-cloned legacy
 rows remain outside this console:
 
 > ### This person has opened a ticket before.
+>
 > Open the earlier thread and read it before you answer here.
 >
 > **FWA #167** · ❌ Denied — Got his butt hurt and left
@@ -519,14 +539,14 @@ a rules violation to anyone who takes it literally.
 
 The implemented runtime and its visual references are separate:
 
-| Path | What it is |
-|---|---|
-| `extensions/commands/tickets/console.py` | Implemented console, ticket-detail, Manage Flags, staff-context, and automatic Chocolate flows. |
-| `extensions/commands/tickets/console_render.py` | Implemented Pillow chart renderer used by the persistent hub. |
-| `docs/ticket-console/README.md` | Registered-command reference and post-legacy naming plan. |
-| `docs/ticket-console/render_overview.py` | Standalone visual reference renderer. It is not imported by the runtime. |
-| `docs/ticket-console/ticket-console-mockup.html` | Clickable pre-implementation visual reference. It is not runtime authority. |
-| `assets/tickets/*.png` | The five icon assets from §3.4, at source resolution with real alpha. Production assets — the renderer loads them at these paths. |
+| Path                                             | What it is                                                                                                                        |
+| ------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- |
+| `extensions/commands/tickets/console.py`         | Implemented console, ticket-detail, Manage Flags, staff-context, and automatic Chocolate flows.                                   |
+| `extensions/commands/tickets/console_render.py`  | Implemented Pillow chart renderer used by the persistent hub.                                                                     |
+| `docs/ticket-console/README.md`                  | Registered-command reference and post-legacy naming plan.                                                                         |
+| `docs/ticket-console/render_overview.py`         | Standalone visual reference renderer. It is not imported by the runtime.                                                          |
+| `docs/ticket-console/ticket-console-mockup.html` | Clickable pre-implementation visual reference. It is not runtime authority.                                                       |
+| `assets/tickets/*.png`                           | The five icon assets from §3.4, at source resolution with real alpha. Production assets — the renderer loads them at these paths. |
 
 The README under `docs/ticket-console/` is the command reference; the HTML and
 standalone renderer there are reference artifacts. The runtime console imports
@@ -545,3 +565,22 @@ own HTML render fine and are used deliberately.
   implemented terminal-ticket clone into searchable threads.
 - [ticket-console-operations.md](ticket-console-operations.md) — the operator
   authority, account, flag, decision, recovery, and thread-lifecycle contract.
+
+## Prompt 261 completion review
+
+Warrior Desk adds account approved/open/denied and staff done/open statistics,
+with a separate bar drawn by the existing clan-bar renderer. Original chart,
+clan thumbnails, five flag images, questionnaire images and footer assets are
+retained; the cached PR307 chart-title alteration was removed. Dropdown labels
+are bounded canonical type/number/name labels with absolute dates and no N+1
+lookup. The old shared approve/deny/close controls are no longer rendered; their
+registered aliases can only refresh or explain that an old modal expired.
+
+Private account actions use per-type authority, including both recruiter roles;
+Link account retains weight authorization. Contact staff has Done and no Ghosted
+set control. The Done note is labelled “Note for the member (shown in their
+thread)”. Manual Ghosted on an open non-staff ticket reuses the inactivity Close
+receipt/CAS/effects with the same reason; terminal rows are not closed again.
+Newer flag edits survive recovery. See [Warrior Desk](warrior-desk.md) for the
+permission matrix, private membership, 60-day member-message reopening, guided
+setup and exact evidence limits. Mocked notifications are not live delivery proof.

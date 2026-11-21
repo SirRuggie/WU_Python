@@ -1790,6 +1790,16 @@ def test_reclick_reply_survives_reaccess_failure(monkeypatch):
     assert "https://discord.com/channels/11/999" in edits[-1]["content"]
 
 
+def _my_ticket_fixture(monkeypatch, rows):
+    from unittest.mock import AsyncMock
+    async def visible(_mongo, *, user_id, guild_id, at, limit):
+        assert user_id == 50 and guild_id == 11 and limit == 10
+        return [row for row in rows if row.get('guild_id') == guild_id]
+    monkeypatch.setattr(handlers.store, 'member_visible_tickets', visible)
+    return SimpleNamespace(ticket_setup=SimpleNamespace(
+        find_one=AsyncMock(return_value={'ticket_target_guild_id': 11})))
+
+
 def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
     edits = []
     ticket_doc = {
@@ -1801,9 +1811,6 @@ def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
         "ticket_type": "main",
     }
 
-    async def find_open(_mongo, *, user_id, ticket_type):
-        assert user_id == 50
-        return ticket_doc if ticket_type == "main" else None
 
     reaccess_calls = []
 
@@ -1811,14 +1818,13 @@ def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
         reaccess_calls.append((ticket["_id"], user_id))
         return True
 
-    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
     monkeypatch.setattr(
         handlers.thread_service, "ensure_candidate_thread_access", ensure_access
     )
     ctx = _pilot_context(edits)
 
     asyncio.run(handlers.handle_my_ticket(
-        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=_my_ticket_fixture(monkeypatch, [ticket_doc]),
     ))
 
     assert reaccess_calls == [("ticket_9", 50)]
@@ -1832,98 +1838,40 @@ def test_my_ticket_button_shows_open_ticket_link_and_reaccesses(monkeypatch):
     assert all("flag" not in getattr(item, "content", "").lower() for item in panel.components)
 
 
-def test_my_ticket_button_links_the_tickets_own_server_not_the_viewers(monkeypatch):
-    """The applicant's open ticket can be bound to a different server than
-    the one they clicked "My ticket" in during the two-server rollout. A
-    bare `<#id>` mention only resolves in its own guild and shows as
-    nothing elsewhere, so this reply must jump-link using the ticket's own
-    guild_id, not ctx.guild_id."""
+def test_my_ticket_button_excludes_another_guild_for_same_member(monkeypatch):
+    from unittest.mock import AsyncMock
     edits = []
-    ticket_doc = {
-        "_id": "ticket_9",
-        "location": {"id": 777, "staff_space_id": 778},
-        "guild_id": 77,
-        "user_id": 50,
-        "status": "open",
-        "ticket_type": "main",
-    }
-
-    async def find_open(_mongo, *, user_id, ticket_type):
-        return ticket_doc if ticket_type == "main" else None
-
-    async def ensure_access(*_args, **_kwargs):
-        return True
-
-    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
-    monkeypatch.setattr(
-        handlers.thread_service, "ensure_candidate_thread_access", ensure_access
-    )
-    ctx = _pilot_context(edits)  # ctx.guild_id is 11; the ticket's is 77.
-
-    asyncio.run(handlers.handle_my_ticket(
-        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
-    ))
-
-    button = edits[-1]["components"][0].components[-1].components[0]
-    assert button.url == "https://discord.com/channels/77/777"
+    foreign = dict(_id='ticket_9', guild_id=77, user_id=50, status='open',
+                   ticket_type='main', location={'id':777,'staff_space_id':778})
+    access = AsyncMock()
+    monkeypatch.setattr(handlers.thread_service, 'ensure_candidate_thread_access', access)
+    asyncio.run(handlers.handle_my_ticket(_pilot_context(edits), '',
+        bot=SimpleNamespace(rest=SimpleNamespace()), mongo=_my_ticket_fixture(monkeypatch,[foreign])))
+    assert 'no ticket available' in edits[-1]['content']
+    assert '/77/' not in repr(edits)
+    access.assert_not_awaited()
 
 
-@pytest.mark.parametrize("status", ["denied", "closed"])
-def test_my_ticket_button_shows_history_when_no_open_ticket(monkeypatch, status):
-    edits = []
-
-    async def find_open(_mongo, *, user_id, ticket_type):
-        return None
-
-    history = [{
-        "ticket_type": "main",
-        "ticket_number": 198,
-        "status": status,
-        f"{status}_at": datetime(2026, 8, 1, tzinfo=timezone.utc),
-        "guild_id": 11,
-        "location": {"id": 555},
-    }]
-
-    async def history_for(_mongo, *, user_id, limit):
-        assert user_id == 50
-        assert limit == handlers.MAX_MY_TICKET_HISTORY
-        return history
-
-    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
-    monkeypatch.setattr(handlers.store, "history_for", history_for)
-    ctx = _pilot_context(edits)
-
-    asyncio.run(handlers.handle_my_ticket(
-        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
-    ))
-
-    panel = edits[-1]["components"][0]
-    content = "\n".join(getattr(item, "content", "") for item in panel.components)
-    assert "Main #198" in content
-    assert status.title() in content
-    assert ":f>" in content
-    assert panel.components[-1].components[0].url == "https://discord.com/channels/11/555"
-    assert edits[-1]["role_mentions"] is False
+@pytest.mark.parametrize('status', ['denied', 'approved', 'closed'])
+def test_my_ticket_button_has_no_terminal_history_disclosure(monkeypatch, status):
+    from unittest.mock import AsyncMock
+    edits=[]
+    # Storage owns terminal/window exclusion. No fallback history query may run.
+    history=AsyncMock(side_effect=AssertionError('retired history query'))
+    monkeypatch.setattr(handlers.store,'history_for',history)
+    asyncio.run(handlers.handle_my_ticket(_pilot_context(edits),'',
+        bot=SimpleNamespace(rest=SimpleNamespace()), mongo=_my_ticket_fixture(monkeypatch,[])))
+    assert 'no ticket available' in edits[-1]['content']
+    assert status.title() not in repr(edits)
+    history.assert_not_awaited()
 
 
 def test_my_ticket_button_hints_when_nothing_found(monkeypatch):
-    edits = []
-
-    async def find_open(_mongo, *, user_id, ticket_type):
-        return None
-
-    async def history_for(_mongo, *, user_id, limit):
-        return []
-
-    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
-    monkeypatch.setattr(handlers.store, "history_for", history_for)
-    ctx = _pilot_context(edits)
-
-    asyncio.run(handlers.handle_my_ticket(
-        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
-    ))
-
-    assert "no ticket yet" in edits[-1]["content"]
+    edits=[]
+    asyncio.run(handlers.handle_my_ticket(_pilot_context(edits),'',
+        bot=SimpleNamespace(rest=SimpleNamespace()), mongo=_my_ticket_fixture(monkeypatch,[])))
+    assert 'no ticket available' in edits[-1]['content']
+    assert 'Select a ticket type to start one' in edits[-1]['content']
 
 
 def test_thread_delete_event_marks_ticket_thread_missing_and_releases_slot(monkeypatch):
@@ -2060,11 +2008,10 @@ def test_my_ticket_button_with_thread_missing_ticket_releases_slot(monkeypatch):
         "guild_id": 11,
         "user_id": 50,
         "ticket_type": "main",
+        "status": "open",
         "thread_missing": {"thread_role": "candidate"},
     }
 
-    async def find_open(_mongo, *, user_id, ticket_type):
-        return ticket_doc if ticket_type == "main" else None
 
     released = []
 
@@ -2077,7 +2024,6 @@ def test_my_ticket_button_with_thread_missing_ticket_releases_slot(monkeypatch):
         reaccess_calls.append(True)
         return True
 
-    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
     monkeypatch.setattr(handlers, "_release_slot_for_missing_thread", release)
     monkeypatch.setattr(
         handlers.thread_service, "ensure_candidate_thread_access", ensure_access
@@ -2085,12 +2031,12 @@ def test_my_ticket_button_with_thread_missing_ticket_releases_slot(monkeypatch):
     ctx = _pilot_context(edits)
 
     asyncio.run(handlers.handle_my_ticket(
-        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=_my_ticket_fixture(monkeypatch, [ticket_doc]),
     ))
 
     assert released == ["ticket_9"]
     assert reaccess_calls == []
-    assert "removed" in edits[-1]["content"]
+    assert "no ticket available" in edits[-1]["content"]
     assert "<#777>" not in edits[-1]["content"]
 
 
@@ -2107,11 +2053,10 @@ def test_my_ticket_button_with_staff_thread_missing_keeps_the_candidate_link(
         "guild_id": 11,
         "user_id": 50,
         "ticket_type": "main",
+        "status": "open",
         "thread_missing": {"thread_role": "staff"},
     }
 
-    async def find_open(_mongo, *, user_id, ticket_type):
-        return ticket_doc if ticket_type == "main" else None
 
     released = []
 
@@ -2124,7 +2069,6 @@ def test_my_ticket_button_with_staff_thread_missing_keeps_the_candidate_link(
         reaccess_calls.append(True)
         return True
 
-    monkeypatch.setattr(handlers.store, "find_open_for_applicant", find_open)
     monkeypatch.setattr(handlers, "_release_slot_for_missing_thread", release)
     monkeypatch.setattr(
         handlers.thread_service, "ensure_candidate_thread_access", ensure_access
@@ -2132,7 +2076,7 @@ def test_my_ticket_button_with_staff_thread_missing_keeps_the_candidate_link(
     ctx = _pilot_context(edits)
 
     asyncio.run(handlers.handle_my_ticket(
-        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=SimpleNamespace(),
+        ctx, "", bot=SimpleNamespace(rest=SimpleNamespace()), mongo=_my_ticket_fixture(monkeypatch, [ticket_doc]),
     ))
 
     assert released == []

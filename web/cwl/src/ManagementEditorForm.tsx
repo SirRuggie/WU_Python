@@ -1,3 +1,4 @@
+import WarriorDeskStatus from "./WarriorDeskStatus";
 import type { Dispatch, SetStateAction } from "react";
 import BandStatusSummary from "./BandStatusSummary";
 import TownHallBasesFields from "./TownHallBasesFields";
@@ -155,6 +156,7 @@ export default function ManagementEditorForm({
         if (!duplicate) onSave();
       }}
     >
+      <WarriorDeskStatus document={document} dirty={dirty} />
       {document.readonly && operationsWorkspace ? (
         <BandStatusSummary fields={document.fields} />
       ) : (

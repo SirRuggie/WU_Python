@@ -43,11 +43,12 @@
   overflow: hidden;
 }
 .ticket-row {
+  position: relative;
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: var(--wu-space-3);
-  padding: var(--wu-space-3) var(--wu-space-4);
+  padding: var(--wu-space-3) 5rem var(--wu-space-3) var(--wu-space-4);
   border-bottom: 1px solid var(--wu-border-subtle);
   background: var(--wu-surface);
 }
@@ -58,7 +59,17 @@
   min-width: 0;
   overflow-wrap: anywhere;
 }
-.ticket-row button {
+.ticket-row .ticket-read {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  border-radius: 0;
+  text-align: right;
+  text-decoration: none;
+  color: inherit;
   flex: none;
   min-height: 44px;
   background: transparent;
@@ -69,6 +80,25 @@
   display: block;
   margin-top: var(--wu-space-1);
   color: var(--muted, var(--wu-text-muted));
+}
+.ticket-name-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-2);
+}
+.ticket-row .ticket-type-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--wu-space-1);
+}
+.ticket-name-line .ticket-flags {
+  margin: 0;
+}
+.ticket-name-line .roster-discord-identity button {
+  position: relative;
+  z-index: 1;
 }
 .ticket-flags {
   display: flex;
@@ -186,8 +216,34 @@
   outline-offset: 2px;
 }
 @media (max-width: 650px) {
+  .ticket-toolbar {
+    flex-wrap: nowrap;
+    gap: var(--wu-space-1);
+  }
+  .shell .ticket-toolbar > .section-tabs,
+  .ticket-toolbar > .section-tabs {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .ticket-toolbar > .ticket-filters-trigger {
+    box-sizing: border-box;
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .ticket-filters-trigger > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
   .ticket-row {
-    padding: var(--wu-space-3);
+    padding: var(--wu-space-3) 4.5rem var(--wu-space-3) var(--wu-space-3);
     gap: var(--wu-space-2);
   }
   .ticket-browser input,
@@ -198,4 +254,7 @@
     font-size: var(--wu-text-sm);
     min-height: 44px;
   }
+}
+.ticket-row .ticket-read:focus-visible {
+  outline-offset: -3px;
 }

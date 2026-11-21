@@ -4,6 +4,9 @@ Storage, authorization, auditing and Discord transport remain with their existin
 owners. These helpers preserve the ticket adapter's accepted values and defaults.
 """
 
+DESK_KEYS = ('desk_channel_id', 'desk_staff_parent', 'account_thread_recruiter_role',
+             'staff_thread_recruiter_role')
+
 FIELDS = {
     f'{kind}_{name}'
     for kind in ('main', 'fwa')
@@ -12,7 +15,7 @@ FIELDS = {
     'ticket_staff_viewer_role_ids',
     'ticket_inactivity_minutes',
     'ticket_archive_quiet_days',
-}
+} | set(DESK_KEYS)
 
 
 def validated_settings(values):
@@ -42,6 +45,8 @@ def validated_settings(values):
 
 
 def history_values(cfg, part):
+    if part == 'desk':
+        return {key: str(cfg.get(key) or '') for key in DESK_KEYS}
     if part == 'timers':
         return {
             'ticket_inactivity_minutes': cfg.get('ticket_inactivity_minutes', 10080),
@@ -57,3 +62,29 @@ def history_values(cfg, part):
         f'{part}_{key}': str(cfg.get(f'{part}_{key}') or '')
         for key in ('candidate_parent', 'staff_parent', 'thread_recruiter_role')
     }
+
+
+DESK_REQUIRED_FIELDS = (
+    ("desk_channel_id", "Warrior Desk channel"),
+    ("desk_staff_parent", "Staff thread channel"),
+    ("account_thread_recruiter_role", "Add account staff role"),
+    ("staff_thread_recruiter_role", "Contact staff role"),
+)
+
+
+def desk_readiness(config, *, phase, rollout_valid=True):
+    """Saved prerequisite metadata shared by HTTP and native settings adapters."""
+    missing = []
+    for key, label in DESK_REQUIRED_FIELDS:
+        value = config.get(key)
+        if key == "desk_staff_parent":
+            value = value or config.get("main_staff_parent")
+        try:
+            valid = int(value or 0) > 0
+        except (TypeError, ValueError):
+            valid = False
+        if not valid:
+            missing.append({"key": key, "label": label})
+    if not rollout_valid or phase not in {"thread_default", "thread_only"}:
+        missing.append({"key": "", "label": "Thread-default or thread-only rollout"})
+    return {"ready": not missing, "missing": missing}

@@ -123,6 +123,7 @@ def test_blacklist_on_mentioned_tag_does_not_block_approval_or_console(monkeypat
         return store.Transition(store.WON, resolved)
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(console, "deliver_staff_identity_context", deliver)
     monkeypatch.setattr(resolve, "process_resolution_effects", effects)
@@ -216,6 +217,7 @@ def test_linked_account_tag_still_lands_in_player_tags_and_blocks_approval(monke
         return {"_id": "flag_new"} if "#NEW123" in player_tags else None
 
     monkeypatch.setattr(resolve.perms, "is_recruiter", recruiter)
+    monkeypatch.setattr(resolve.perms, "can_handle", lambda member, mongo, ticket_type: resolve.perms.is_recruiter(member, mongo))
     monkeypatch.setattr(account_sync, "load_accounts", load)
     monkeypatch.setattr(resolve.flag_store, "active_blacklist", blacklist)
     result = asyncio.run(resolve.approve_ticket(

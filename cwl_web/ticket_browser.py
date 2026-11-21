@@ -2,11 +2,10 @@
 import re
 import time
 from datetime import datetime, timedelta, timezone
-from types import SimpleNamespace
 from urllib.parse import urlparse
 from aiohttp import web
 from .server_management import API, GUILD_ID, identity, allowed, mongo, discord
-from extensions.commands.tickets.perms import is_recruiter
+from utils.ticket_access import allowed_types_from_config
 from extensions.commands.tickets.store import RUNTIME_FILTER, BROWSE_PROJECTION
 from extensions.commands.tickets import flag_store
 
@@ -25,11 +24,14 @@ async def authorize(request, db):
     actor = await identity(request)
     if not await allowed(actor, 'ticket_settings', db):
         raise web.HTTPForbidden(text='Ticket dashboard access is required.')
-    member = SimpleNamespace(id=int(actor['user_id']), guild_id=GUILD_ID,
-                             role_ids=actor['role_ids'], permissions=actor['permissions'])
-    if not await is_recruiter(member, db):
-        raise web.HTTPForbidden(text='Discord recruiter access is required to read tickets.')
-    return actor
+    config = await db.ticket_setup.find_one({"_id": "config"}) or {}
+    types = allowed_types_from_config(
+        config, guild_id=GUILD_ID, role_ids=actor['role_ids'],
+        administrator=bool(actor['permissions'] & (1 << 3)),
+    )
+    if not types:
+        raise web.HTTPForbidden(text='Discord ticket staff access is required to read tickets.')
+    return {**actor, "_ticket_types": sorted(types)}
 
 def date_value(raw):
     try:
@@ -37,15 +39,28 @@ def date_value(raw):
     except (ValueError, TypeError):
         raise web.HTTPBadRequest(text="Select a valid date.")
 
-def filters(params, flag_identities=None):
+def filters(params, flag_identities=None, allowed_types=None):
     query = {**RUNTIME_FILTER, 'guild_id': GUILD_ID}
     status = params.get('status', 'closed')
     if status == 'closed': query['status'] = {'$in':['approved','denied','closed']}
     elif status in {'open','approved','denied'}: query['status'] = status
     elif status != 'all': raise web.HTTPBadRequest(text="Select a ticket status.")
-    kind = params.get('kind','all')
-    if kind in {'main','fwa'}: query['ticket_type'] = kind
-    elif kind != 'all': raise web.HTTPBadRequest(text="Select Main, FWA or All.")
+    groups = {
+        'all': {'main','fwa','account','staff'}, 'recruit': {'main','fwa'},
+        'account': {'account'}, 'staff': {'staff'}, 'main': {'main'}, 'fwa': {'fwa'},
+    }
+    # The new type URL wins when present; old kind=main/fwa links remain valid.
+    kind = params.get('type', params.get('kind', 'all'))
+    if kind not in groups:
+        raise web.HTTPBadRequest(text="Select Recruits, Accounts, Staff or All.")
+    allowed_scope = set(groups['all'] if allowed_types is None else allowed_types)
+    requested = groups[kind]
+    if kind != 'all' and not requested <= allowed_scope:
+        raise web.HTTPForbidden(text="You do not have access to this ticket type.")
+    scoped = requested & allowed_scope
+    if not scoped:
+        raise web.HTTPForbidden(text="No ticket types are available to this account.")
+    query['ticket_type'] = kind if kind in {'main','fwa'} else {'$in': sorted(scoped)}
     flag_kind = params.get('flag', 'all')
     if flag_kind != 'all' and flag_kind not in FLAG_LABELS:
         raise web.HTTPBadRequest(text="Select a valid applicant flag.")
@@ -124,7 +139,9 @@ async def listing(request):
     except ValueError: raise web.HTTPBadRequest(text='Invalid page.')
     if not 1<=page<=10000: raise web.HTTPBadRequest(text='Invalid page.')
     async with mongo(request) as db:
-        await authorize(request, db)
+        actor = await authorize(request, db)
+        actor_types = actor["_ticket_types"]
+        query = filters(request.query, allowed_types=actor_types)
         active_flag_identities = {}
         if hasattr(db, 'ticket_flags'):
             text = str(request.query.get('q', '')).strip().casefold()
@@ -134,10 +151,12 @@ async def listing(request):
             for flag_kind in requested_flags:
                 if flag_kind in FLAG_LABELS:
                     active_flag_identities[flag_kind] = await flag_store.active_identities_for_kind(db, flag_kind)
-            query = filters(request.query, active_flag_identities)
+            query = filters(request.query, active_flag_identities, actor_types)
         rows=await db.tickets.find(query,{**BROWSE_PROJECTION,'display_name':1,'player_tags':1,'linked_accounts':1,'player_tag':1,'playerTags':1,'tag':1}).sort([('created_at',-1),('_id',-1)]).skip((page-1)*PAGE_SIZE).limit(PAGE_SIZE+1).to_list(length=PAGE_SIZE+1)
         tickets = await _flags_for_rows(db, rows[:PAGE_SIZE])
-    return web.json_response({'tickets':tickets,'has_more':len(rows)>PAGE_SIZE,'page':page})
+    response=web.json_response({'tickets':tickets,'has_more':len(rows)>PAGE_SIZE,'page':page, 'allowed_types':actor_types})
+    response.headers['Cache-Control']='no-store'
+    return response
 
 def effective_permissions(actor, channel):
     permissions=int(actor['permissions'])
@@ -229,9 +248,12 @@ async def conversation(request):
     if before and not re.fullmatch(r'[0-9]{1,22}',before):raise web.HTTPBadRequest(text='Invalid message page.')
     async with mongo(request) as db:
         actor=await authorize(request,db)
-        row=await db.tickets.find_one({**RUNTIME_FILTER,'guild_id':GUILD_ID,'_id':ticket_id}, {**BROWSE_PROJECTION,'player_tags':1,'linked_accounts':1,'player_tag':1,'playerTags':1,'tag':1})
-        flags = await _ticket_flags(db, row) if row else []
-    if not row:raise web.HTTPNotFound(text='Ticket not found.')
+        row=await db.tickets.find_one({**RUNTIME_FILTER,'guild_id':GUILD_ID,'_id':ticket_id,'ticket_type':{'$in':actor['_ticket_types']}}, {**BROWSE_PROJECTION,'player_tags':1,'linked_accounts':1,'player_tag':1,'playerTags':1,'tag':1})
+        if not row or row.get('ticket_type') not in actor['_ticket_types']:
+            # Identical response for an unknown ID or an out-of-scope ID; never
+            # issue an unscoped existence query which leaks another type.
+            raise web.HTTPForbidden(text='This ticket is unavailable or outside your permitted types.')
+        flags = await _ticket_flags(db, row)
     location=row.get('location') or {}
     channel_id=str(location.get('staff_space_id' if space=='staff' else 'id') or '')
     if not channel_id.isdigit():raise web.HTTPNotFound(text='This ticket has no saved Discord thread.')

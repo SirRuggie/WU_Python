@@ -37,7 +37,7 @@ from pymongo import ReturnDocument
 from pymongo.errors import DuplicateKeyError
 
 from extensions.commands import ticket_runtime
-from extensions.commands.tickets import account_sync, schema, store, testing_service
+from extensions.commands.tickets import account_sync, schema, store, testing_service, perms
 from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils import ticket_staff_content
@@ -128,6 +128,9 @@ class ThreadParents:
     recruiter_role_id: int
     shared_staff_role_ids: tuple[int, ...] = ()
     staff_viewer_role_ids: tuple[int, ...] = ()
+    staff_thread_role_ids: tuple[int, ...] = ()
+    staff_role_config: tuple[tuple[str, int], ...] = ()
+    private_staff: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -215,7 +218,7 @@ _FLEW_THE_COOP_NAME_PREFIX = "🐔 "
 _KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX, _FLEW_THE_COOP_NAME_PREFIX)
 THREAD_NAME_RECONCILE_LEASE = timedelta(minutes=10)
 _CANONICAL_THREAD_NAME = re.compile(
-    r"^(?:staff-)?(?:main|fwa)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    r"^(?:staff-)?(?:main|fwa|account|staff)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
 
 
@@ -552,12 +555,28 @@ async def validate_thread_parents(
             roles=roles,
             channel=channel,
         )
-        missing = required_recruiter & ~recruiter_permissions
+        required = required_recruiter
+        if parents.private_staff:
+            required &= ~hikari.Permissions.MANAGE_THREADS
+        missing = required & ~recruiter_permissions
         if missing:
             raise ThreadConfigurationError(
                 f"recruiter role is missing {_permission_names(missing)} in the {label} parent"
             )
 
+    if parents.private_staff:
+        for handler_id in parents.staff_thread_role_ids:
+            if not any(_as_int(getattr(role, "id", 0)) == handler_id for role in roles):
+                raise ThreadConfigurationError(f"handler role {handler_id} is not in the target guild")
+            handler = type("RoleMember", (), {"id": 0, "role_ids": (handler_id,)})()
+            for label, channel in (("candidate", candidate), ("staff", staff)):
+                effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
+                    member=handler, roles=roles, channel=channel)
+                missing = (hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.READ_MESSAGE_HISTORY
+                           | hikari.Permissions.SEND_MESSAGES_IN_THREADS) & ~effective
+                if missing:
+                    raise ThreadConfigurationError(
+                        f"handler role {handler_id} is missing {_permission_names(missing)} in the {label} parent")
     everyone_role = next(
         (role for role in roles if _as_int(getattr(role, "id", 0)) == parents.guild_id),
         None,
@@ -583,9 +602,26 @@ async def validate_thread_parents(
     bot_role_ids = {_as_int(value) for value in getattr(bot_member, "role_ids", ())}
     authorized_staff_roles = {parents.recruiter_role_id, *parents.shared_staff_role_ids, *parents.staff_viewer_role_ids}
     for role_id, role in roles_by_id.items():
+        role_permissions = hikari.Permissions(getattr(role, "permissions", 0))
+        # Manage Threads bypasses private-thread membership. This readiness gate
+        # applies only to new Desk-enabled private pairs, not historical public
+        # pairs or the legacy runtime.
+        if parents.private_staff and not (
+                role_id in bot_role_ids and bool(getattr(role, "is_managed", False))):
+            for private_parent in (candidate, staff):
+                effective = _effective_permissions(
+                    guild_id=parents.guild_id, owner_id=owner_id,
+                    member=type("RoleMember", (), {"id": 0, "role_ids": (role_id,)})(),
+                    roles=roles, channel=private_parent,
+                )
+                if (not role_permissions & hikari.Permissions.ADMINISTRATOR
+                        and effective & hikari.Permissions.VIEW_CHANNEL
+                        and effective & hikari.Permissions.MANAGE_THREADS):
+                    raise ThreadConfigurationError(
+                        f"non-admin role {role_id} can view all private ticket threads via Manage Threads"
+                    )
         if role_id in {parents.guild_id, *authorized_staff_roles}:
             continue
-        role_permissions = hikari.Permissions(getattr(role, "permissions", 0))
         if role_permissions & hikari.Permissions.ADMINISTRATOR:
             continue
         if role_id in bot_role_ids and bool(getattr(role, "is_managed", False)):
@@ -643,11 +679,30 @@ async def validate_thread_parents(
             roles=roles,
             channel=staff,
         )
+        if (parents.private_staff and effective & hikari.Permissions.VIEW_CHANNEL
+                and effective & hikari.Permissions.MANAGE_THREADS
+                and not effective & hikari.Permissions.ADMINISTRATOR):
+            raise ThreadConfigurationError(
+                f"non-admin member {member_id} can view all private staff threads via Manage Threads"
+            )
         if effective & hikari.Permissions.VIEW_CHANNEL and not authorized:
             raise ThreadConfigurationError(
                 f"non-recruiter member {member_id} can view the staff parent"
             )
 
+    if parents.private_staff:
+        members = await staff_member_snapshot(rest, parents.guild_id)
+        for member in members:
+            if int(member.id) == bot_user_id:
+                continue
+            for label, channel in (("candidate", candidate), ("staff", staff)):
+                effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
+                    member=member, roles=roles, channel=channel)
+                if (not effective & hikari.Permissions.ADMINISTRATOR
+                        and effective & hikari.Permissions.VIEW_CHANNEL
+                        and effective & hikari.Permissions.MANAGE_THREADS):
+                    raise ThreadConfigurationError(
+                        f"non-admin member {member.id} bypasses private membership in the {label} parent")
     if applicant_user_id is not None:
         try:
             applicant = await rest.fetch_member(parents.guild_id, int(applicant_user_id))
@@ -676,38 +731,66 @@ async def validate_thread_parents(
     return candidate, staff
 
 
+def _config_parents(config: Mapping[str, Any], kind: str) -> tuple[int, int, int]:
+    """(candidate parent, staff parent, recruiter role) configured for one type."""
+    role = _as_int(config.get(f"{kind}_thread_recruiter_role"))
+    if kind in schema.DESK_TICKET_TYPES:
+        staff_parent = _as_int(config.get("desk_staff_parent")) or _as_int(
+            config.get("main_staff_parent")
+        )
+        return _as_int(config.get("desk_channel_id")), staff_parent, role
+    return (
+        _as_int(config.get(f"{kind}_candidate_parent")),
+        _as_int(config.get(f"{kind}_staff_parent")),
+        role,
+    )
+
+
 def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: str) -> ThreadParents:
-    prefix = "main" if ticket_type == "main" else "fwa"
+    if ticket_type not in schema.TICKET_TYPES:
+        raise ThreadConfigurationError(f"unknown ticket type: {ticket_type!r}")
+    prefix = ticket_type
     target_guild = _as_int(config.get("ticket_target_guild_id"))
     if not target_guild:
         raise ThreadConfigurationError("missing ticket configuration: ticket_target_guild_id")
     if target_guild != int(guild_id):
         raise ThreadConfigurationError("thread ticketing is configured for a different guild")
-    candidate_parent = _as_int(config.get(f"{prefix}_candidate_parent"))
-    staff_parent = _as_int(config.get(f"{prefix}_staff_parent"))
-    recruiter_role = _as_int(config.get(f"{prefix}_thread_recruiter_role"))
+    candidate_parent, staff_parent, recruiter_role = _config_parents(config, prefix)
+    desk = prefix in schema.DESK_TICKET_TYPES
     missing = [
         label
         for label, value in (
-            (f"{prefix}_candidate_parent", candidate_parent),
-            (f"{prefix}_staff_parent", staff_parent),
+            ("desk_channel_id" if desk else f"{prefix}_candidate_parent", candidate_parent),
+            ("desk_staff_parent" if desk else f"{prefix}_staff_parent", staff_parent),
             (f"{prefix}_thread_recruiter_role", recruiter_role),
         )
         if not value
     ]
     if missing:
         raise ThreadConfigurationError("missing ticket configuration: " + ", ".join(missing))
-    shared_roles = tuple(sorted({
-        _as_int(config.get(f"{kind}_thread_recruiter_role"))
-        for kind in ("main", "fwa")
-        if _as_int(config.get(f"{kind}_staff_parent")) == staff_parent
-        and _as_int(config.get(f"{kind}_thread_recruiter_role"))
-    } - {recruiter_role}))
+    # Parent visibility is not private-thread membership. Keep all roles which
+    # legitimately share this parent in the validation allowlist, but invite
+    # only the exact per-type role set into a new private staff thread.
+    shared_roles = set()
+    for kind in schema.TICKET_TYPES - {ticket_type}:
+        _, other_parent, other_role = _config_parents(config, kind)
+        if other_parent == staff_parent and other_role:
+            shared_roles.add(other_role)
+    shared_roles.update(_as_int(role) for role in config.get("_staff_parent_role_ids", ()) if _as_int(role))
     viewer_roles = tuple(sorted({
-        _as_int(value) for value in (config.get("ticket_staff_viewer_role_ids") or ())
+        _as_int(value) for value in config.get("ticket_staff_viewer_role_ids", ())
         if _as_int(value)
     }))
-    return ThreadParents(int(guild_id), candidate_parent, staff_parent, recruiter_role, shared_roles, viewer_roles)
+    role_config = tuple(sorted(
+        (kind, role) for kind in schema.TICKET_TYPES
+        if (role := _as_int(config.get(f"{kind}_thread_recruiter_role")))
+    ))
+    return ThreadParents(
+        int(guild_id), candidate_parent, staff_parent, recruiter_role,
+        tuple(sorted(shared_roles - {recruiter_role})), viewer_roles,
+        tuple(sorted(perms.ticket_type_role_ids(config, ticket_type))), role_config,
+        bool(config.get("desk_channel_id") or config.get("_private_staff_threads")),
+    )
 
 
 async def ensure_creation_indexes(mongo: MongoClient) -> None:
@@ -755,8 +838,8 @@ async def ensure_canonical_ticket_store(mongo: MongoClient) -> None:
 
 async def reserve_ticket_number(mongo: MongoClient, ticket_type: str) -> int:
     """Use the cross-runtime allocator shared with the legacy runtime."""
-    if ticket_type not in {"main", "fwa"}:
-        raise ThreadConfigurationError("ticket type must be main or fwa")
+    if ticket_type not in schema.TICKET_TYPES:
+        raise ThreadConfigurationError("unsupported ticket type")
     if testing_service.is_test_scope(mongo):
         return await testing_service.reserve_test_ticket_number(mongo)
     return await ticket_runtime.reserve_ticket_number(mongo, ticket_type)
@@ -805,6 +888,9 @@ async def _claim_creation(
         "recruiter_role_id": parents.recruiter_role_id,
         "shared_staff_role_ids": list(parents.shared_staff_role_ids),
         "staff_viewer_role_ids": list(parents.staff_viewer_role_ids),
+        "staff_thread_private": parents.private_staff,
+        "staff_thread_role_ids": list(parents.staff_thread_role_ids),
+        "staff_role_config": dict(parents.staff_role_config),
         "route": ticket_runtime.ROUTE_THREAD,
         "runtime": ticket_runtime.THREAD_RUNTIME,
         "open_slot_id": str(slot["_id"]),
@@ -1128,6 +1214,55 @@ async def _cleanup_interrupted_creation(
     await _mark_interrupted_creation_retry(mongo, state, owner, error)
 
 
+STAFF_MEMBER_SCAN_LIMIT = 10000
+
+
+async def staff_member_snapshot(rest, guild_id):
+    """One bounded member enumeration shared across one maintenance page."""
+    members = []
+    async with asyncio.timeout(30):
+        async for member in rest.fetch_members(guild_id).limit(STAFF_MEMBER_SCAN_LIMIT + 1):
+            members.append(member)
+    if len(members) > STAFF_MEMBER_SCAN_LIMIT:
+        raise ThreadConfigurationError("staff membership scan exceeded its safe bound")
+    return members
+
+
+async def sync_private_staff_members(
+    rest, *, guild_id: int, thread_id: int, role_ids, bot_user_id: int, preserve_member_ids=(), members=None,
+) -> None:
+    """Reconcile explicit invites, removing stale access before granting any.
+
+    Listing failures or an exhausted bound fail closed before membership writes.
+    Administrators do not need an invite; Discord already grants their access.
+    This only targets newly marked private staff threads, never legacy pairs.
+    """
+    allowed_roles = {_as_int(role) for role in role_ids} - {0}
+    members = await staff_member_snapshot(rest, guild_id) if members is None else members
+    if len(members) > STAFF_MEMBER_SCAN_LIMIT:
+        raise ThreadConfigurationError("staff membership scan exceeded its safe bound")
+    invited = []
+    async for member in rest.fetch_thread_members(thread_id).limit(STAFF_MEMBER_SCAN_LIMIT + 1):
+        invited.append(_as_int(member.user_id))
+    if len(invited) > STAFF_MEMBER_SCAN_LIMIT:
+        raise ThreadConfigurationError("private staff membership exceeded its safe bound")
+    preserved = {_as_int(value) for value in preserve_member_ids} - {0}
+    desired = preserved | {
+        int(member.id) for member in members
+        if int(member.guild_id) == guild_id
+        and allowed_roles.intersection(map(int, member.role_ids))
+        and not getattr(member, "is_bot", False)
+    }
+    existing = set(invited) - {bot_user_id}
+    for member_id in sorted(existing - desired):
+        await rest.remove_thread_member(thread_id, member_id)
+    for member_id in sorted(desired - existing):
+        # A fresh member read closes the role-loss window during a long scan.
+        member = await rest.fetch_member(guild_id, member_id)
+        if member_id in preserved or allowed_roles.intersection(map(int, member.role_ids)):
+            await rest.add_thread_member(thread_id, member_id)
+
+
 async def _ensure_live_thread_pair(
     *,
     rest: hikari.api.RESTClient,
@@ -1195,19 +1330,33 @@ async def _ensure_live_thread_pair(
             guild_id=state["guild_id"],
             parent_id=state["staff_parent_id"],
             name=staff_name,
-            private=False,
+            private=bool(state.get("staff_thread_private")),
             expected_owner_id=bot_user_id,
         )
         if staff is None:
             staff = await rest.create_thread(
                 state["staff_parent_id"],
-                hikari.ChannelType.GUILD_PUBLIC_THREAD,
+                (hikari.ChannelType.GUILD_PRIVATE_THREAD if state.get("staff_thread_private")
+                 else hikari.ChannelType.GUILD_PUBLIC_THREAD),
                 staff_name,
                 auto_archive_duration=AUTO_ARCHIVE_MINUTES,
+                **({"invitable": False} if state.get("staff_thread_private") else {}),
                 reason=f"Recruiter workspace for {state['ticket_type'].upper()} ticket {ticket_number}",
             )
         staff = await _unarchive_if_needed(rest, staff)
         state = await _state_update(mongo, creation_id, owner, staff_thread_id=int(staff.id))
+        if state.get("staff_thread_private"):
+            async with asyncio.timeout(120):
+                members = await staff_member_snapshot(rest, int(state["guild_id"]))
+                await sync_private_staff_members(
+                    rest, guild_id=int(state["guild_id"]), thread_id=int(candidate.id),
+                    role_ids=state.get("staff_thread_role_ids") or (), bot_user_id=bot_user_id,
+                    preserve_member_ids=(state["user_id"],), members=members,
+                )
+                await sync_private_staff_members(
+                    rest, guild_id=int(state["guild_id"]), thread_id=int(staff.id),
+                    role_ids=state.get("staff_thread_role_ids") or (), bot_user_id=bot_user_id, members=members,
+                )
         return candidate, staff, state
     except asyncio.CancelledError:
         await _quarantine_incomplete_creation_threads(rest, (candidate, staff))
@@ -1366,6 +1515,18 @@ _CANDIDATE_WELCOME_TITLE_PREFIX = "## 👋 Welcome to your "
 _CANDIDATE_WELCOME_TITLE_SUFFIX = " interest ticket"
 _STAFF_OPENING_TITLE_PREFIX = "## 🔒 "
 _STAFF_OPENING_TITLE_INFIX = " recruiter workspace · #"
+_DESK_OPENING_TITLE_INFIX = " staff workspace · #"
+# Warrior Desk requests: (welcome title, welcome body). No "ticket" or "support".
+_DESK_WELCOME = {
+    "account": ("## ➕ Add another account", "Answer here. Staff check your accounts."),
+    "staff": ("## 💬 Contact staff", "Tell us what you need. Staff reply here."),
+}
+# One line per question; add a line here to ask more.
+ACCOUNT_QUESTIONS = (
+    "How many accounts do you want to add?",
+    "Send the player tag of each account.",
+)
+_ACCOUNT_QUESTIONNAIRE_TITLE = "## **Add another account questions**"
 
 # Recruiter talking-point messages, carried over byte-for-byte from the
 # legacy channel ticket system (`extensions/commands/tickets_legacy/handlers.py`,
@@ -1422,6 +1583,10 @@ def _is_candidate_welcome_card(message: Any) -> bool:
             prefix=_CANDIDATE_WELCOME_TITLE_PREFIX,
             suffix=_CANDIDATE_WELCOME_TITLE_SUFFIX,
         )
+        or any(
+            _component_title_matches(component, prefix=title)
+            for title, _body in _DESK_WELCOME.values()
+        )
         for component in getattr(message, "components", ()) or ()
     )
 
@@ -1433,8 +1598,9 @@ def _is_staff_opening_card(message: Any) -> bool:
         _component_title_matches(
             component,
             prefix=_STAFF_OPENING_TITLE_PREFIX,
-            infix=_STAFF_OPENING_TITLE_INFIX,
+            infix=infix,
         )
+        for infix in (_STAFF_OPENING_TITLE_INFIX, _DESK_OPENING_TITLE_INFIX)
         for component in getattr(message, "components", ()) or ()
     )
 
@@ -1442,6 +1608,17 @@ def _is_staff_opening_card(message: Any) -> bool:
 def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
     ticket_type = str(ticket.get("ticket_type") or "main").upper()
     user_id = _as_int(ticket.get("user_id"))
+    if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES:
+        title, body = _DESK_WELCOME[ticket["ticket_type"]]
+        return [Container(
+            accent_color=WU_GOLD,
+            components=[
+                Text(content=title),
+                *([Text(content="🧪 TEST MODE — this is a simulated request.")]
+                  if testing_service.is_test_ticket(ticket) else []),
+                Text(content=f"<@{user_id}> {body}"),
+            ],
+        )]
     return [Container(
         accent_color=WU_GOLD,
         components=[
@@ -1472,7 +1649,12 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
         ticket.get("display_name") or raw_username, limit=80
     )
     user_id = _as_int(ticket.get("user_id"))
+    desk = ticket.get("ticket_type") in schema.DESK_TICKET_TYPES
     notification = (
+        f"<@&{recruiter_role}> a member opened a request."
+        if recruiter_role and desk else
+        "A member opened a request."
+        if desk and not testing_service.is_test_ticket(ticket) else
         f"<@&{recruiter_role}> a new applicant is ready for review."
         if recruiter_role else
         "A test applicant is ready for a simulated review."
@@ -1482,23 +1664,26 @@ def _staff_opening_components(ticket: Mapping[str, Any]) -> list:
     return [Container(
         accent_color=WU_GOLD,
         components=[
-            Text(content=f"## 🔒 {ticket_type} recruiter workspace · #{testing_service.number_label(ticket_number) if testing_service.is_test_ticket(ticket) else ticket_number}"),
+            Text(content=f"## 🔒 {ticket_type} {'staff' if desk else 'recruiter'} workspace · #{testing_service.number_label(ticket_number) if testing_service.is_test_ticket(ticket) else ticket_number}"),
             Text(content=notification),
             Separator(divider=True),
             Text(content=(
-                f"**Candidate:** {display_name} (`{username}`)\n"
+                f"**{'Member' if desk else 'Candidate'}:** {display_name} (`{username}`)\n"
                 f"**Discord ID:** `{user_id}`\n"
-                f"**Candidate thread:** <#{public_id}>"
+                f"**{'Request' if desk else 'Candidate'} thread:** <#{public_id}>"
             )),
             Text(content=(
                 "🧪 **TEST MODE:** Selected testers may see both test spaces. "
                 "Decisions here do not affect live applications."
                 if testing_service.is_test_ticket(ticket) else
+                "⚠️ **Staff-only:** The member cannot see this thread. "
+                "Do not mention or add them here."
+                if desk else
                 "⚠️ **Recruiter-only:** The candidate cannot see this thread. "
                 "Do not mention or add them here."
             )),
             ActionRow(components=[LinkButton(
-                label="Open Recruit Ticket",
+                label="Open request" if desk else "Open Recruit Ticket",
                 url=f"https://discord.com/channels/{_as_int(ticket.get('guild_id'))}/{public_id}",
                 emoji=hikari.CustomEmoji.parse("<:open_new:1553091643639468213>"),
             )]),
@@ -1517,6 +1702,19 @@ def _questionnaire_components(
     *,
     ticket: Mapping[str, Any] | None = None,
 ) -> list:
+    if ticket_type == "account":
+        return [Container(
+            accent_color=WU_GOLD,
+            components=[
+                *([Text(content="🧪 TEST MODE — practice form; answers stay in the isolated test database.")]
+                  if ticket is not None and testing_service.is_test_ticket(ticket) else []),
+                Text(content=_ACCOUNT_QUESTIONNAIRE_TITLE),
+                Text(content="\n".join(
+                    f"{number}. {question}"
+                    for number, question in enumerate(ACCOUNT_QUESTIONS, start=1)
+                )),
+            ],
+        )]
     logo = guild_icon_url or "assets/branding/logo/WU_Logo.png"
     is_fwa = ticket_type == "fwa"
     title = (
@@ -1563,7 +1761,9 @@ async def _questionnaire_exists(
     ticket_type: str,
 ) -> bool:
     needle = (
-        "Warriors United FWA Clan Entry Ticket"
+        "Add another account questions"
+        if ticket_type == "account"
+        else "Warriors United FWA Clan Entry Ticket"
         if ticket_type == "fwa"
         else "Warriors United Main Clan Entry Ticket"
     )
@@ -1675,7 +1875,7 @@ async def _deliver_opening_messages(
         post_marker=False,
         is_match=candidate_card_match,
     )
-    if not await _questionnaire_exists(rest, public_id, ticket_type):
+    if ticket_type != "staff" and not await _questionnaire_exists(rest, public_id, ticket_type):
         guild = await rest.fetch_guild(_as_int(ticket.get("guild_id")))
         icon = getattr(guild, "make_icon_url", lambda: None)()
         await rest.create_message(
@@ -1700,10 +1900,11 @@ async def _deliver_opening_messages(
         post_marker=False,
         is_match=staff_card_match,
     )
-    await _deliver_staff_talking_points(
-        rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id,
-        template=ticket.get("staff_thread_content"),
-    )
+    if ticket_type not in schema.DESK_TICKET_TYPES:
+        await _deliver_staff_talking_points(
+            rest, staff_id, ticket_type, recruiter_role=recruiter_role, bot_id=bot_id,
+            template=ticket.get("staff_thread_content"),
+        )
 
 
 async def _deliver_staff_talking_points(
@@ -1792,6 +1993,9 @@ async def _send_ticket_creation_dm(
                 components=[
                     Text(content=f"**{guild_name}**"),
                     Text(content=(
+                        "Staff will reply in your request. Select the button to "
+                        "open it."
+                        if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES else
                         "A recruiter will reply in your ticket. Select the button to "
                         "open it."
                     )),
@@ -1799,7 +2003,14 @@ async def _send_ticket_creation_dm(
                 accessory=Thumbnail(media=logo),
             ),
             ActionRow(components=[
-                LinkButton(label="Open my ticket", url=jump_url),
+                LinkButton(
+                    label=(
+                        "Open my request"
+                        if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES
+                        else "Open my ticket"
+                    ),
+                    url=jump_url,
+                ),
             ]),
         ],
     )]
@@ -1862,6 +2073,9 @@ async def _set_committed_creation_state(
         "recruiter_role_id": _as_int(ticket.get("recruiter_role_id")),
         "shared_staff_role_ids": list(ticket.get("shared_staff_role_ids") or ()),
         "staff_viewer_role_ids": list(ticket.get("staff_viewer_role_ids") or ()),
+        "staff_thread_private": bool(ticket.get("staff_thread_private")),
+        "staff_thread_role_ids": list(ticket.get("staff_thread_role_ids") or ()),
+        "staff_role_config": dict(ticket.get("staff_role_config") or {}),
         "candidate_thread_id": _as_int(location.get("id") or ticket.get("channel_id")),
         "staff_thread_id": _as_int(
             location.get("staff_space_id") or ticket.get("thread_id")
@@ -2095,8 +2309,8 @@ async def create_live_thread_ticket(
     opened_by: int | None = None,
 ) -> CreatedThreadTicket:
     """Create or resume one live thread ticket without duplicating resources."""
-    if ticket_type not in {"main", "fwa"}:
-        raise ThreadConfigurationError("ticket type must be main or fwa")
+    if ticket_type not in schema.TICKET_TYPES:
+        raise ThreadConfigurationError("unsupported ticket type")
     slot = _validated_open_slot_claim(
         open_slot_claim,
         guild_id=guild_id,
@@ -2258,7 +2472,10 @@ async def create_live_thread_ticket(
             candidate = staff = None
             committed_ticket: dict | None = None
             try:
-                staff_template = await ticket_staff_content.load(mongo, guild_id, ticket_type)
+                staff_template = (
+                    None if ticket_type in schema.DESK_TICKET_TYPES
+                    else await ticket_staff_content.load(mongo, guild_id, ticket_type)
+                )
                 candidate, staff, state = await _ensure_live_thread_pair(
                     rest=bot.rest,
                     mongo=mongo,
@@ -2289,6 +2506,9 @@ async def create_live_thread_ticket(
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
                 ticket["shared_staff_role_ids"] = list(parents.shared_staff_role_ids)
                 ticket["staff_viewer_role_ids"] = list(parents.staff_viewer_role_ids)
+                ticket["staff_thread_private"] = bool(state.get("staff_thread_private"))
+                ticket["staff_thread_role_ids"] = list(state.get("staff_thread_role_ids") or ())
+                ticket["staff_role_config"] = dict(state.get("staff_role_config") or {})
                 ticket.update(ticket_runtime.thread_ticket_fields(slot))
                 try:
                     ticket = await store.insert_one(mongo, ticket)
@@ -2957,6 +3177,49 @@ async def _retry_or_retire_pending_delivery(
         )
 
 
+def _recovery_config(state: Mapping[str, Any], ticket_type: str, guild_id: int) -> dict[str, Any]:
+    """Rebuild the parents_from_config input from a stored creation state.
+
+    Uses the stored ids only. Every shared staff role is kept: each is mapped
+    onto one other ticket type that shares the staff parent.
+    """
+    candidate_parent = state.get("candidate_parent_id")
+    staff_parent = state.get("staff_parent_id")
+    config: dict[str, Any] = {
+        "ticket_target_guild_id": guild_id,
+        "_private_staff_threads": bool(state.get("staff_thread_private")),
+        "_staff_parent_role_ids": list(state.get("shared_staff_role_ids") or ()),
+        "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
+        f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
+    }
+    if ticket_type in schema.DESK_TICKET_TYPES:
+        config["desk_channel_id"] = candidate_parent
+        config["desk_staff_parent"] = staff_parent
+    else:
+        config[f"{ticket_type}_candidate_parent"] = candidate_parent
+        config[f"{ticket_type}_staff_parent"] = staff_parent
+    role_config = state.get("staff_role_config") or {}
+    if role_config:
+        for kind, role in role_config.items():
+            if kind not in schema.TICKET_TYPES or not _as_int(role):
+                raise ThreadConfigurationError("invalid stored staff role mapping")
+            config[f"{kind}_thread_recruiter_role"] = _as_int(role)
+    others = sorted(schema.RECRUIT_TICKET_TYPES - {ticket_type})
+    if ticket_type in schema.DESK_TICKET_TYPES and not role_config:
+        raise ThreadConfigurationError("Desk creation recovery needs a typed staff role mapping")
+    if role_config:
+        others = []
+    if not role_config and len(state.get("shared_staff_role_ids") or ()) > len(others):
+        raise ThreadConfigurationError("ambiguous legacy staff role mapping")
+    for kind, role in zip(others, state.get("shared_staff_role_ids") or ()):
+        config[f"{kind}_thread_recruiter_role"] = role
+        if kind in schema.DESK_TICKET_TYPES:
+            config["desk_staff_parent"] = staff_parent
+        else:
+            config[f"{kind}_staff_parent"] = staff_parent
+    return config
+
+
 async def recover_pending_thread_ticket_creations(
     *,
     bot: hikari.GatewayBot,
@@ -2990,21 +3253,10 @@ async def recover_pending_thread_ticket_creations(
         counts["processed"] += 1
         ticket_type = str(state.get("ticket_type") or "")
         state_guild_id = _as_int(state.get("guild_id"))
-        config = {
-            "ticket_target_guild_id": state_guild_id,
-            "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
-            f"{ticket_type}_candidate_parent": state.get("candidate_parent_id"),
-            f"{ticket_type}_staff_parent": state.get("staff_parent_id"),
-            f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
-        }
-        shared_roles = state.get("shared_staff_role_ids") or ()
-        if shared_roles:
-            other_type = "fwa" if ticket_type == "main" else "main"
-            config[f"{other_type}_staff_parent"] = state.get("staff_parent_id")
-            config[f"{other_type}_thread_recruiter_role"] = shared_roles[0]
         result: CreatedThreadTicket | None = None
         degraded_reason: str | None = None
         try:
+            config = _recovery_config(state, ticket_type, state_guild_id)
             if not state_guild_id:
                 raise ThreadConfigurationError(
                     "pending creation is missing its exact target guild binding"

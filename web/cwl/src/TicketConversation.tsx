@@ -53,6 +53,8 @@ export default function TicketConversation({
     [search, setSearch] = useState(""),
     [paused, setPaused] = useState(false),
     [denied, setDenied] = useState(false);
+  const currentTicket = data?.ticket || ticket;
+  const identityReady = currentTicket.number > 0;
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => {
     heading.current?.focus();
@@ -78,6 +80,22 @@ export default function TicketConversation({
         const result = await api<Conversation>(
           `/manage/tickets/${encodeURIComponent(ticket.id)}/messages?${new URLSearchParams({ space, before })}`,
         );
+        if (
+          !Array.isArray(result.messages) ||
+          (result.ticket &&
+            (result.ticket.id !== ticket.id ||
+              !Array.isArray(result.ticket.flags) ||
+              typeof result.ticket.name !== "string" ||
+              typeof result.ticket.kind !== "string" ||
+              typeof result.ticket.status !== "string" ||
+              typeof result.ticket.user_id !== "string" ||
+              !Number.isInteger(result.ticket.number) ||
+              result.ticket.number < 1)) ||
+          (!ticket.number && (!result.ticket || result.ticket.id !== ticket.id))
+        )
+          throw new Error(
+            "The ticket response is incomplete. Retry loading messages.",
+          );
         if (alive) {
           setData(result);
           setDenied(false);
@@ -149,10 +167,16 @@ export default function TicketConversation({
         className="ticket-heading"
         title={
           <h1 ref={heading} tabIndex={-1}>
-            #{ticket.number} · {ticket.name}
+            {identityReady
+              ? `#${currentTicket.number} · ${currentTicket.name}`
+              : "Loading ticket…"}
           </h1>
         }
-        description={`${ticket.kind.toUpperCase()} · ${statusName(ticket.status)} · Read only`}
+        description={
+          identityReady
+            ? `${currentTicket.kind.toUpperCase()} · ${statusName(currentTicket.status)} · Read only`
+            : "Checking access…"
+        }
       >
         <RefreshControl
           updatedAt={data ? data.checked_at * 1000 : null}
@@ -167,17 +191,19 @@ export default function TicketConversation({
           showRefresh={!error}
         />
       </CwlPageHeader>
-      <DiscordIdentity
-        userId={ticket.user_id}
-        displayName={ticket.name}
-        resolvedMember={null}
-      />
+      {identityReady && (
+        <DiscordIdentity
+          userId={currentTicket.user_id}
+          displayName={currentTicket.name}
+          resolvedMember={null}
+        />
+      )}
       <p>Reply and handle this application in Discord.</p>
-      <small>Opened {when(ticket.created_at)}</small>
-      {ticket.flags.length > 0 && (
+      {identityReady && <small>Opened {when(currentTicket.created_at)}</small>}
+      {currentTicket.flags.length > 0 && (
         <div className="ticket-flag-details" aria-label="Applicant flags">
           <h2>Applicant flags</h2>
-          {ticket.flags.map((item, index) => (
+          {currentTicket.flags.map((item, index) => (
             <p key={`${item.kind}-${index}`}>
               <strong>{item.label}</strong>
               {item.reason ? ` · ${item.reason}` : ""}

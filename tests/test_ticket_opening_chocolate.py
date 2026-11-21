@@ -878,6 +878,7 @@ def test_chocolate_page_button_renders_the_requested_page(monkeypatch):
 
     monkeypatch.setattr(console.store, "find_one", find_one)
     monkeypatch.setattr(console.perms, "is_recruiter", allowed)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
 
     class Context:
         user = SimpleNamespace(id=1)
@@ -905,6 +906,8 @@ def test_chocolate_page_button_refuses_non_recruiters_and_keeps_the_current_page
 
     monkeypatch.setattr(console.store, "find_one", find_one)
     monkeypatch.setattr(console.perms, "is_recruiter", denied)
+    monkeypatch.setattr(console.perms, "is_ticket_staff", denied)
+    monkeypatch.setattr(console.perms, "can_handle", lambda member, mongo, ticket_type: console.perms.is_recruiter(member, mongo))
 
     _marker, page3 = console.build_staff_chocolate_checklist(ticket, page=3)
 

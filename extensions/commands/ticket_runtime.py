@@ -18,27 +18,26 @@ from typing import Any, Iterable, Mapping, Sequence
 import pymongo
 from pymongo import ASCENDING, ReturnDocument
 from pymongo.errors import DuplicateKeyError
-
-
-ROLLOUT_ID = "ticket-runtime"
-ROLLOUT_SCHEMA_VERSION = 1
-
-PHASE_LEGACY_ONLY = "legacy_only"
-PHASE_PREPARED = "prepared"
-PHASE_PILOT = "pilot"
-PHASE_THREAD_DEFAULT = "thread_default"
-PHASE_ROLLBACK_LEGACY = "rollback_legacy"
-PHASE_THREAD_ONLY = "thread_only"
-VALID_PHASES = frozenset(
-    {
-        PHASE_LEGACY_ONLY,
-        PHASE_PREPARED,
-        PHASE_PILOT,
-        PHASE_THREAD_DEFAULT,
-        PHASE_ROLLBACK_LEGACY,
-        PHASE_THREAD_ONLY,
-    }
+from utils.ticket_rollout import (
+    IntakeSource,
+    PHASE_LEGACY_ONLY,
+    PHASE_PILOT,
+    PHASE_PREPARED,
+    PHASE_ROLLBACK_LEGACY,
+    PHASE_THREAD_DEFAULT,
+    PHASE_THREAD_ONLY,
+    ROLLOUT_ID,
+    ROLLOUT_SCHEMA_VERSION,
+    RolloutState,
+    VALID_PHASES,
+    _VALID_TICKET_TYPES,
+    _id_tuple,
+    _intake_source,
+    _positive_int,
+    get_rollout,
+    parse_rollout as _parse_rollout,
 )
+
 
 ROUTE_LEGACY = "legacy"
 ROUTE_THREAD = "thread"
@@ -58,7 +57,9 @@ LEGACY_RUNTIME = "legacy_channel"
 COUNTER_DOCUMENT_ID = "ticket_runtime_counters"
 
 _DEFAULT_LEASE_SECONDS = 120
-_VALID_TICKET_TYPES = frozenset({"main", "fwa"})
+# Warrior Desk request types; mirrors schema.DESK_TICKET_TYPES (this module
+# cannot import the tickets package without a cycle).
+_DESK_TICKET_TYPES = frozenset({"account", "staff"})
 _ALLOWED_PHASE_TRANSITIONS = {
     PHASE_LEGACY_ONLY: frozenset({PHASE_PREPARED}),
     PHASE_PREPARED: frozenset({PHASE_LEGACY_ONLY, PHASE_PILOT}),
@@ -97,33 +98,6 @@ class SlotConflict(TicketRuntimeError):
 
 class BackfillLimitExceeded(TicketRuntimeError):
     """Startup found more un-slotted tickets than the audited bound."""
-
-
-@dataclass(frozen=True, slots=True)
-class IntakeSource:
-    guild_id: int
-    channel_id: int
-    message_id: int
-
-    def matches(self, *, guild_id: int, channel_id: int, message_id: int) -> bool:
-        return (
-            self.guild_id == int(guild_id)
-            and self.channel_id == int(channel_id)
-            and self.message_id == int(message_id)
-        )
-
-
-@dataclass(frozen=True, slots=True)
-class RolloutState:
-    phase: str
-    revision: int
-    valid: bool
-    legacy_intake: IntakeSource | None = None
-    thread_intake: IntakeSource | None = None
-    pilot_intake: IntakeSource | None = None
-    pilot_user_ids: tuple[int, ...] = ()
-    pilot_role_ids: tuple[int, ...] = ()
-    pilot_ticket_types: tuple[str, ...] = ("main", "fwa")
 
 
 @dataclass(frozen=True, slots=True)
@@ -197,80 +171,6 @@ def utcnow() -> datetime:
     return datetime.now(timezone.utc)
 
 
-def _positive_int(value: Any) -> int | None:
-    try:
-        normalized = int(value)
-    except (TypeError, ValueError):
-        return None
-    return normalized if normalized > 0 else None
-
-
-def _intake_source(value: Any) -> IntakeSource | None:
-    if not isinstance(value, Mapping):
-        return None
-    guild_id = _positive_int(value.get("guild_id"))
-    channel_id = _positive_int(value.get("channel_id"))
-    message_id = _positive_int(value.get("message_id"))
-    if guild_id is None or channel_id is None or message_id is None:
-        return None
-    return IntakeSource(guild_id, channel_id, message_id)
-
-
-def _id_tuple(values: Any) -> tuple[int, ...]:
-    if not isinstance(values, Sequence) or isinstance(values, (str, bytes)):
-        return ()
-    return tuple(sorted({item for value in values if (item := _positive_int(value))}))
-
-
-def _parse_rollout(document: Mapping[str, Any] | None) -> RolloutState:
-    if not document:
-        return RolloutState(PHASE_LEGACY_ONLY, 0, False)
-    phase = document.get("phase")
-    revision = document.get("revision")
-    if (
-        document.get("schema_version") != ROLLOUT_SCHEMA_VERSION
-        or phase not in VALID_PHASES
-        or not isinstance(revision, int)
-        or isinstance(revision, bool)
-        or revision < 0
-    ):
-        return RolloutState(PHASE_LEGACY_ONLY, 0, False)
-    pilot = document.get("pilot") if isinstance(document.get("pilot"), Mapping) else {}
-    ticket_types = pilot.get("ticket_types", ("main", "fwa"))
-    if not isinstance(ticket_types, Sequence) or isinstance(ticket_types, (str, bytes)):
-        ticket_types = ()
-    normalized_types = tuple(
-        sorted({str(item).strip().lower() for item in ticket_types} & _VALID_TICKET_TYPES)
-    )
-    legacy_intake = _intake_source(document.get("legacy_intake"))
-    thread_intake = _intake_source(document.get("thread_intake"))
-    pilot_intake = _intake_source(pilot.get("intake"))
-    pilot_user_ids = _id_tuple(pilot.get("user_ids"))
-    pilot_role_ids = _id_tuple(pilot.get("role_ids"))
-    if (
-        legacy_intake is None
-        or thread_intake is None
-        or pilot_intake is None
-        or legacy_intake.guild_id == thread_intake.guild_id
-        or thread_intake.guild_id != pilot_intake.guild_id
-        or thread_intake.channel_id == pilot_intake.channel_id
-        or not normalized_types
-        or (not pilot_user_ids and not pilot_role_ids)
-    ):
-        return RolloutState(PHASE_LEGACY_ONLY, 0, False)
-    return RolloutState(
-        phase=phase,
-        revision=revision,
-        valid=True,
-        legacy_intake=legacy_intake,
-        thread_intake=thread_intake,
-        pilot_intake=pilot_intake,
-        pilot_user_ids=pilot_user_ids,
-        pilot_role_ids=pilot_role_ids,
-        pilot_ticket_types=normalized_types,
-    )
-
-
 async def ensure_indexes(mongo: Any) -> None:
     """Create non-TTL indexes required by the shared durability layer."""
 
@@ -297,10 +197,6 @@ async def ensure_indexes(mongo: Any) -> None:
             [("phase", ASCENDING), ("revision", ASCENDING)],
             name="ticket_rollout_phase_revision",
         )
-
-
-async def get_rollout(mongo: Any) -> RolloutState:
-    return _parse_rollout(await mongo.ticket_rollout.find_one({"_id": ROLLOUT_ID}))
 
 
 def _source_document(value: IntakeSource | Mapping[str, Any]) -> dict[str, int]:
@@ -343,6 +239,7 @@ async def seed_rollout(
     legacy_intake: IntakeSource | Mapping[str, Any],
     thread_intake: IntakeSource | Mapping[str, Any],
     pilot: Mapping[str, Any],
+    desk_intake: IntakeSource | Mapping[str, Any] | None = None,
     now: datetime | None = None,
 ) -> RolloutState:
     """Insert the initial fail-safe rollout document without overwriting one."""
@@ -370,6 +267,8 @@ async def seed_rollout(
         "updated_at": moment,
         "updated_by": int(actor_id),
     }
+    if desk_intake is not None:
+        document["desk_intake"] = _source_document(desk_intake)
     try:
         await mongo.ticket_rollout.insert_one(document)
     except DuplicateKeyError:
@@ -388,9 +287,13 @@ async def configure_rollout(
     legacy_intake: IntakeSource | Mapping[str, Any],
     thread_intake: IntakeSource | Mapping[str, Any],
     pilot: Mapping[str, Any],
+    desk_intake: IntakeSource | Mapping[str, Any] | None = None,
     now: datetime | None = None,
 ) -> RolloutState:
-    """CAS-update source and allowlist configuration without changing phase."""
+    """CAS-update source and allowlist configuration without changing phase.
+
+    ``desk_intake=None`` leaves any stored Warrior Desk binding untouched.
+    """
 
     moment = now or utcnow()
     legacy_document = _source_document(legacy_intake)
@@ -402,6 +305,15 @@ async def configure_rollout(
         raise ValueError("thread public and pilot intake must use the same target guild")
     if thread_document["channel_id"] == pilot_document["intake"]["channel_id"]:
         raise ValueError("thread public and pilot intake must use separate channels")
+    changes: dict[str, Any] = {
+        "legacy_intake": legacy_document,
+        "thread_intake": thread_document,
+        "pilot": pilot_document,
+        "updated_at": moment,
+        "updated_by": int(actor_id),
+    }
+    if desk_intake is not None:
+        changes["desk_intake"] = _source_document(desk_intake)
     updated = await mongo.ticket_rollout.find_one_and_update(
         {
             "_id": ROLLOUT_ID,
@@ -409,16 +321,7 @@ async def configure_rollout(
             "revision": int(expected_revision),
             "phase": {"$in": list(VALID_PHASES)},
         },
-        {
-            "$set": {
-                "legacy_intake": legacy_document,
-                "thread_intake": thread_document,
-                "pilot": pilot_document,
-                "updated_at": moment,
-                "updated_by": int(actor_id),
-            },
-            "$inc": {"revision": 1},
-        },
+        {"$set": changes, "$inc": {"revision": 1}},
         return_document=ReturnDocument.AFTER,
     )
     if updated is None:
@@ -734,6 +637,23 @@ async def route_public_intake(
     if state.phase in {PHASE_LEGACY_ONLY, PHASE_PREPARED, PHASE_ROLLBACK_LEGACY}:
         return RouteDecision(
             ROUTE_REJECT, False, state.phase, state.revision, "thread_intake_disabled"
+        )
+
+    if str(ticket_type).strip().lower() in _DESK_TICKET_TYPES:
+        # Desk requests ride their own panel and only the live phases.
+        allowed = bool(
+            state.phase in {PHASE_THREAD_DEFAULT, PHASE_THREAD_ONLY}
+            and state.desk_intake
+            and state.desk_intake.matches(
+                guild_id=guild_id, channel_id=channel_id, message_id=message_id
+            )
+        )
+        return RouteDecision(
+            ROUTE_THREAD if allowed else ROUTE_REJECT,
+            allowed,
+            state.phase,
+            state.revision,
+            "desk_default" if allowed else "wrong_desk_intake_source",
         )
 
     if state.phase == PHASE_PILOT:

@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import logging
 import hikari
 from extensions.commands.recruit import perms
-from extensions.commands.tickets import store, testing_service
+from extensions.commands.tickets import store, testing_service, schema as ticket_schema
 from utils.component_state import get_state
 from utils.role_hierarchy import RolePositions
 from .schema import SCHEMA_VERSION
@@ -378,6 +378,7 @@ async def open_ticket(mongo, guild_id, user_id, *, ticket_id=None):
         "guild_id": int(guild_id),
         "user_id": {"$in": [int(user_id), str(user_id)]},
         "venue": "thread",
+        "ticket_type": {"$in": sorted(ticket_schema.RECRUIT_TICKET_TYPES)},
     }
     if ticket_id is not None:
         query.update(_id=ticket_id, status={"$in": ["open", "approved"]})

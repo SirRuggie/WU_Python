@@ -7,7 +7,7 @@ import logging
 import re
 import time
 from collections import Counter, defaultdict
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Iterable, Mapping
 
 import pymongo
@@ -256,17 +256,17 @@ async def list_open(mongo: MongoClient, *, limit: int = 25) -> list[dict]:
     return _normalized_many(raw)
 
 
-async def list_open_page(
-    mongo: MongoClient, *, offset: int = 0, limit: int = 4
+async def list_open_by_types(
+    mongo: MongoClient, types: Iterable[str], *, limit: int = 25
 ) -> list[dict]:
-    """Reach every open ticket in stable oldest-first shared-console pages."""
+    """Open tickets of the given types, oldest first, for one console dropdown."""
     amount = max(1, min(int(limit), 25))
-    cursor = (await _reader(mongo)).find({**RUNTIME_FILTER, "status": "open"})
-    raw = (
-        await cursor.sort([("created_at", 1), ("_id", 1)])
-        .skip(max(0, int(offset)))
-        .limit(amount)
-        .to_list(length=amount)
+    kinds = [schema.ticket_type(kind) for kind in types]
+    cursor = (await _reader(mongo)).find(
+        {**RUNTIME_FILTER, "status": "open", "ticket_type": {"$in": kinds}}
+    )
+    raw = await cursor.sort([("created_at", 1), ("_id", 1)]).limit(amount).to_list(
+        length=amount
     )
     return _normalized_many(raw)
 
@@ -779,6 +779,7 @@ async def transition(
     linked_account_retry: Mapping | None = None,
     expected_linked_account_revision: int | None = None,
     previous_notification_message_id: int | None = None,
+    member_reopen: bool = False,
 ) -> Transition:
     """CAS a ticket status using the status and revision the actor observed."""
     target = schema.ticket_status(to_status)
@@ -923,6 +924,10 @@ async def transition(
             "approved_at": "", "approved_by": "", "approved_by_name": "",
         })
 
+    if target in {"closed", "open"}:
+        # Completion belongs to a single Close generation. Keep any in-flight
+        # member_window_lock so post-lock/restart compensation can still run.
+        unset_fields["member_window_locked_at"] = ""
     if target == "closed":
         set_fields.update(closed_at=now, closed_by=actor, closed_by_name=name)
         audit["reason"] = supplied.get("closure_reason")
@@ -938,6 +943,16 @@ async def transition(
         "status": expected_status,
         "rev": _rev_filter(expected_rev),
     }
+    if member_reopen:
+        if target != "open" or expected_status != "closed" or effect_kind != "reopen":
+            return Transition(BLOCKED, current, "Member reopen requires a closed ticket.")
+        transition_filter["user_id"] = {"$in": _mixed_id(actor)}
+        # Mongo evaluates its own clock with the atomic write, so a delayed
+        # slot claim/network request cannot cross the member's 60-day deadline.
+        transition_filter["$expr"] = {"$and": [
+            {"$gte": ["$closed_at", {"$subtract": ["$$NOW", 60 * 86400 * 1000]}]},
+            {"$lte": ["$closed_at", "$$NOW"]},
+        ]}
     # Inactivity decisions must fail atomically if someone speaks or the
     # prompt is replaced while the normal denial pipeline is doing I/O.
     # Ordinary recruiter decisions retain their existing rev-only behavior.
@@ -1479,3 +1494,135 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
             name="thread_v2_account_recovery_last_attempt",
         ))
     return [str(name) for name in specs]
+
+
+async def private_staff_tickets(mongo, *, guild_id: int, after: str = "", limit: int = 5, not_checked_since=None):
+    """Bounded recovery page of explicitly new private staff threads only."""
+    limit = min(max(int(limit), 1), 50)
+    query = {**RUNTIME_FILTER, "guild_id": int(guild_id), "staff_thread_private": True}
+    if not_checked_since is not None:
+        query["$or"] = [
+            {"staff_access_check_started_at": {"$exists": False}},
+            {"staff_access_check_started_at": {"$lte": not_checked_since}},
+        ]
+    if after:
+        query["_id"] = {"$gt": after}
+    return await mongo.tickets.find(query, {
+        "_id": 1, "guild_id": 1, "ticket_type": 1, "location": 1,
+        "staff_thread_private": 1,
+    }).sort("_id", 1).limit(limit + 1).to_list(length=limit + 1)
+
+
+async def claim_member_window_sweep(mongo, *, guild_id, at):
+    """Persist one expiry page attempt per guild/hour, including restarts."""
+    try:
+        row = await mongo.ticket_setup.find_one_and_update({
+            "_id": f"member_window_lock_schedule:{int(guild_id)}",
+            "$or": [{"started_at": {"$exists": False}},
+                    {"started_at": {"$lte": at - timedelta(hours=1)}}],
+        }, {"$set": {"started_at": at}}, upsert=True, return_document=ReturnDocument.AFTER)
+    except DuplicateKeyError:
+        return False  # Existing hourly claim does not match; never run REST.
+    return row is not None
+
+
+async def claim_staff_access_check(mongo, ticket, *, at):
+    """At most one periodic REST attempt per private pair/hour; events bypass."""
+    result = await mongo.tickets.update_one({
+        **RUNTIME_FILTER, "_id": ticket["_id"], "guild_id": ticket["guild_id"],
+        "staff_thread_private": True,
+        "$or": [{"staff_access_check_started_at": {"$exists": False}},
+                {"staff_access_check_started_at": {"$lte": at - timedelta(hours=1)}}],
+    }, {"$set": {"staff_access_check_started_at": at}})
+    return bool(result.matched_count)
+
+
+async def claim_member_reopen_notice(mongo, ticket):
+    """At most one attempted full-slot notice per close revision."""
+    rev = int(ticket.get("rev") or 0)
+    result = await mongo.tickets.update_one({
+        **RUNTIME_FILTER, "_id": ticket["_id"], "status": "closed",
+        "rev": _rev_filter(rev), "member_reopen_notice_rev": {"$ne": rev},
+    }, {"$set": {"member_reopen_notice_rev": rev}})
+    return bool(result.matched_count)
+
+
+async def member_visible_tickets(mongo, *, user_id, guild_id, at, limit=10):
+    """Only this member's open or still-reopenable Close tickets, bounded."""
+    from datetime import timedelta
+    ids = _mixed_id(user_id)
+    if not ids:
+        return []
+    amount = min(max(int(limit), 1), 10)
+    query = {**RUNTIME_FILTER, "guild_id": int(guild_id), "user_id": {"$in": ids}, "$or": [
+        {"status": "open"},
+        {"status": "closed", "closed_at": {"$gte": at - timedelta(days=60), "$lte": at}},
+    ]}
+    raw = await (await _reader(mongo)).find(query).sort([
+        ("created_at", -1), ("_id", -1),
+    ]).limit(amount).to_list(length=amount)
+    return _normalized_many(raw)
+
+
+async def expired_member_ticket_page(mongo, *, guild_id, cutoff, after="", limit=25):
+    """Read-only restart-safe lock candidates; no TTL or transcript rewrite."""
+    amount = min(max(int(limit), 1), 25)
+    query = {**RUNTIME_FILTER, "guild_id": int(guild_id), "$or": [
+        {"status": "closed", "closed_at": {"$lt": cutoff},
+         "member_window_locked_at": {"$exists": False}},
+        {"member_window_lock": {"$exists": True}},
+    ]}
+    if after:
+        query["_id"] = {"$gt": after}
+    return await mongo.tickets.find(query, {
+        "_id": 1, "guild_id": 1, "status": 1, "closed_at": 1,
+        "rev": 1, "location": 1, "thread_missing": 1, "member_window_lock": 1,
+    }).sort("_id", 1).limit(amount + 1).to_list(length=amount + 1)
+
+
+async def claim_member_window_lock(mongo, ticket, channel_id):
+    marker = {"rev": int(ticket.get("rev") or 0), "candidate_id": int(channel_id)}
+    result = await mongo.tickets.update_one({
+        **RUNTIME_FILTER, "_id": ticket["_id"], "status": "closed",
+        "rev": _rev_filter(marker["rev"]), "location.id": int(channel_id),
+        "closed_at": ticket["closed_at"], "member_window_locked_at": {"$exists": False},
+    }, {"$set": {"member_window_lock": marker}})
+    return marker if result.matched_count else None
+
+
+async def complete_member_window_lock(mongo, ticket, channel_id, *, at, marker=None):
+    """Record proven lock/absence only for the still-current Close generation."""
+    if ticket.get("status") != "closed" or not ticket.get("closed_at"):
+        return False
+    query = {**RUNTIME_FILTER, "_id": ticket["_id"], "guild_id": ticket["guild_id"],
+             "status": "closed", "rev": _rev_filter(int(ticket.get("rev") or 0)),
+             "closed_at": ticket["closed_at"], "location.id": int(channel_id)}
+    if marker is not None:
+        query["member_window_lock"] = marker
+    result = await mongo.tickets.update_one(query, {
+        "$set": {"member_window_locked_at": at},
+        "$unset": {"member_window_lock": ""},
+    })
+    return bool(result.matched_count)
+
+
+async def clear_member_window_lock(mongo, ticket_id, marker):
+    await mongo.tickets.update_one({**RUNTIME_FILTER, "_id": ticket_id,
+        "member_window_lock": marker}, {"$unset": {"member_window_lock": ""}})
+
+
+async def claim_manual_ghosted(mongo, ticket, *, actor_id, actor_name, reason, token, at, lease_until, expected_flag=None):
+    """Durable manual receipt uses the existing inactivity close recovery lane."""
+    prompt = dict((ticket.get("inactivity") or {}).get("prompt") or {})
+    prompt.update(token=token, state="yes", actor_id=int(actor_id), actor_name=actor_name,
+                  reason=reason, expected_rev=int(ticket.get("rev") or 0),
+                  activity_revision=int(ticket.get("activity_revision") or 0),
+                  lease_until=lease_until, source="Manual staff Ghosted flag", claimed_at=at)
+    prompt.update(manual_flag_update=True, expected_flag_id=(expected_flag or {}).get("_id"),
+                  expected_flag_rev=int((expected_flag or {}).get("rev") or 0))
+    return await mongo.tickets.find_one_and_update({
+        **RUNTIME_FILTER, "_id": ticket["_id"], "guild_id": ticket["guild_id"],
+        "status": "open", "rev": _rev_filter(int(ticket.get("rev") or 0)),
+        "activity_revision": _rev_filter(int(ticket.get("activity_revision") or 0)),
+        "inactivity.prompt.state": {"$ne": "yes"},
+    }, {"$set": {"inactivity.prompt": prompt}}, return_document=ReturnDocument.AFTER)

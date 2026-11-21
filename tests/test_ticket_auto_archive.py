@@ -91,11 +91,15 @@ def test_disabled_and_invalid_periods():
     with pytest.raises(ValueError):aa.quiet_days({'ticket_archive_quiet_days':366})
 
 
-def test_daily_completion_prevents_repeat_on_restart():
+def test_daily_completion_prevents_repeat_on_restart(monkeypatch):
     t,c,b,m=fixtures()
     m.ticket_setup.find_one.side_effect=[c,{'completed_at':NOW}]
     b.rest.fetch_active_threads=AsyncMock()
+    expiry=AsyncMock()
+    monkeypatch.setattr(aa,"lock_expired_member_threads",expiry)
+    monkeypatch.setattr(aa.store,"claim_member_window_sweep",AsyncMock(return_value=True))
     asyncio.run(aa.sweep(b,m))
+    expiry.assert_awaited_once()
     b.rest.fetch_active_threads.assert_not_awaited()
 
 

@@ -74,3 +74,26 @@ Retired rollout/pilot controls: `pilot-user`, `pilot-role`, `rollout-status`,
 Live pre-deployment inspection confirmed `thread_default`, valid bindings, and
 10080-minute inactivity. Those values are preserved. Old open Recruit 4 tickets
 and historical migration recovery are not deleted or implicitly resolved.
+
+## Warrior Desk
+
+The `desk` part edits `desk_channel_id`, `desk_staff_parent`,
+`account_thread_recruiter_role` and `staff_thread_recruiter_role`; the staff parent
+may fall back to Main's configured staff parent. Its status names every missing
+saved prerequisite and focuses the corresponding field. Post is disabled with
+an explanation and `aria-disabled` while incomplete or dirty. Save changes
+remains separate. A live binding offers secondary **Repair panel**.
+
+The existing `restore_desk_entry` action now lives beside these fields, retaining
+confirmation/revision/idempotency guards. It refuses unless both roles, the
+channel, effective staff parent and `thread_default`/`thread_only` are saved.
+Native checks verify target ownership and bot/handler permissions before posts.
+New Desk-enabled pairs use private per-type invitations; non-admin Manage
+Threads would bypass that boundary and fails guided readiness. Extra viewer
+roles read the parent, not every new private thread. Historical public pairs are
+not converted or made a startup-wide failure.
+
+Pure validation/history helpers belong to `utils/ticket_settings.py`, shared by
+native and HTTP adapters. No live settings, roles, permissions or panel post was
+changed during development. Ruggie's guided setup/release after Shaka approval
+is still required; see [Warrior Desk](warrior-desk.md).

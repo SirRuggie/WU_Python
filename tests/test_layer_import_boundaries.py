@@ -21,7 +21,6 @@ LEGACY_EDGES = frozenset({
     ('cwl_web/staff_overview.py', 'extensions.commands.tickets.store.RUNTIME_FILTER'),
     ('cwl_web/ticket_browser.py', 'extensions.commands.tickets.account_sync'),
     ('cwl_web/ticket_browser.py', 'extensions.commands.tickets.flag_store'),
-    ('cwl_web/ticket_browser.py', 'extensions.commands.tickets.perms.is_recruiter'),
     ('cwl_web/ticket_browser.py', 'extensions.commands.tickets.store.BROWSE_PROJECTION'),
     ('cwl_web/ticket_browser.py', 'extensions.commands.tickets.store.RUNTIME_FILTER'),
     ('extensions/commands/strikes.py', 'cwl_web.providers.LiveProviders'),
