@@ -572,7 +572,7 @@ export default function ArrivalCheck({
                 scope={
                   <SectionTabs
                     mode="segmented"
-                    className="declaration-pools filter-chips--flow"
+                    className="declaration-pools"
                     label="CWL pool"
                     items={(["main", "lazy"] as const).map((p) => {
                       return {
@@ -632,6 +632,7 @@ export default function ArrivalCheck({
                 }
                 filters={
                   <FiltersTrigger
+                    className="declaration-filters-trigger"
                     count={
                       Number(onlyNotReady) +
                       Number(pool === "lazy" && onlyExtras)

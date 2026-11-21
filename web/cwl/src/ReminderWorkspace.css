@@ -57,6 +57,12 @@
   gap: var(--wu-space-2);
   min-height: 44px;
 }
+.reminder-list-toolbar > .refresh-icon-button {
+  box-sizing: border-box;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--wu-radius-pill);
+}
 .reminder-status .small,
 .reminder-timezone,
 .reminder-list-count,
@@ -93,7 +99,7 @@
   gap: var(--wu-space-1);
 }
 .reminder-list-toolbar .section-tabs {
-  flex: 0 0 auto;
+  flex: 1 1 auto;
   min-width: 0;
 }
 .reminder-list-toolbar .section-tabs > button {
@@ -351,7 +357,8 @@
 }
 @media (max-width: 650px) {
   .reminder-list-toolbar .roster-pool-label-extra,
-  .reminder-list-toolbar .roster-sort-trigger > span {
+  .reminder-list-toolbar .roster-sort-trigger > span,
+  .reminder-list-toolbar .reminder-filters-trigger > span {
     position: absolute;
     width: 1px;
     height: 1px;
@@ -365,11 +372,17 @@
   .reminder-list-toolbar .section-tabs > button {
     padding-inline: var(--wu-space-1);
   }
-  .reminder-list-toolbar .roster-sort-trigger {
+  .reminder-list-toolbar .roster-sort-trigger,
+  .reminder-list-toolbar .reminder-filters-trigger {
     display: flex;
     align-items: center;
     justify-content: center;
+    box-sizing: border-box;
     flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
   }
   .reminder-list-toolbar > .roster-ui-button {
     gap: var(--wu-space-1);

@@ -185,6 +185,7 @@ export default function ReminderMessagesTab({
           }
           filters={
             <FiltersTrigger
+              className="reminder-filters-trigger"
               count={filterCount}
               open={panel === "filters"}
               disabled={busy}

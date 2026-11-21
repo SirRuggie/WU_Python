@@ -98,7 +98,7 @@
   }
 }
 
-.shell .list-toolbar > .section-tabs {
+.roster-ui.list-toolbar > .section-tabs[role="group"] {
   display: flex;
   flex-wrap: nowrap;
   gap: 0;
@@ -106,9 +106,28 @@
   border: 1px solid var(--roster-border);
   border-radius: var(--roster-radius-control);
 }
-.shell .list-toolbar > .section-tabs > button {
+.roster-ui.list-toolbar > .section-tabs[role="group"] > button {
+  position: relative;
+  border: 0;
   min-width: 44px;
   min-height: 44px;
+}
+.roster-ui.list-toolbar
+  > .section-tabs[role="group"]
+  > button[aria-pressed="true"] {
+  box-shadow: none;
+}
+.roster-ui.list-toolbar
+  > .section-tabs[role="group"]
+  > button[aria-pressed="true"]::after {
+  content: "";
+  position: absolute;
+  inset-inline: var(--wu-space-1);
+  bottom: var(--wu-space-1);
+  height: 2px;
+  border-radius: var(--roster-radius-control);
+  background: var(--wu-accent);
+  pointer-events: none;
 }
 @media (max-width: 650px) {
   .shell .compare-list-toolbar > .section-tabs > button,
