@@ -233,7 +233,7 @@ def test_selected_image_panel_never_exceeds_discord_action_row_limit():
 def test_selected_image_shows_default_or_current_override(document, slot, expected):
     definition = content.DOCUMENTS[document]
     rendered = content.document_renderer(definition)()
-    state = _state(document=document, selected_media_slot=slot,
+    state = _state(document=document, selected_media_slot=slot, selected_box="Images",
                    sections=[node.content for node in content.editable_text_nodes(definition, rendered)])
     dashboard = content.panel(state)
     galleries = content.media_galleries(dashboard)

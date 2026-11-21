@@ -13,22 +13,19 @@ def _count_components(items):
     return sum(1 + _count_components(getattr(item, "components", ())) for item in items)
 
 
-def test_native_document_baselines_keep_original_layout_and_text_totals():
+def test_native_document_baselines_keep_approved_topics_and_component_budget():
     async def check():
-        expected = {"about-us": (14, 2997), "strike-system": (12, 3236), "family-particulars": (28, 3710)}
-        expected_components = {"about-us": 25, "strike-system": 29, "family-particulars": 40}
-        for key in expected:
-            document = content.DOCUMENTS[key]
-            components = await content.baseline(document)
-            nodes = content.text_nodes(components)
-            assert (len(nodes), sum(len(node.content) for node in nodes)) == expected[key]
-            assert _count_components(components) == expected_components[key]
-            from test_info_channel_content import Clans
-            from test_content_dashboard_runtime import _ConfigCollection
-            db = SimpleNamespace(bot_config=_ConfigCollection(), clans=Clans())
-            preview = await content.render(document, [node.content for node in content.editable_text_nodes(document, components)], preview=True, mongo=db, guild_id=20)
-            assert sum(len(node.content) for node in content.text_nodes(preview)) == (3831 if key == "about-us" else expected[key][1])
-            assert _count_components(preview) == expected_components[key]
+        from test_info_channel_content import Clans
+        from test_content_dashboard_runtime import _ConfigCollection
+        for key, count in (("about-us",20),("strike-system",24),("family-particulars",27)):
+            document=content.DOCUMENTS[key]
+            components=await content.baseline(document)
+            fields=[node.content for node in content.editable_text_nodes(document,components)]
+            db=SimpleNamespace(bot_config=_ConfigCollection(),clans=Clans())
+            preview=await content.render(document,fields,preview=True,mongo=db,guild_id=20)
+            assert content.component_shape(preview)==content.component_shape(components)
+            assert _count_components(preview)==count
+            assert sum(len(node.content) for node in content.text_nodes(preview))<=4000
     asyncio.run(check())
 
 
@@ -68,31 +65,33 @@ def test_pure_setup_renderers_accept_sections_without_changing_the_component_sha
 
     for build in (recruit_strikesystem.build_strikesystem, recruit_familyparticulars.build_familyparticulars):
         original = build()
-        sections = [node.content for node in content.text_nodes(original)]
-        sections[0] += " (edited)"
+        document = content.DOCUMENTS["strike-system" if build is recruit_strikesystem.build_strikesystem else "family-particulars"]
+        sections = [node.content for node in content.editable_text_nodes(document, original)]
+        index = content.editable_blocks(document, sections)[0][0]
+        sections[index] += " (edited)"
         rendered = build(sections, action_id="draft", preview=True)
         assert content.component_shape(rendered) == content.component_shape(original)
         assert _count_components(rendered) == _count_components(original)
-        assert content.text_nodes(rendered)[0].content == sections[0]
+        assert content.text_nodes(rendered)[0].content == sections[index]
 
 
 def test_family_decorations_remain_fixed_and_named_blocks_are_semantic():
     async def check():
         document = content.DOCUMENTS["family-particulars"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         blocks = content.editable_blocks(document, sections)
-        assert len(blocks) == 20
+        assert len(blocks) == 14
         assert all("ᨖ" not in sections[index] for index, _label in blocks)
-        assert blocks[0][1] == "Family heading"
-        assert blocks[-1][1] == "Acknowledgement"
+        assert blocks[0] == (28, "Heading")
+        assert blocks[-1] == (27, "Body")
     asyncio.run(check())
 
 
 def test_render_rejects_a_full_document_over_discord_limit():
     async def check():
         document = content.DOCUMENTS["family-particulars"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
-        sections[0] += "x" * (4001 - sum(map(len, sections)))
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
+        sections[28] += "x" * 4001
         with pytest.raises(ValueError, match="4,000"):
             await content.render(document, sections)
     asyncio.run(check())
@@ -140,9 +139,9 @@ def test_model_like_fetched_text_components_are_read_for_stale_checks():
 def test_family_schema_does_not_change_when_editable_copy_contains_decorative_glyph():
     async def check():
         document = content.DOCUMENTS["family-particulars"]
-        sections = [node.content for node in content.text_nodes(await content.baseline(document))]
+        sections = [node.content for node in content.editable_text_nodes(document, await content.baseline(document))]
         sections[0] += " ᨖ"
-        assert len(content.editable_blocks(document, sections)) == 20
+        assert len(content.editable_blocks(document, sections)) == 14
     asyncio.run(check())
 
 
@@ -165,51 +164,15 @@ def test_revoked_clan_dashboard_role_is_refused_before_child_mutation():
 
 
 def test_native_document_changed_fields_match_exact_approved_text():
-    expected = [
-        ('strike-system', '🛡️**WARRIORS UNITED**', (
-            '🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little bant'
-            'er and joking is fine, but we do not allow some things...\n\n**1.** No form of sexism, rac'
-            'ism, religious discrimination, or gender discrimination will be tolerated. We ban you pe'
-            'rmanently, without a warning, if we see this anywhere on this server.\n\n**2.** While cuss'
-            'ing is allowed, do not cuss excessively or at someone. All such instances will be record'
-            'ed. A warning will be issued to you for each instance.\n\n**3.** Do not post advertisement'
-            's for free Nitro. We do not check if they are real, and we ban without a warning.\n\n**4.*'
-            '* Respect other members and their privacy. If you send direct messages to someone again '
-            'and again after they tell you to stop, you get a warning.\n\n**5.** When you post a messag'
-            'e, image, GIF or sticker, always follow the Discord Terms of Service: https://discord.co'
-            'm/terms. Not following Discord ToS will lead to a one-day mute, and a second instance wi'
-            'll lead to a ban from the server.\n\nAfter two warnings: you get a one-day timeout.\nAfter '
-            'three warnings: you get a one-week timeout.\nAfter four warnings: you are banned from the'
-            ' server for good and removed from the family in CoC.'
-        )),
-        ('family-particulars', 'To be included in war', (
-            'To be included in war, you must have GREEN ✅ 🛡️ (opt-in) as your War Status. FWA/No Stre'
-            'ss is explained below.\n\nIf you cannot take part in war for a personal reason, or your He'
-            'roes are upgrading in a clan that needs Heroes in war, set your War Status to RED ❌ 🛡️ ('
-            'opt-out).\n\nIf you do not tell us or do not change your war availability in one of these '
-            'cases, you get a strike in the Warriors United Strike System.\n\nIf you are in one of our '
-            "FWA Clans or one of our No Stress Clans, it's 50v50 wars, so no matter what your base is"
-            ' upgrading, you should be ✅ with your War Status.'
-        )),
-        ('family-particulars', 'Everyone must help fill', (
-            'Everyone must help fill Defensive CCs. Fill the Defensive CC of the member below you wit'
-            'h the troops they ask for. Do not leave one person to fill all of them.'
-        )),
-        ('family-particulars', 'Our Clan War General', (
-            'Our Clan War General will provide a scripted War Plan detailing your war assignment. Do '
-            'not assume that you attack your mirror. Wait for the War Plan before you attack. If ther'
-            'e is no plan after a long time, ping the War General role of your clan and ask. Do not a'
-            'ttack alone without a plan. You have 24 hours to plan and attack. Always attack for star'
-            's, not for loot or Hero status (unless given specific direction by the War General).'
-        )),
-        ('family-particulars', 'Select **I understand - Continue**', (
-            'Select **I understand - Continue** to confirm that you read the Family Particulars. Then'
-            ' select Apply to open an application ticket.\n\nSelect only one application ticket option.'
-        )),
-    ]
+    import json
+    from pathlib import Path
+    approved=json.loads((Path(__file__).parent/'fixtures/gauntlet270_copy.json').read_text())
     async def check():
-        for key, prefix, expected_field in expected:
-            nodes = content.text_nodes(await content.baseline(content.DOCUMENTS[key]))
-            matches = [node.content for node in nodes if node.content.startswith(prefix)]
-            assert matches == [expected_field]
+        strike='\n'.join(node.content for node in content.text_nodes(await content.baseline(content.DOCUMENTS['strike-system'])))
+        family='\n'.join(node.content for node in content.text_nodes(await content.baseline(content.DOCUMENTS['family-particulars'])))
+        assert approved['strike'][1].split('\n### ✅ Remove your strikes\n')[0] in strike
+        assert 'select **Contact staff** in <#1567967422118502441>' in strike
+        for index in (2,4,6,9,11,13,15,17,19):
+            assert approved['family'][index] in family
+        assert 'ᨖ' not in family and 'GOLDEN RULE' not in family
     asyncio.run(check())

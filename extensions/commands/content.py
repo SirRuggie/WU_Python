@@ -61,6 +61,8 @@ DOCUMENTS = {
     "family-rules": Document("family-rules", "Family Rules", None),
     "wu-faq": Document("wu-faq", "WU FAQ", None),
 }
+from utils.gauntlet_content import BOXES, LENGTHS, LEGACY_LENGTHS, sections_for as box_sections, validate_sections, project_public, merge_public
+
 BLOCK_LABELS = {
     "join-family": ("Heading", "Welcome", "What happens next", "Call to action"),
     "about-us": ("Welcome heading", "Welcome overview", "Tactical heading", "Tactical details", "Flexible Fun heading", "Flexible Fun details", "FWA heading", "FWA details", "Disclaimer heading", "Disclaimer", "Next step heading", "Next step"),
@@ -70,7 +72,7 @@ BLOCK_LABELS = {
     "warrior_desk": ("Heading", "Body"),
     "rite-of-passage": ("Heading", "Introduction", "Main path", "FWA path", "Closing"),
     "family-rules": ("Heading", "Body"),
-    "wu-faq": ("Questions heading", "Questions"),
+    "wu-faq": ("Questions heading", "Questions", "Who we are heading", "Who we are", "Our Clans heading", "Tactical description", "Flexible Fun description", "FWA description", "Clans footer"),
 }
 MEDIA_SLOTS = {
     "join-family": (("welcome", "Welcome banner"),),
@@ -203,23 +205,50 @@ def document_renderer(document: Document):
 
 def editable_text_nodes(document, components):
     nodes = text_nodes(components)
-    if document.key == "about-us" and len(nodes) == 14:
-        return nodes[:10] + nodes[12:]
-    if document.key == "wu-faq" and len(nodes) == 4:
-        return nodes[2:]
+    if document.key in {"about-us", "strike-system", "family-particulars"}:
+        texts = [node.content for node in nodes]
+        new_layout = ((document.key == "about-us" and len(components) == 5 and len(texts) == 11)
+                      or (document.key == "strike-system" and len(components) == 6 and len(texts) == 12)
+                      or (document.key == "family-particulars" and len(components) == 7 and len(texts) == 14))
+        if not new_layout and document.key == "about-us" and len(texts) == 14:
+            texts = texts[:10] + texts[12:]
+        fields = project_public(document.key, texts, legacy=not new_layout)
+        return [hikari.impl.TextDisplayComponentBuilder(content=value) for value in fields]
+    if document.key == "wu-faq":
+        if len(nodes) == 4:
+            from utils.info_channel_defaults import WU_FAQ_NEW_FIELDS
+            return nodes[2:] + [hikari.impl.TextDisplayComponentBuilder(content=value) for value in WU_FAQ_NEW_FIELDS]
+        if len(nodes) == 14:
+            return [nodes[index] for index in (12, 13, 0, 1, 2, 3, 5, 7, 9)]
+        if len(nodes) == 11:
+            from utils.gauntlet_content import without_label, faq_type_body
+            from utils.info_channel_content import strip_manual_clan_suffix
+            fields = box_sections("wu-faq")
+            for target, source in {2:0,3:1,4:2,8:6,0:9,1:10}.items():
+                fields[target] = nodes[source].content
+            for target, source, kind in ((5,3,"Tactical"),(6,4,"Flexible Fun"),(7,5,"FWA")):
+                body = strip_manual_clan_suffix(without_label(kind, nodes[source].content))
+                if body != faq_type_body(kind, fields[target]):
+                    fields[target] = body
+            return [hikari.impl.TextDisplayComponentBuilder(content=value) for value in fields]
     return nodes
 
 
 async def validate_template(document, sections, media=None):
-    expected = len(editable_text_nodes(document, await baseline(document)))
-    if (not isinstance(sections, list) or len(sections) != expected
-            or any(not isinstance(value, str) or not value.strip() for value in sections)):
-        raise ValueError("This saved content is incomplete. Reopen the dashboard and correct every block.")
+    if document.key in BOXES:
+        validate_sections(document.key, sections)
+    else:
+        expected = len(editable_text_nodes(document, await baseline(document)))
+        if (not isinstance(sections, list) or len(sections) != expected
+                or any(not isinstance(value, str) or not value.strip() for value in sections)):
+            raise ValueError("The saved text layout is invalid. Reopen the content dashboard.")
     return normal_media(document, media)
 
 
 async def render(document: Document, sections, *, media=None, action_id="preview", preview=False,
                  mongo=None, guild_id=None):
+    if document.key in BOXES:
+        sections = box_sections(document.key, sections)
     overrides = await validate_template(document, sections, media)
     resolved = {}
     if document.key in {"about-us", "wu-faq"}:
@@ -230,8 +259,7 @@ async def render(document: Document, sections, *, media=None, action_id="preview
         except (PyMongoError, OSError) as error:
             raise ValueError("I cannot read Family Rules right now. No post was changed. Try Preview again later.") from error
         resolved["family_rules"] = rules
-        if document.key == "about-us":
-            resolved["clans"] = await load_family_clans(mongo)
+        resolved["clans"] = await load_family_clans(mongo)
     components = document_renderer(document)(
         sections, media=overrides, action_id=action_id, preview=preview, **resolved
     )
@@ -249,9 +277,17 @@ async def template_for(mongo, document: Document, guild_id: int):
     if saved and isinstance(saved.get("sections"), list):
         try:
             media = normal_media(document, saved.get("media"))
-            await validate_template(document, saved["sections"], media=media)
-            return list(saved["sections"]), media, int(saved.get("revision", 0))
+            sections = list(saved["sections"])
+            if document.key in BOXES:
+                sections = box_sections(document.key, sections)
+                # An ambiguous legacy Strike split remains editable, not a
+                # default fallback that discards staff text. Render/Save validate.
+            else:
+                await validate_template(document, sections, media=media)
+            return sections, media, int(saved.get("revision", 0))
         except ValueError:
+            if document.key in LEGACY_LENGTHS and LEGACY_LENGTHS[document.key] < len(saved["sections"]) < LENGTHS[document.key]:
+                raise
             if document.key == "family-rules":
                 raise ValueError("The saved Family Rules are incomplete. Correct their heading and body before posting.") from None
     elif saved and document.key == "family-rules":
@@ -260,10 +296,11 @@ async def template_for(mongo, document: Document, guild_id: int):
         legacy = await mongo.bot_config.find_one({"_id": f"{document.legacy_key}:{guild_id}"})
         if legacy and isinstance(legacy.get("sections"), list):
             try:
-                await validate_template(document, legacy["sections"])
+                sections = box_sections(document.key, legacy["sections"]) if document.key in BOXES else list(legacy["sections"])
+                await validate_template(document, sections)
                 # Migration writes a new content key, so legacy revision cannot
                 # participate in that key's compare-and-swap predicate.
-                return list(legacy["sections"]), {}, 0
+                return sections, {}, 0
             except ValueError:
                 pass
     components = await baseline(document)
@@ -283,16 +320,16 @@ async def saved_media_for(mongo, document: Document, guild_id: int):
 
 
 def editable_blocks(document, sections):
-    labels = BLOCK_LABELS[document.key]
-    # Decorative text displays in Family Particulars are retained verbatim,
-    # never offered as edit fields, and still count toward the rendered limit.
-    fixed = {3, 6, 9, 13, 16, 19, 22, 25} if document.key == "family-particulars" else set()
-    indexes = [index for index in range(len(sections)) if index not in fixed]
-    return tuple(zip(indexes, labels, strict=True))
+    if document.key in BOXES:
+        return tuple((index, label) for box, fields in BOXES[document.key] for index, label in fields)
+    return tuple(enumerate(BLOCK_LABELS[document.key]))
 
 
 def editable_groups(document, sections):
     """Keep a section's heading and body in the same modal."""
+    if document.key in BOXES:
+        return tuple((label, tuple((index, field, "full") for index, field in fields))
+                     for label, fields in BOXES[document.key])
     blocks = editable_blocks(document, sections)
     if document.key == "family-rules":
         return (("Family Rules", ((0, "Heading", "full"), (1, "Body", "full"))),)
@@ -465,11 +502,31 @@ async def shared_rule_targets(mongo, bot, guild_id, application_id):
 
 
 async def supported_post_shape(document, components):
-    if component_shape(components) == component_shape(await baseline(document)):
+    shape = component_shape(components)
+    if shape == component_shape(await baseline(document)):
+        return True
+    text, separator, image, row = (10, ()), (14, ()), (12, ()), (1, ((2, ()),))
+    box = lambda *children: (17, tuple(children))
+    legacy = {
+        "about-us": (
+            image, box(text,separator,text,separator,text,text), box(text,text),
+            box(text,text,separator,text,text), box(text,text), box(text,text,row)),
+        "strike-system": (
+            image, box(text,separator,text), box(text,separator,text),
+            box(text,separator,text,image), box(text,separator,text,image),
+            box(text,separator,text), box(text,separator,text,row)),
+        "family-particulars": (
+            image, box(text,separator,*([text]*9)), box(text,separator,*([text]*9)),
+            box(text,separator,*([text]*5),image), box(text,separator,text,row)),
+        "wu-faq": (box(text,text),box(text,text)),
+    }
+    if shape == legacy.get(document.key):
         return True
     if document.key == "about-us":
-        from extensions.commands.setup.recruit_aboutus import build_aboutus
-        return component_shape(components) == component_shape(build_aboutus(include_family_rules=False))
+        old = legacy["about-us"]
+        return shape == old[:4] + old[5:]
+    if document.key == "wu-faq":
+        return shape == (box(text,text),box(*([text]*8)),box(text,text),box(text,text))
     return False
 
 
@@ -568,6 +625,11 @@ def has_unsaved_edits(state):
 
 async def new_draft(mongo, state):
     state = {key: value for key, value in state.items() if key not in {"_id", "created_at", "expires_at", "component_state"}}
+    if state.get("document") in BOXES:
+        normalize = lambda values: box_sections(state["document"], values)
+        state["sections"] = normalize(state["sections"])
+        if state.get("saved_snapshot"):
+            state["saved_snapshot"] = dict(state["saved_snapshot"], sections=normalize(state["saved_snapshot"]["sections"]))
     state["_id"] = uuid.uuid4().hex
     await insert_state(mongo, state, ttl=timedelta(minutes=30))
     return state
@@ -608,7 +670,7 @@ def panel(state, notice=None):
         hikari.impl.TextDisplayComponentBuilder(content=breadcrumb("Recruit Gauntlet", document.label)),
         hikari.impl.TextDisplayComponentBuilder(content=f"## {document.label}"),
         hikari.impl.TextDisplayComponentBuilder(
-            content=f"{'Unsaved changes' if has_unsaved_edits(state) else 'Saved'} · {sum(map(len, state['sections']))}/4,000 characters · draft expires in 30 minutes."
+            content=(f"{'Unsaved changes' if has_unsaved_edits(state) else 'Saved'} · Preview checks the whole post · draft expires in 30 minutes." if document.key in BOXES else f"{'Unsaved changes' if has_unsaved_edits(state) else 'Saved'} · {sum(map(len, state['sections']))}/4,000 characters · draft expires in 30 minutes.")
         ),
     ]
     if document.key in {"about-us", "wu-faq"}:
@@ -621,6 +683,8 @@ def panel(state, notice=None):
     menu = blocks.add_text_menu(f"content_block:{sid}", min_values=1, placeholder="Select a section to edit")
     for index, (label, _fields) in enumerate(editable_groups(document, state["sections"])):
         menu.add_option(label, str(index))
+    if media_slots(document):
+        menu.add_option("Images", "images")
     images = hikari.impl.MessageActionRowBuilder()
     selected_slot = state.get("selected_media_slot")
     image_menu = images.add_text_menu(
@@ -679,7 +743,7 @@ def panel(state, notice=None):
     if target and not target_matches_destination(state) and not fixed_public:
         rows.append(hikari.impl.TextDisplayComponentBuilder(content="The saved post is in a different channel. If you send here, a new post is made. To update the saved post, select its original channel."))
     controls = [blocks]
-    if media_slots(document):
+    if media_slots(document) and state.get("selected_box") == "Images":
         controls.append(images)
     controls.append(hikari.impl.SeparatorComponentBuilder(divider=True))
     if private_only:
@@ -815,7 +879,14 @@ async def initial_panel(ctx, mongo, state, notice=None):
 
 async def load(ctx, mongo, sid):
     state = await get_state(mongo, sid)
-    return state, state_problem(ctx, state)
+    problem = state_problem(ctx, state)
+    if not problem and state.get("document") in BOXES:
+        state = copy.deepcopy(state)
+        normalize = lambda values: box_sections(state["document"], values)
+        state["sections"] = normalize(state["sections"])
+        if state.get("saved_snapshot"):
+            state["saved_snapshot"]["sections"] = normalize(state["saved_snapshot"]["sections"])
+    return state, problem
 
 
 class ContentDashboard(lightbulb.SlashCommand, name="dashboard", description="Edit published server content"):
@@ -864,6 +935,8 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
             except ValueError:
                 await initial_panel(ctx, mongo, state, "The content dashboard does not support the layout of that post."); return
             _template, _media, revision = await template_for(mongo, document, state["guild_id"])
+            if document.key in BOXES:
+                sections = merge_public(document.key, _template, sections)
             destination_row = (await mongo.bot_config.find_one({"_id": destination_key(state["guild_id"], document.key)})
                        if document.key != "family-rules" else None)
             state.update(
@@ -975,6 +1048,8 @@ async def load_published_copy(ctx, action_id, mongo: MongoClient = lightbulb.di.
     document = DOCUMENTS[state["document"]]
     target = state["target"]
     sections = list(target.get("editable_original", target["original"]))
+    if document.key in BOXES:
+        sections = merge_public(document.key, state["sections"], sections)
     media = dict(zip((slot for slot, _ in media_slots(document)), target["original_media"], strict=True))
     try:
         await validate_template(document, sections, media=media)
@@ -1113,11 +1188,11 @@ async def send_to_channel(
     }
     draft = await new_draft(mongo, dict(state, target=target))
     link = f"https://discord.com/channels/{state['guild_id']}/{channel_id}/{message.id}"
-    notice = (f"Sent the current draft to <#{channel_id}>: [View posted message]({link})."
+    notice = (f"{DOCUMENTS[document_key].label} sent to <#{channel_id}>: [View posted message]({link})."
               if remembered else
-              f"Sent the current draft to <#{channel_id}>: [View posted message]({link}). I could not save its ID. To update this post later, reopen it with this message link.")
+              f"{DOCUMENTS[document_key].label} sent to <#{channel_id}>: [View posted message]({link}). I could not save its ID. To update this post later, reopen it with this message link.")
     if not remembered and document_key == "wu-faq":
-        notice = (f"Post sent: [View posted message]({link}). I could not save its published-post reference. "
+        notice = (f"{DOCUMENTS[document_key].label} sent: [View posted message]({link}). I could not save its published-post reference. "
                   "Do not send again. Keep this editor and the link; this draft can still update that exact post.")
     return panel(draft, notice)
 
@@ -1168,22 +1243,53 @@ async def choose_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
         await edit_modal_source(ctx, error_panel(problem)); return
     document = DOCUMENTS.get(state.get("document"))
     groups = editable_groups(document, state["sections"]) if document else ()
+    if values == ("images",) or values == ["images"]:
+        if not document or not media_slots(document):
+            await edit_modal_source(ctx, panel(state, "This document has no editable images.")); return
+        draft = await new_draft(mongo, dict(state, selected_box="Images"))
+        await edit_modal_source(ctx, panel(draft, "Select an image to edit.")); return
     if len(values) != 1 or not values[0].isdigit() or int(values[0]) >= len(groups):
         await edit_modal_source(ctx, panel(state, "Select one editable section.")); return
     title, fields = groups[int(values[0])]
+    if not fields and title == "Family Rules":
+        rules, _, _ = await template_for(mongo, DOCUMENTS["family-rules"], state["guild_id"])
+        row = hikari.impl.MessageActionRowBuilder()
+        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_rules_editor:{state['_id']}", label="Edit shared Family Rules")
+        row.add_interactive_button(hikari.ButtonStyle.SECONDARY, f"content_back_document:{state['_id']}", label="Back to document")
+        await edit_modal_source(ctx, [hikari.impl.ContainerComponentBuilder(accent_color=None, components=[
+            *[hikari.impl.TextDisplayComponentBuilder(content=value) for value in rules],
+            hikari.impl.TextDisplayComponentBuilder(content="Shared by WU FAQ and About Us. Save this draft before opening the shared editor."), row])])
+        return
     try:
         modal_rows = [
             hikari.impl.ModalActionRowBuilder().add_text_input(
                 f"content_{position}", label, value=modal_field_value(state["sections"][index], part),
                 required=True, min_length=1, max_length=4000,
-                style=hikari.TextInputStyle.PARAGRAPH if label == "Body" else hikari.TextInputStyle.SHORT,
+                style=hikari.TextInputStyle.SHORT if label == "Heading" else hikari.TextInputStyle.PARAGRAPH,
             )
             for position, (index, label, part) in enumerate(fields)
         ]
     except ValueError as exc:
         await edit_modal_source(ctx, panel(state, str(exc))); return
-    draft = await new_draft(mongo, dict(state, selected_fields=[list(field) for field in fields]))
+    draft = await new_draft(mongo, dict(state, selected_fields=[list(field) for field in fields], selected_box=title, selected_media_slot=None))
     await ctx.respond_with_modal(title=title[:45], custom_id=f"content_submit:{draft['_id']}", components=modal_rows)
+
+
+@register_action("content_rules_editor", preload_state=False)
+@lightbulb.di.with_di
+async def open_shared_rules(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
+                            bot: hikari.GatewayBot = lightbulb.di.INJECTED, **_):
+    state, problem = await load(ctx, mongo, action_id)
+    if problem:
+        return error_panel(problem)
+    if has_unsaved_edits(state):
+        return panel(state, "Save this draft before opening the shared Family Rules editor.")
+    rules, media, revision = await template_for(mongo, DOCUMENTS["family-rules"], state["guild_id"])
+    targets, errors = await shared_rule_targets(mongo, bot, state["guild_id"], int(ctx.interaction.application_id))
+    draft = dict(state, document="family-rules", sections=rules, media=media, revision=revision,
+                 target=None, destination_channel_id=None, shared_targets=targets, shared_target_errors=errors)
+    draft["saved_snapshot"] = draft_snapshot(draft)
+    return panel(await new_draft(mongo, draft))
 
 
 @register_action("content_media", preload_state=False)
@@ -1356,7 +1462,7 @@ async def submit_block(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTE
         field_ids = ["content"]
     else:
         field_ids = [f"content_{position}" for position in range(len(fields or ())) ]
-    if not fields or len(fields) > 2:
+    if not fields or len(fields) > 5:
         await interaction.edit_initial_response(components=panel(state, "Select a section before submitting an edit."), **NO_MENTIONS); return
     submitted = {item.custom_id: str(item.value) for row in interaction.components for item in row}
     if set(field_ids) - submitted.keys() or any(not submitted[key].strip() for key in field_ids):
@@ -1412,6 +1518,8 @@ async def _save(ctx, state, mongo, *, dashboard=False):
 async def _save_untracked(ctx, state, mongo):
     key = f"content:{state['document']}:{state['guild_id']}"; revision = state["revision"]
     document = DOCUMENTS[state["document"]]
+    if document.key in BOXES:
+        state = dict(state, sections=validate_sections(document.key, state["sections"]))
     update = {
         "sections": state["sections"], "media": normal_media(document, state.get("media")),
         "revision": revision + 1, "updated_by": int(ctx.user.id), "updated_at": utcnow(),
@@ -1431,6 +1539,10 @@ async def save(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED,
         return error_panel(problem)
     if not state.get("document"):
         return panel(state, "Select a document before saving.")
+    try:
+        await validate_template(DOCUMENTS[state["document"]], state["sections"], media=state.get("media"))
+    except ValueError as exc:
+        return panel(state, str(exc))
     if not await _save(ctx, state, mongo):
         return panel(state, "The template changed. Reopen the dashboard. If you save now, you replace the new template.")
     saved_state = dict(state, revision=state["revision"] + 1)
@@ -1474,6 +1586,10 @@ async def save_and_publish(ctx, action_id, mongo: MongoClient = lightbulb.di.INJ
         target = state.get("target") or {}
         if not source or any(target.get(key) != value for key, value in source.items()):
             return panel(state, "The Warrior Desk post changed or is missing. Use Post Warrior Desk panel in Ticket settings, then reopen this editor. Your draft is unchanged." if state["document"] == "warrior_desk" else "The public Apply post changed or is missing. Complete ticket setup, then reopen Recruit Gauntlet. Your draft is unchanged.")
+    try:
+        await validate_template(DOCUMENTS[state["document"]], state["sections"], media=state.get("media"))
+    except ValueError as exc:
+        return panel(state, str(exc))
     if not await _save(ctx, state, mongo):
         return panel(state, "The template changed. Reopen the dashboard. The post was not updated.")
     saved_state = dict(state, revision=state["revision"] + 1)
@@ -1576,7 +1692,8 @@ async def publish_state(ctx, state, mongo, bot, *, saved_template=False, return_
         return answer(reason, uncertain=uncertain)
     finally:
         await mongo.bot_config.delete_one({"_id": lease_key, "token": token})
-    notice = "Template saved and published post updated." if saved_template else "Published post updated."
+    link = f"https://discord.com/channels/{state['guild_id']}/{target['channel_id']}/{target['message_id']}"
+    notice = f"{document.label}: " + ("Template saved and published post updated." if saved_template else "Published post updated.") + f" [View posted message]({link})."
     if return_outcome:
         return answer(notice, ok=True)
     public_components = getattr(updated_message, "components", ()) or rendered

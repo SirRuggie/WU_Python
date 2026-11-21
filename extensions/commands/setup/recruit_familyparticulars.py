@@ -9,8 +9,7 @@ import uuid
 
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
-from utils.constants import WU_GOLD
-from utils.dashboard_urls import SIGNUP_URL
+from utils.constants import WU_GOLD, WU_GREEN
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
 from utils.gauntlet_diagnostics import observed, event as gauntlet_event
@@ -38,165 +37,29 @@ FAMILY_PARTICULARS_GUILD_ID = 644963518025826315
 
 
 def build_familyparticulars(sections=None, *, media=None, action_id="preview", preview=False):
-    """Render Family Particulars for publishing or dashboard previews."""
-    if sections is not None and len(sections) != 28:
-        raise ValueError("Family Particulars requires exactly twenty-eight text fields.")
-
+    """Keep saved field meanings and one topic per public box."""
+    from utils.gauntlet_content import sections_for, subtopic
+    fields = sections_for("family-particulars", sections)
     media = media or {}
-
-    def image(slot, default):
-        return media.get(slot, default)
-
-    components = [
-            # Image at the top
-            Media(
-                items=[
-                    MediaItem(
-                        media=image("welcome", "assets/recruit/static/WU_FamilyParticulars.gif")
-                    )
-                ]
-            ),
-
-            # Embed 1: Family Particulars
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    Text(content="## <:warriorcat:947992348971905035> **Warriors United Family Particulars**"),
-                    Separator(divider=True),
-                    Text(content="### **GOLDEN RULE**\n"),
-                    Text(content=(
-                        "The main rule for any group or gathering is: \"Treat and speak to others as you would expect to be "
-                        "treated or spoken to.\" We understand that not every day is a good day. Just don't bring your bad day in here."
-                    )),
-                    Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                    Text(content="### 🛡 **FRIENDLY CHALLENGES**\n"),
-                    Text(content=(
-                        "Every time you open the game, post a Friendly Challenge. Do this at any Town Hall level. "
-                        "It gives everyone a chance to practice."
-                    )),
-                    Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                    Text(content="### 🛡 **CLAN GAMES**\n"),
-                    Text(content=(
-                        "The goal is simple: each member must earn at least 1,000 points in Clan Games. "
-                        "Builder Base challenges give you these points quickly. For example, 40 members who earn "
-                        "1,250 points each make the 50,000 points that we need."
-                    )),
-                    Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                ]
-            ),
-
-            # Embed 2: Family War Rules
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    Text(content="## <:warriorcat:947992348971905035> **Family War Rules**"),
-                    Separator(divider=True),
-                    Text(content="### 🛡 **WAR ELIGIBILITY**\n"),
-                    Text(content=(
-                        "To be included in war, you must have GREEN ✅ 🛡️ (opt-in) as your War Status. FWA/No Stress is explained below.\n\n"
-                        "If you cannot take part in war for a personal reason, or your Heroes are upgrading in a clan that needs "
-                        "Heroes in war, set your War Status to RED ❌ 🛡️ (opt-out).\n\n"
-                        "If you do not tell us or do not change your war availability in one of these cases, you get a strike in the Warriors United Strike System.\n\n"
-                        "If you are in one of our FWA Clans or one of our No Stress Clans, it's 50v50 wars, so no matter what your "
-                        "base is upgrading, you should be ✅ with your War Status."
-                    )),
-                    Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                    Text(content="### 🛡 **PREP DAY**\n"),
-                    Text(content=(
-                        "Everyone must help fill Defensive CCs. Fill the Defensive CC of the member below you with the troops they ask for. "
-                        "Do not leave one person to fill all of them."
-                    )),
-                    Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                    Text(content="### 🛡 **BATTLE DAY**\n"),
-                    Text(content=(
-                        "Our Clan War General will provide a scripted War Plan detailing your war assignment. Do not assume that you attack your mirror. "
-                        "Wait for the War Plan before you attack. If there is no plan after a long time, ping the War General role of your clan "
-                        "and ask. Do not attack alone without a plan. You have 24 hours to plan and attack. "
-                        "Always attack for stars, not for loot or Hero status (unless given specific "
-                        "direction by the War General)."
-                    )),
-                    Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                ]
-            ),
-
-            # Embed 3: Clan War League
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    Text(content="## <:warriorcat:947992348971905035> **Warriors United Clan War League**"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "CWL is our biggest team event. Your clan counts on you. Help the whole team to win. "
-                        "We split into different clans for this event. Three factors determine the "
-                        "league in which you'll be placed:\n"
-                        "1) War activity\n"
-                        "2) War performance\n"
-                        "3) Account strength.\n\n"
-                        f"You do not have to take part in CWL. To take part, sign up on the dashboard before the deadline: {SIGNUP_URL}. "
-                        "We make no exceptions. The signup information allows clan "
-                        "Leaders and War Generals to produce clan rosters. We have several clans in the family, so everyone can have "
-                        "a shot at some medals. If you have multiple accounts, only three are allotted to be in one clan roster.\n\n"
-                        "No signup, no play."
-                    )),
-                    Text(content="\nᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                    Text(content="### 🛡 **Principles for Every CWL Battle**\n"),
-                    Text(content=(
-                        "• Be available to attack and make sure you request offensive CC troops.\n\n"
-                        "• Have your heroes ready for battle.\n\n"
-                        "• Write your defensive CC troop request clearly (for example, Ice Golem/Dragon or IG/Drag).\n\n"
-                        "• Donate Defensive CC troops to the player below you and/or at least one of your teammates, "
-                        "making sure they are max-level troops.\n\n"
-                        "• Make a plan of attack. You have 24 hours for one attack.\n\n"
-                        "Ask our Attack Trainers for help in the \"Help-Me-Attack-This-Base\" channels."
-                    )),
-                    Text(content="ᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖᨖ"),
-                    Media(
-                        items=[
-                            MediaItem(
-                                media=image("cwl", "assets/branding/banners/warriors_united_.gif")
-                            )
-                        ]
-                    ),
-                ]
-            ),
-
-            # Embed 4: Acknowledgment
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    Text(content="## 📜 **ACKNOWLEDGMENT**"),
-                    Separator(divider=True),
-                    Text(content=(
-                        "Select **I understand - Continue** to confirm that you read the Family Particulars. Then select Apply to open an application ticket.\n\nSelect only one application ticket option."
-                    )),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SUCCESS,
-                                custom_id=f"familyparticulars_acknowledge:{action_id}",
-                                label="I understand - Continue",
-                                emoji=hikari.Snowflake(ICONS["yes"])
-                            )
-                        ]
-                    )
-                ]
-            ),
+    return [
+        Media(items=[MediaItem(media=media.get("welcome", "assets/recruit/static/WU_FamilyParticulars.gif"))]),
+        Container(accent_color=WU_GOLD, components=[Text(content=fields[28]), Text(content=fields[29])]),
+        Container(accent_color=WU_GREEN, components=[Text(content=fields[30]),
+            Text(content=subtopic("Friendly Challenges", fields[5])),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL), Text(content=subtopic("Clan Games", fields[8]))]),
+        Container(accent_color=WU_GREEN, components=[Text(content=fields[31]),
+            Text(content=subtopic("War Status", fields[12])),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL), Text(content=subtopic("Prep Day", fields[15])),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL), Text(content=subtopic("Battle Day", fields[18]))]),
+        Media(items=[MediaItem(media=media.get("cwl", "assets/branding/banners/warriors_united_.gif"))]),
+        Container(accent_color=WU_GREEN, components=[Text(content=fields[32]), Text(content=fields[21]),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL), Text(content=subtopic("Every CWL Battle", fields[24]))]),
+        Container(accent_color=WU_GOLD, components=[Text(content=fields[33]), Text(content=fields[27]),
+            ActionRow(components=[Button(style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"familyparticulars_acknowledge:{action_id}", label="I understand - Continue",
+                emoji=hikari.Snowflake(ICONS["yes"]), is_disabled=preview)]),
+        ]),
     ]
-    if sections is not None:
-        values = iter(sections)
-        components = [
-            Container(
-                accent_color=component.accent_color,
-                components=[
-                    Text(content=next(values)) if isinstance(child, Text) else child
-                    for child in component.components
-                ],
-            ) if isinstance(component, Container) else component
-            for component in components
-        ]
-    if preview:
-        components[-1].components[-1].components[0].set_is_disabled(True)
-    return components
 
 
 class RecruitFamilyParticulars(
@@ -219,18 +82,14 @@ class RecruitFamilyParticulars(
             ctx, bot, role_id=CLAN_RULES_READ_ROLE_ID, next_channel_id=APPLY_HERE_CHANNEL_ID
         ):
             return
-        saved = await mongo.bot_config.find_one({"_id": f"content:family-particulars:{ctx.guild_id}"})
-        if saved:
-            from extensions.commands.content import DOCUMENTS, render
-            try:
-                components = await render(
-                    DOCUMENTS["family-particulars"], saved["sections"], media=saved.get("media"),
-                    action_id=str(uuid.uuid4()),
-                )
-            except (KeyError, ValueError):
-                saved = None
-        if not saved:
-            components = build_familyparticulars(action_id=str(uuid.uuid4()))
+        from extensions.commands.content import DOCUMENTS, render, template_for
+        try:
+            sections, media, _revision = await template_for(mongo, DOCUMENTS["family-particulars"], int(ctx.guild_id))
+            components = await render(DOCUMENTS["family-particulars"], sections, media=media,
+                                      action_id=str(uuid.uuid4()), mongo=mongo, guild_id=int(ctx.guild_id))
+        except ValueError as error:
+            await ctx.respond(str(error), ephemeral=True)
+            return
         await bot.rest.create_message(
             channel=ctx.channel_id,
             components=components,

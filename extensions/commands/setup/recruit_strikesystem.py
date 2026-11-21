@@ -9,7 +9,7 @@ import uuid
 
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
-from utils.constants import WU_GOLD
+from utils.constants import WU_GOLD, WU_GREEN, WU_RED
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
 from utils.gauntlet_diagnostics import observed, event as gauntlet_event
@@ -37,156 +37,29 @@ STRIKE_SYSTEM_GUILD_ID = 644963518025826315
 
 
 def build_strikesystem(sections=None, *, media=None, action_id="preview", preview=False):
-    """Render the Strike System post for publishing or dashboard previews."""
-    if sections is not None and len(sections) != 12:
-        raise ValueError("Strike System requires exactly twelve editable text fields.")
-    values = iter(sections) if sections is not None else None
+    """Compose the five approved topic boxes without changing transport."""
+    from utils.gauntlet_content import sections_for, subtopic
+    fields = sections_for("strike-system", sections)
     media = media or {}
-
-    def text(default):
-        return Text(content=next(values) if values is not None else default)
-
-    def image(slot, default):
-        return media.get(slot, default)
-
-    components = [
-            # Image at the top
-            Media(
-                items=[
-                    MediaItem(
-                        media=image("rules", "assets/recruit/strikes/WU_Strikes.gif")
-                    )
-                ]
-            ),
-
-            # Embed 1: Basic Rules
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    text("## 📜 **Warriors United Basic Rules** 📜"),
-                    Separator(divider=True),
-                    text((
-                        "🛡️**WARRIORS UNITED**🛡️ is an adult community with good morals and ethics. A little banter and joking "
-                        "is fine, but we do not allow some things...\n\n"
-                        "**1.** No form of sexism, racism, religious discrimination, or gender discrimination will be tolerated. "
-                        "We ban you permanently, without a warning, if we see this anywhere on this server.\n\n"
-                        "**2.** While cussing is allowed, do not cuss excessively or at someone. All such instances will be recorded. "
-                        "A warning will be issued to you for each instance.\n\n"
-                        "**3.** Do not post advertisements for free Nitro. We do not check if they are real, and we ban "
-                        "without a warning.\n\n"
-                        "**4.** Respect other members and their privacy. If you send direct messages to someone again and again after they tell you to stop, "
-                        "you get a warning.\n\n"
-                        "**5.** When you post a message, image, GIF or sticker, always follow the Discord Terms of Service: "
-                        "https://discord.com/terms. Not following Discord ToS will lead to a one-day mute, "
-                        "and a second instance will lead to a ban from the server.\n\n"
-                        "After two warnings: you get a one-day timeout.\n"
-                        "After three warnings: you get a one-week timeout.\n"
-                        "After four warnings: you are banned from the server for good and removed from the family in CoC."
-                    )),
-                ]
-            ),
-
-            # Embed 2: Strike System Overview
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    text("## ❌ **Warriors United Strike System** ❌"),
-                    Separator(divider=True),
-                    text((
-                        "Our Strike System is a penalty system in which strikes are given to members who violate the rules and "
-                        "principles implemented within the Warriors United clan family.\n\n"
-                        "Each violation has a fixed number of strikes. What counts is the number of strikes, not the number of violations. "
-                        "For example, missing both attacks in war is one violation that results "
-                        "in two strikes. Members have a total of 4 strikes before disciplinary action takes place. When you get the maximum "
-                        "number of strikes, you have 12 hours to open a ticket and talk about the case. If you do not, we remove you from the clan "
-                        "and ban you from all other clans in the family for one week. After one "
-                        "week with no reply, your clan roles will be removed, returning you to the status you had when you joined the server.\n\n"
-                        "All strikes are given per individual account, with the exception of civil-behavior offenses. "
-                        "If one action causes more than one strike, we count only the strikes of the worst offense. "
-                        "We still note all strikes.\n\n"
-                        "Strikes are recorded automatically. Staff manage them in Strikes & replacements. "
-                        "Each strike resets after a set time. This is usually 60 days.\n\n"
-                        "Below are charts of offenses and the value of each offense."
-                    )),
-                ]
-            ),
-
-            # Embed 3: Main Clan Strike System
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    text("## ❌ **MAIN CLAN STRIKE SYSTEM** ❌"),
-                    Separator(divider=True),
-                    text("The rules for the Main clan strike system are below."),
-                    Media(
-                        items=[
-                            MediaItem(
-                                media=image("main-strikes", "assets/recruit/strikes/WU_Main_Strikes.jpg")
-                            )
-                        ]
-                    ),
-                ]
-            ),
-
-            # Embed 4: FWA Strike System
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    text("## ❌ **FWA STRIKE SYSTEM** ❌"),
-                    Separator(divider=True),
-                    text("The rules for the FWA clan strike system are below."),
-                    Media(
-                        items=[
-                            MediaItem(
-                                media=image("fwa-strikes", "assets/recruit/strikes/WU_FWA_Strikes.jpg")
-                            )
-                        ]
-                    ),
-                ]
-            ),
-
-            # Embed 5: Terms and Conditions
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    text("## ❌ **Terms and Conditions** ❌"),
-                    Separator(divider=True),
-                    text((
-                        "• For all offenses except those in the Red Zone, we can give a warning before a strike. "
-                        "The leadership team decides if it gives a warning. We log all warnings.\n\n"
-                        "• Strikes can be withdrawn by leadership majority.\n\n"
-                        "• Leadership can change this system at any time between seasons.\n\n"
-                        "• A kicked person may be reinvited to the Family after a unanimous vote by Leadership."
-                    )),
-                ]
-            ),
-
-            # Embed 6: Acknowledgment
-            Container(
-                accent_color=WU_GOLD,
-                components=[
-                    text("## 📜 **ACKNOWLEDGMENT**"),
-                    Separator(divider=True),
-                    text((
-                        "Select **I understand - Continue** to confirm you have read and agree to follow the Warriors United Strike System, "
-                        "then continue to Family Particulars for the next Recruit Gauntlet step."
-                    )),
-                    ActionRow(
-                        components=[
-                            Button(
-                                style=hikari.ButtonStyle.SUCCESS,
-                                custom_id=f"strikesystem_acknowledge:{action_id}",
-                                label="I understand - Continue",
-                                emoji=hikari.Snowflake(ICONS["yes"])
-                            )
-                        ]
-                    )
-                ]
-            ),
+    return [
+        Media(items=[MediaItem(media=media.get("rules", "assets/recruit/strikes/WU_Strikes.gif"))]),
+        Container(accent_color=WU_RED, components=[Text(content=fields[14]), Text(content=fields[12])]),
+        Container(accent_color=WU_GREEN, components=[Text(content=fields[15]), Text(content=fields[13])]),
+        Container(accent_color=WU_RED, components=[Text(content=fields[16]), Text(content=fields[3])]),
+        Container(accent_color=None, components=[
+            Text(content=fields[17]), Text(content=subtopic("Main", fields[5])),
+            Media(items=[MediaItem(media=media.get("main-strikes", "assets/recruit/strikes/WU_Main_Strikes.jpg"))]),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL),
+            Text(content=subtopic("FWA", fields[7])),
+            Media(items=[MediaItem(media=media.get("fwa-strikes", "assets/recruit/strikes/WU_FWA_Strikes.jpg"))]),
+            Separator(divider=True, spacing=hikari.SpacingType.SMALL), Text(content=subtopic("Terms", fields[9])),
+        ]),
+        Container(accent_color=WU_GOLD, components=[Text(content=fields[18]), Text(content=fields[11]),
+            ActionRow(components=[Button(style=hikari.ButtonStyle.SUCCESS,
+                custom_id=f"strikesystem_acknowledge:{action_id}", label="I understand - Continue",
+                emoji=hikari.Snowflake(ICONS["yes"]), is_disabled=preview)]),
+        ]),
     ]
-    if preview:
-        components[-1].components[-1].components[0].set_is_disabled(True)
-    return components
 
 
 class RecruitStrikeSystem(
@@ -210,18 +83,14 @@ class RecruitStrikeSystem(
             next_channel_id=FAMILY_PARTICULARS_CHANNEL_ID,
         ):
             return
-        saved = await mongo.bot_config.find_one({"_id": f"content:strike-system:{ctx.guild_id}"})
-        if saved:
-            from extensions.commands.content import DOCUMENTS, render
-            try:
-                components = await render(
-                    DOCUMENTS["strike-system"], saved["sections"], media=saved.get("media"),
-                    action_id=str(uuid.uuid4()),
-                )
-            except (KeyError, ValueError):
-                saved = None
-        if not saved:
-            components = build_strikesystem(action_id=str(uuid.uuid4()))
+        from extensions.commands.content import DOCUMENTS, render, template_for
+        try:
+            sections, media, _revision = await template_for(mongo, DOCUMENTS["strike-system"], int(ctx.guild_id))
+            components = await render(DOCUMENTS["strike-system"], sections, media=media,
+                                      action_id=str(uuid.uuid4()), mongo=mongo, guild_id=int(ctx.guild_id))
+        except ValueError as error:
+            await ctx.respond(str(error), ephemeral=True)
+            return
         await bot.rest.create_message(
             channel=ctx.channel_id,
             components=components,

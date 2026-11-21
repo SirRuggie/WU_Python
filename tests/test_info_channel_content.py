@@ -59,7 +59,7 @@ async def groups(rows=None):
 
 def test_authoritative_copy_is_exact_and_about_us_has_twelve_fields():
     assert list(FAMILY_RULES) == COPY["family_rules"]
-    assert list(WU_FAQ_QUESTIONS) == COPY["wu_faq"]
+    assert list(WU_FAQ_QUESTIONS) == json.loads((Path(__file__).parent / "fixtures/wu_faq270_copy.json").read_text())["questions"]
     assert list(ABOUT_US_COPY) == COPY["about_us"]
     defaults = about_us_defaults()
     assert len(defaults) == 12

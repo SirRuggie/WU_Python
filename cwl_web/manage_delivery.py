@@ -80,7 +80,7 @@ async def page(request):
     await require_manage(request, 'recruit')
     key = request.match_info['document']
     data = await review(request, key)
-    fields = [{'key':f'section.{i}', 'label':label, 'type':'textarea', 'value':data['sections'][i], 'readonly':True} for i,label in enumerate(content.BLOCK_LABELS[key])]
+    fields = [{'key':f'section.{i}', 'label':label, 'type':'textarea', 'value':data['sections'][i], 'readonly':True} for i,label in content.editable_blocks(content.DOCUMENTS[key],data['sections'])]
     channel = data['destination'] or (data['target'] or {}).get('channel_id')
     fields.insert(0, {'key':'channel','label':'Posting channel','type':'text','value':str(channel or "Select a posting channel first"),'readonly':True})
     channel_name = None
@@ -179,8 +179,8 @@ async def publish(bot, mongo, row, ctx):
         try:
             await content.remember_published(mongo,GUILD_ID,key,destination,int(message.id),int(row['user_id']))
         except Exception:
-            return {'message':'Post sent, but its link could not be saved. Do not send again.', 'url':f'https://discord.com/channels/{GUILD_ID}/{destination}/{message.id}'}
-        return {'message':'New post sent.', 'url':f'https://discord.com/channels/{GUILD_ID}/{destination}/{message.id}'}
+            return {'message':f'{document.label} sent, but its link could not be saved. Do not send again.', 'url':f'https://discord.com/channels/{GUILD_ID}/{destination}/{message.id}'}
+        return {'message':f'{document.label}: New post sent.', 'url':f'https://discord.com/channels/{GUILD_ID}/{destination}/{message.id}'}
     if not target or (destination and target['channel_id'] != destination):
         raise ValueError('The posting channel must match the saved post.')
     lease = f"content_publish:{target['channel_id']}:{target['message_id']}"; token=uuid.uuid4().hex
@@ -204,7 +204,7 @@ async def publish(bot, mongo, row, ctx):
         await bot.rest.edit_message(target['channel_id'],target['message_id'],components=rendered,attachments=attachments,**content.NO_MENTIONS)
     finally:
         await mongo.bot_config.delete_one({'_id':lease,'token':token})
-    return {'message':'Existing post updated.', 'url':f"https://discord.com/channels/{GUILD_ID}/{target['channel_id']}/{target['message_id']}"}
+    return {'message':f'{document.label}: Existing post updated.', 'url':f"https://discord.com/channels/{GUILD_ID}/{target['channel_id']}/{target['message_id']}"}
 
 
 def routes(app):

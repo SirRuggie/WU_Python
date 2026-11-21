@@ -10,7 +10,7 @@ from collections.abc import Mapping, Sequence
 from pymongo.errors import PyMongoError
 
 from utils.constants import CLAN_TYPES as REGISTRY_CLAN_TYPES
-from utils.info_channel_defaults import ABOUT_US_COPY, FAMILY_RULES
+from utils.info_channel_defaults import ABOUT_US_COPY, FAMILY_RULES, WU_FAQ_QUESTIONS, WU_FAQ_NEW_FIELDS
 
 
 CLAN_TYPES = tuple(kind for kind in REGISTRY_CLAN_TYPES if kind in {"Tactical", "Flexible Fun", "FWA"})
@@ -35,12 +35,41 @@ def strip_manual_clan_prefix(body: str) -> str:
     return "".join(lines)
 
 
+def strip_manual_clan_suffix(body: str) -> str:
+    lines = body.splitlines(keepends=True)
+    while lines and _MANUAL_CLAN_LINE.fullmatch(lines[-1].rstrip("\r\n")):
+        lines.pop()
+    return "".join(lines).rstrip("\n")
+
+
 def about_us_defaults() -> list[str]:
-    """Keep the twelve fields; clan details are descriptions, not registry data."""
     fields = list(ABOUT_US_COPY)
     for index in (3, 5, 7):
         fields[index] = strip_manual_clan_prefix(fields[index])
     return fields
+
+
+def wu_faq_sections(sections: Sequence[str] | None = None) -> list[str]:
+    """Append missing new fields; never rewrite saved Questions or storage."""
+    defaults = [*WU_FAQ_QUESTIONS, *WU_FAQ_NEW_FIELDS]
+    if sections is not None and not isinstance(sections, (list, tuple)):
+        raise ValueError("WU FAQ needs all 9 text fields. Reopen the editor.")
+    fields = list(defaults if sections is None else sections)
+    if 2 <= len(fields) < len(defaults):
+        fields.extend(defaults[len(fields):])
+    validate_fields(fields, 9, "WU FAQ")
+    return fields
+
+
+def clan_lines(groups: Mapping[str, Sequence[Mapping[str, str]]], kind: str) -> str:
+    """The shared registry-name escaping used by About Us and WU FAQ."""
+    if set(groups) != set(CLAN_TYPES) or any(not groups[item] for item in CLAN_TYPES):
+        raise InfoContentUnavailable("The clan registry is incomplete. Preview again after checking all three clan types.")
+    lines = []
+    for clan in groups[kind]:
+        name = _MARKDOWN.sub(r"\\\1", clan["name"])
+        lines.append(f"**{name}** `{clan['tag']}`")
+    return "\n".join(lines)
 
 
 def family_rules_sections(sections: Sequence[str] | None = None) -> list[str]:
@@ -147,17 +176,13 @@ def _overview_counts(body: str, groups: Mapping[str, Sequence]) -> str:
 
 def about_us_sections(fields: Sequence[str], groups: Mapping[str, Sequence[Mapping[str, str]]]) -> list[str]:
     """Derive public text without modifying the twelve stored editor fields."""
-    validate_fields(fields, 12, "About Us")
+    validate_fields(fields, len(fields) if len(fields) in {12,16} else 12, "About Us")
     if set(groups) != set(CLAN_TYPES) or any(not groups[kind] for kind in CLAN_TYPES):
         raise InfoContentUnavailable("The clan registry is incomplete. Preview again after checking all three clan types.")
     rendered = list(fields)
     rendered[1] = _overview_counts(fields[1], groups)
     for index, kind in ((3, "Tactical"), (5, "Flexible Fun"), (7, "FWA")):
-        lines = []
-        for clan in groups[kind]:
-            name = _MARKDOWN.sub(r"\\\1", clan["name"])
-            lines.append(f"**{name}** `{clan['tag']}`")
-        rendered[index] = "\n".join(lines) + "\n" + strip_manual_clan_prefix(fields[index])
+        rendered[index] = clan_lines(groups, kind) + "\n" + strip_manual_clan_prefix(fields[index])
     return rendered
 
 

@@ -42,7 +42,7 @@ def test_strikesystem_next_step_and_target_are_updated():
     text = content.text_nodes(parts)[-1].content
     assert "Select **I understand - Continue**" in text
     assert "https://" not in text
-    assert text == "Select **I understand - Continue** to confirm you have read and agree to follow the Warriors United Strike System, then continue to Family Particulars for the next Recruit Gauntlet step."
+    assert text == "Select **I understand - Continue** to confirm that you read and agree to the WU Strike System. Then read Family Particulars."
     assert strike_system.STRIKE_SYSTEM_ROLE_ID == 1553110508746448956
     assert strike_system.FAMILY_PARTICULARS_CHANNEL_ID == 1547242699873325116
 

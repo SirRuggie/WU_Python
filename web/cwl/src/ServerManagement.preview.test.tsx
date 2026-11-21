@@ -352,3 +352,108 @@ it("preview stays an amber notice while hints and dirty-post warnings keep separ
   expect(html).not.toContain('class="manage-status"');
   expect(html).not.toContain('class="manage-result"');
 });
+
+function renderCleanMissingPreview(
+  pane: "edit" | "preview" = "edit",
+  cached?: [],
+) {
+  const faq = { ...document, id: "gauntlet--wu-faq", preview: cached };
+  hooks.values = [
+    [],
+    "",
+    [],
+    faq,
+    faq,
+    { message: "Saved text" },
+    false,
+    "",
+    "",
+    null,
+    false,
+    0,
+    "",
+    null,
+    "",
+    pane,
+  ];
+  const html = renderToStaticMarkup(
+    <ServerManagement area="applications-settings" />,
+  );
+  return { html, effect: hooks.effects[3] };
+}
+it("clean FAQ loads one preview on desktop when GET deferred its registry read", async () => {
+  transport.mockResolvedValue({
+    preview: [{ type: "text", text: "All three clan lists" }],
+  });
+  const cleanup = renderCleanMissingPreview().effect();
+  await vi.advanceTimersByTimeAsync(700);
+  expect(transport).toHaveBeenCalledExactlyOnceWith(
+    "/manage/content/recruit/preview",
+    "POST",
+    { revision: "reviewed", values: {} },
+  );
+  expect(hooks.setters[9]).toHaveBeenCalledWith([
+    { type: "text", text: "All three clan lists" },
+  ]);
+  if (cleanup) cleanup();
+});
+it("clean FAQ does not load hidden mobile preview but loads after switching to Preview", async () => {
+  viewport.compact = true;
+  const hidden = renderCleanMissingPreview().effect();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(transport).not.toHaveBeenCalled();
+  if (hidden) hidden();
+  hooks.index = 0;
+  hooks.effects = [];
+  transport.mockResolvedValue({ preview: [] });
+  const shown = renderCleanMissingPreview("preview").effect();
+  await vi.advanceTimersByTimeAsync(700);
+  expect(transport).toHaveBeenCalledOnce();
+  if (shown) shown();
+});
+it("an intentionally cached empty preview is already loaded", async () => {
+  const cleanup = renderCleanMissingPreview("edit", []).effect();
+  await vi.advanceTimersByTimeAsync(1000);
+  expect(transport).not.toHaveBeenCalled();
+  expect(hooks.setters[9]).toHaveBeenCalledWith([]);
+  if (cleanup) cleanup();
+});
+it("missing-preview registry failure is visible without claiming a last valid render", async () => {
+  transport.mockRejectedValue(new Error("The clan registry is unavailable"));
+  const cleanup = renderCleanMissingPreview().effect();
+  await vi.advanceTimersByTimeAsync(700);
+  expect(hooks.setters[14]).toHaveBeenCalledWith(
+    "Preview unavailable. The clan registry is unavailable",
+  );
+  expect(hooks.setters[9]).not.toHaveBeenCalled();
+  if (cleanup) cleanup();
+});
+it("a stale missing-preview failure cannot overwrite a newer success", async () => {
+  let reject!: (error: Error) => void;
+  transport.mockReturnValueOnce(
+    new Promise((_, fail) => {
+      reject = fail;
+    }),
+  );
+  const old = renderCleanMissingPreview().effect();
+  await vi.advanceTimersByTimeAsync(700);
+  if (old) old();
+  hooks.index = 0;
+  hooks.effects = [];
+  hooks.setters = [];
+  transport.mockResolvedValueOnce({
+    preview: [{ type: "text", text: "Fresh" }],
+  });
+  const current = renderCleanMissingPreview().effect();
+  await vi.advanceTimersByTimeAsync(700);
+  reject(new Error("Stale registry error"));
+  await Promise.resolve();
+  await Promise.resolve();
+  expect(hooks.setters[9]).toHaveBeenCalledWith([
+    { type: "text", text: "Fresh" },
+  ]);
+  expect(hooks.setters[14]).not.toHaveBeenCalledWith(
+    expect.stringContaining("Stale registry error"),
+  );
+  if (current) current();
+});

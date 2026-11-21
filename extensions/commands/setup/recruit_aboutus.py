@@ -9,7 +9,7 @@ import uuid
 
 from extensions.commands.setup import loader, setup
 from extensions.components import register_action
-from utils.constants import WU_GOLD
+from utils.constants import WU_GOLD, WU_RED, WU_GREEN
 from utils.manage_ui import ICONS
 from utils.mongo import MongoClient
 from utils.recruit_error_reporting import notify as notify_recruit_error
@@ -38,38 +38,31 @@ ABOUT_US_GUILD_ID = 644963518025826315
 
 def build_aboutus(sections=None, *, media=None, action_id="preview", preview=False,
                   family_rules=None, clans=None, include_family_rules=True):
-    """Build the public shape; registry I/O belongs to the shared async renderer."""
-    from utils.info_channel_content import (
-        about_us_defaults, about_us_sections, family_rules_sections, validate_fields,
-    )
-    fields = about_us_defaults() if sections is None else list(sections)
-    validate_fields(fields, 12, "About Us")
+    """One topic per box; asynchronous registry reads stay in content.render."""
+    from utils.gauntlet_content import sections_for, subtopic
+    from utils.info_channel_content import about_us_sections, family_rules_sections
+    fields = sections_for("about-us", sections)
     if clans is not None:
         fields = about_us_sections(fields, clans)
     media = media or {}
+    clans_content = [Text(content=fields[13])]
+    for position, (index, label) in enumerate(((3,"Tactical"),(5,"Flexible Fun"),(7,"FWA"))):
+        if position:
+            clans_content.append(Separator(divider=True, spacing=hikari.SpacingType.SMALL))
+        clans_content.append(Text(content=subtopic(label, fields[index])))
+    clans_content.append(Text(content=fields[14]))
     components = [
         Media(items=[MediaItem(media=media.get("welcome", "assets/branding/banners/Warriors_United.gif"))]),
-        Container(accent_color=WU_GOLD, components=[
-            Text(content=fields[0]), Separator(divider=True), Text(content=fields[1]),
-            Separator(divider=True), Text(content=fields[2]), Text(content=fields[3]),
-        ]),
-        Container(accent_color=WU_GOLD, components=[Text(content=fields[4]), Text(content=fields[5])]),
-        Container(accent_color=WU_GOLD, components=[
-            Text(content=fields[6]), Text(content=fields[7]), Separator(divider=True),
-            Text(content=fields[8]), Text(content=fields[9]),
-        ]),
+        Container(accent_color=WU_GOLD, components=[Text(content=fields[12]), Text(content=fields[1])]),
+        Container(accent_color=WU_GREEN, components=clans_content),
     ]
     if include_family_rules:
-        rules = family_rules_sections(family_rules)
-        components.append(Container(accent_color=WU_GOLD, components=[Text(content=rules[0]), Text(content=rules[1])]))
+        components.append(Container(accent_color=WU_RED, components=[Text(content=value) for value in family_rules_sections(family_rules)]))
     components.append(Container(accent_color=WU_GOLD, components=[
-        Text(content=fields[10]), Text(content=fields[11]),
-        ActionRow(components=[Button(
-            style=hikari.ButtonStyle.SUCCESS,
-            custom_id=f"aboutus_acknowledge:{action_id}",
-            label="I understand - Continue", emoji=hikari.Snowflake(ICONS["yes"]),
-            is_disabled=preview,
-        )]),
+        Text(content=fields[15]), Text(content=fields[11]),
+        ActionRow(components=[Button(style=hikari.ButtonStyle.SUCCESS,
+            custom_id=f"aboutus_acknowledge:{action_id}", label="I understand - Continue",
+            emoji=hikari.Snowflake(ICONS["yes"]), is_disabled=preview)]),
     ]))
     return components
 
@@ -80,15 +73,8 @@ def default_sections():
 
 
 def configured_sections(document):
-    """Return a valid per-server template or the unchanged built-in copy."""
-    sections = document.get("sections") if document else None
-    if (
-        not isinstance(sections, list)
-        or len(sections) != 12
-        or any(not isinstance(section, str) or not section.strip() for section in sections)
-    ):
-        return default_sections()
-    return list(sections)
+    from utils.gauntlet_content import sections_for
+    return sections_for("about-us", document.get("sections") if document else None)
 
 
 class RecruitAboutUs(
@@ -112,8 +98,8 @@ class RecruitAboutUs(
         ):
             return
         from extensions.commands.content import DOCUMENTS, render, template_for
-        sections, media, _revision = await template_for(mongo, DOCUMENTS["about-us"], int(ctx.guild_id))
         try:
+            sections, media, _revision = await template_for(mongo, DOCUMENTS["about-us"], int(ctx.guild_id))
             components = await render(
                 DOCUMENTS["about-us"], sections, media=media,
                 action_id=str(uuid.uuid4()), mongo=mongo, guild_id=int(ctx.guild_id),

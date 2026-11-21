@@ -95,7 +95,8 @@ export default function ServerManagement({
   const sequence = useRef(0),
     requestIds = useRef(new ManagementRequestIds()),
     pendingKeys = useRef(new Map<string, string>()),
-    explicitPreviewKey = useRef<string | null>(null);
+    explicitPreviewKey = useRef<string | null>(null),
+    pendingPreview = useRef<{ key: string } | null>(null);
   const changes = document ? changedValues(document.fields, draft) : {};
   const dirty = Object.keys(changes).length > 0;
   const draftPreviewKey = JSON.stringify(changes);
@@ -155,12 +156,14 @@ export default function ServerManagement({
     if (!selected || !document?.preview_supported || !previewVisible || busy)
       return;
     let alive = true;
-    if (!dirty) {
-      setPreview(document.preview || []);
+    if (!dirty && document.preview !== undefined) {
+      setPreview(document.preview);
       setPreviewStatus("");
       return;
     }
     if (explicitPreviewKey.current === previewKey) return;
+    const request = { key: previewKey };
+    pendingPreview.current = request;
     setPreviewStatus("Updating preview…");
     const timer = window.setTimeout(() => {
       api<ManagementDocument>(endpoint(selected) + "/preview", "POST", {
@@ -170,19 +173,26 @@ export default function ServerManagement({
         .then((result) => {
           if (alive) {
             setPreview(result.preview || []);
-            setPreviewStatus("Draft preview · not saved");
+            explicitPreviewKey.current = previewKey;
+            setPreviewStatus(dirty ? "Draft preview · not saved" : "");
           }
         })
         .catch((error) => {
           if (alive)
             setPreviewStatus(
-              "Showing the last valid preview. " + message(error),
+              (preview?.length
+                ? "Showing the last valid preview. "
+                : "Preview unavailable. ") + message(error),
             );
+        })
+        .finally(() => {
+          if (pendingPreview.current === request) pendingPreview.current = null;
         });
     }, 700);
     return () => {
       alive = false;
       window.clearTimeout(timer);
+      if (pendingPreview.current === request) pendingPreview.current = null;
     };
   }, [
     selected?.id,
@@ -385,6 +395,7 @@ export default function ServerManagement({
   };
   const save = async (review = false) => {
     if (writing.current || !selected || !document) return;
+    if (review && pendingPreview.current?.key === previewKey) return;
     const invalid = document.fields
       .map((field) => fieldError(field, draft[field.key]))
       .find(Boolean);
@@ -448,6 +459,7 @@ export default function ServerManagement({
       }
       if (review) {
         setPreview(result.preview || []);
+        setPreviewStatus(dirty ? "Draft preview · not saved" : "");
         setNotice("Preview only. Nothing has been sent.");
       } else {
         requestIds.current.complete(requestKey);
@@ -737,6 +749,14 @@ export default function ServerManagement({
               setDraft={setDraft}
               setNotice={setNotice}
               onOpenRecord={openTownHall}
+              onOpenSharedRules={() =>
+                void open({
+                  ...selected,
+                  id: "gauntlet--family-rules",
+                  label: "Family Rules",
+                  endpoint: "/manage/content/gauntlet--family-rules",
+                })
+              }
             />
             {document.preview_supported && previewVisible && (
               <DiscordPreview parts={preview || []} status={previewStatus} />
