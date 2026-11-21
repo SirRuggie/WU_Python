@@ -200,9 +200,13 @@ def test_real_staff_changes_still_conflict_before_save(isolated, monkeypatch, ch
 def test_native_cas_still_blocks_a_staff_edit_after_worker_revision_check(isolated, monkeypatch):
     collection, mongo, bot, ctx = isolated
 
+    validations = 0
     async def race(*_args):
-        collection.doc['ticket_archive_quiet_days'] = 3
-        collection.doc['ticket_settings_revision'] += 1
+        nonlocal validations
+        validations += 1
+        if validations == 2:  # worker precheck passed; native Save must still revalidate
+            collection.doc['ticket_archive_quiet_days'] = 3
+            collection.doc['ticket_settings_revision'] += 1
 
     monkeypatch.setattr(settings, 'validate', race)
 

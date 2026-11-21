@@ -143,12 +143,12 @@ def test_ticket_worker_journals_success_and_never_confirms_failed_write():
   ctx=NS(member=NS(display_name='Ticket staff'));bot=NS(rest=object())
   row={'section':'ticket_settings','action':'save','values':{'ticket_archive_quiet_days':2},'revision':settings_revision(cfg),'user_id':'1','history_action':'restore'}
   async def save(*args):cfg['ticket_archive_quiet_days']=2;return 'Saved'
-  with patch.object(settings,'save',save):await worker.dispatch(bot,mongo,row,ctx)
+  with patch.object(settings,'validate',AsyncMock(return_value='Ready')),patch.object(settings,'save',save):await worker.dispatch(bot,mongo,row,ctx)
   entry=next(iter(mongo.bot_config.rows.values()))
   assert entry['status']=='saved' and entry['action']=='restore'
   assert entry['before']['ticket_archive_quiet_days']==1 and entry['after']['ticket_archive_quiet_days']==2
   row['revision']=settings_revision(cfg)
-  with patch.object(settings,'save',AsyncMock(side_effect=ValueError('validation failed'))):
+  with patch.object(settings,'validate',AsyncMock(return_value='Ready')),patch.object(settings,'save',AsyncMock(side_effect=ValueError('validation failed'))):
    with pytest.raises(ValueError):await worker.dispatch(bot,mongo,row,ctx)
   assert [r['status'] for r in mongo.bot_config.rows.values()]==['saved','pending']
  asyncio.run(run())

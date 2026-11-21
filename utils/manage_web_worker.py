@@ -3,6 +3,8 @@
 import asyncio
 import time
 import logging
+import os
+import re
 import weakref
 from types import SimpleNamespace as NS
 from datetime import datetime, timezone, timedelta
@@ -121,6 +123,43 @@ async def context(bot, mongo, row):
         captured=captured,
         dashboard_actor=actor,
     )
+
+
+def _safe_uncertain_message(error):
+    """Bounded diagnostic detail without credential values or credential URLs."""
+    try:
+        text = str(error)
+    except Exception:
+        return "Exception message unavailable"
+    for key, value in sorted(os.environ.items(), key=lambda item: len(item[1]), reverse=True):
+        if len(value) >= 8 and any(word in key.upper() for word in (
+                "TOKEN", "SECRET", "PASSWORD", "MONGODB_URI", "DATABASE_URL", "API_KEY", "BAND_KEY")):
+            text = text.replace(value, "[redacted]")
+    text = re.sub(r"(?i)\b(?:https?|mongodb(?:\+srv)?)://\S+", "[redacted URL]", text)
+    text = re.sub(r"(?i)\b(?:token|secret|password|authorization|api[_-]?key)\s*[:=]\s*(?:\"[^\"]*\"|'[^']*'|(?:Bearer\s+)?[^\s,;]+)", "[redacted credential]", text)
+    text = re.sub(r"(?i)\bBearer\s+[^\s,;]+", "Bearer [redacted]", text)
+    return text.replace("\r", " ").replace("\n", " ")[:1200]
+
+
+def _warn_uncertain(row, error):
+    logging.getLogger(__name__).warning(
+        "Management uncertain request=%s section=%s action=%s exception=%s message=%s",
+        row["_id"], row.get("section"), row.get("action"),
+        type(error).__name__, _safe_uncertain_message(error),
+    )
+
+
+async def _ticket_settings_precheck(mongo, rest, cfg):
+    """Only this read-only boundary can reclassify a known setup failure."""
+    from extensions.commands.tickets import settings, thread_service
+
+    try:
+        return await settings.validate(mongo, rest, cfg, GUILD_ID)
+    except thread_service.ThreadConfigurationError as error:
+        reason = str(error).rstrip(".")
+        raise ValueError(
+            f"Ticket settings check failed: {reason}. Nothing was saved or posted."
+        ) from error
 
 
 async def dispatch(bot, mongo, row, ctx):
@@ -251,6 +290,9 @@ async def dispatch(bot, mongo, row, ctx):
             from utils.ticket_settings import validated_settings
 
             changes = validated_settings(values)
+            # Native Save validates again. Only this first check is guaranteed
+            # to precede even the dashboard's pending history audit.
+            await _ticket_settings_precheck(mongo, bot.rest, dict(cfg, **changes))
             from cwl_web.change_history import begin, finish
             from utils.ticket_settings import history_values
 
@@ -283,7 +325,7 @@ async def dispatch(bot, mongo, row, ctx):
                 await finish(mongo, token, history_values(fresh, part))
             return {"message": result}
         if action == "check":
-            desk = await settings.validate(mongo, bot.rest, cfg, GUILD_ID)
+            desk = await _ticket_settings_precheck(mongo, bot.rest, cfg)
             return {
                 "message": f"Ticket channels, permissions, and entry binding are valid. {desk}"
             }
@@ -291,6 +333,7 @@ async def dispatch(bot, mongo, row, ctx):
             message = await settings.repair_entry(ctx, mongo, bot)
             return {"message": message}
         if action == "restore_desk_entry":
+            await _ticket_settings_precheck(mongo, bot.rest, cfg)
             message = await settings.repair_desk_entry(ctx, mongo, bot)
             return {"message": message}
         from extensions.commands.tickets import console
@@ -735,12 +778,14 @@ async def _process_requests(bot, mongo):
         except ProfileRunStopped as exc:
             update = {"status": "stopped", "message": str(exc)[:400]}
         except ProfileOutcomeUncertain as exc:
+            _warn_uncertain(row, exc)
             update = {"status": "uncertain", "message": str(exc)[:400]}
             if isinstance(getattr(exc, "counts", None), dict):
                 update["result"] = {"counts": exc.counts}
         except ValueError as exc:
             update = {"status": "failed", "message": str(exc)[:400]}
         except Exception as error:
+            _warn_uncertain(row, error)
             update = {
                 "status": "uncertain",
                 "message": "The bot could not confirm this action. Check Discord before repeating it.",

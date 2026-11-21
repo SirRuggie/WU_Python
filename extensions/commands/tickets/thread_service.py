@@ -407,6 +407,17 @@ async def grant_manual_applicant_access(rest, parents, *, user_id, actor_id):
     )
 
 
+def _configuration_name(entity, fallback):
+    """Names only in staff-facing setup errors; never fall back to a snowflake."""
+    return str(getattr(entity, "name", None) or getattr(entity, "display_name", None)
+               or getattr(entity, "username", None) or fallback)
+
+
+def _configuration_parent(channel, label):
+    name = getattr(channel, "name", None)
+    return f"{label} channel #{name}" if name else f"{label} parent"
+
+
 async def validate_thread_parents(
     rest: hikari.api.RESTClient,
     parents: ThreadParents,
@@ -458,7 +469,7 @@ async def validate_thread_parents(
         missing = required & ~actual
         if missing:
             raise ThreadConfigurationError(
-                f"bot is missing {_permission_names(missing)} in the {label} parent"
+                f"bot is missing {_permission_names(missing)} in the {_configuration_parent(channel, label)}"
             )
 
     if test_window is not None:
@@ -561,13 +572,15 @@ async def validate_thread_parents(
         missing = required & ~recruiter_permissions
         if missing:
             raise ThreadConfigurationError(
-                f"recruiter role is missing {_permission_names(missing)} in the {label} parent"
+                f"recruiter role {_configuration_name(recruiter_role, '(unnamed role)')} is missing {_permission_names(missing)} in the {_configuration_parent(channel, label)}"
             )
 
     if parents.private_staff:
         for handler_id in parents.staff_thread_role_ids:
-            if not any(_as_int(getattr(role, "id", 0)) == handler_id for role in roles):
-                raise ThreadConfigurationError(f"handler role {handler_id} is not in the target guild")
+            handler_role = next((role for role in roles
+                                 if _as_int(getattr(role, "id", 0)) == handler_id), None)
+            if handler_role is None:
+                raise ThreadConfigurationError("configured handler role is not in the target guild")
             handler = type("RoleMember", (), {"id": 0, "role_ids": (handler_id,)})()
             for label, channel in (("candidate", candidate), ("staff", staff)):
                 effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
@@ -576,7 +589,7 @@ async def validate_thread_parents(
                            | hikari.Permissions.SEND_MESSAGES_IN_THREADS) & ~effective
                 if missing:
                     raise ThreadConfigurationError(
-                        f"handler role {handler_id} is missing {_permission_names(missing)} in the {label} parent")
+                        f"handler role {_configuration_name(handler_role, '(unnamed role)')} is missing {_permission_names(missing)} in the {_configuration_parent(channel, label)}")
     everyone_role = next(
         (role for role in roles if _as_int(getattr(role, "id", 0)) == parents.guild_id),
         None,
@@ -601,13 +614,25 @@ async def validate_thread_parents(
     }
     bot_role_ids = {_as_int(value) for value in getattr(bot_member, "role_ids", ())}
     authorized_staff_roles = {parents.recruiter_role_id, *parents.shared_staff_role_ids, *parents.staff_viewer_role_ids}
+    manage_thread_handler_roles = authorized_staff_roles | {
+        role_id for _kind, role_id in parents.staff_role_config
+    }
+    # One bounded snapshot proves nonempty bot-only roles and is reused below.
+    # No observation, unknown bot flags, or any human means no bot-role waiver.
+    members = await staff_member_snapshot(rest, parents.guild_id) if parents.private_staff else ()
+    role_bot_proof = {}
+    for member in members:
+        for role_id in getattr(member, "role_ids", ()):
+            role_id = _as_int(role_id)
+            role_bot_proof[role_id] = role_bot_proof.get(role_id, True) and getattr(member, "is_bot", False) is True
+    bot_only_roles = {role_id for role_id, proven in role_bot_proof.items() if role_id and proven}
     for role_id, role in roles_by_id.items():
         role_permissions = hikari.Permissions(getattr(role, "permissions", 0))
         # Manage Threads bypasses private-thread membership. This readiness gate
         # applies only to new Desk-enabled private pairs, not historical public
         # pairs or the legacy runtime.
-        if parents.private_staff and not (
-                role_id in bot_role_ids and bool(getattr(role, "is_managed", False))):
+        if (parents.private_staff and role_id not in manage_thread_handler_roles | bot_only_roles
+                and not (role_id in bot_role_ids and bool(getattr(role, "is_managed", False)))):
             for private_parent in (candidate, staff):
                 effective = _effective_permissions(
                     guild_id=parents.guild_id, owner_id=owner_id,
@@ -618,9 +643,9 @@ async def validate_thread_parents(
                         and effective & hikari.Permissions.VIEW_CHANNEL
                         and effective & hikari.Permissions.MANAGE_THREADS):
                     raise ThreadConfigurationError(
-                        f"non-admin role {role_id} can view all private ticket threads via Manage Threads"
+                        f"non-admin role {_configuration_name(role, '(unnamed role)')} can view all private ticket threads via Manage Threads in {_configuration_parent(private_parent, 'ticket')}"
                     )
-        if role_id in {parents.guild_id, *authorized_staff_roles}:
+        if role_id in {parents.guild_id, *manage_thread_handler_roles, *bot_only_roles}:
             continue
         if role_permissions & hikari.Permissions.ADMINISTRATOR:
             continue
@@ -635,7 +660,7 @@ async def validate_thread_parents(
         )
         if effective & hikari.Permissions.VIEW_CHANNEL:
             raise ThreadConfigurationError(
-                f"non-recruiter role {role_id} can view the staff parent"
+                f"non-recruiter role {_configuration_name(role, '(unnamed role)')} can view the {_configuration_parent(staff, 'staff')}"
             )
 
     member_overwrite_ids: set[int] = set()
@@ -666,7 +691,9 @@ async def validate_thread_parents(
                 "staff parent member overwrites could not be inspected"
             ) from error
         role_ids = {_as_int(value) for value in getattr(member, "role_ids", ())}
-        authorized = bool(role_ids & authorized_staff_roles) or any(
+        authorized_handler = bool(role_ids & manage_thread_handler_roles)
+        authorized_bot = getattr(member, "is_bot", False) is True and bool(role_ids & bot_only_roles)
+        authorized = authorized_handler or authorized_bot or any(
             hikari.Permissions(getattr(roles_by_id[role_id], "permissions", 0))
             & hikari.Permissions.ADMINISTRATOR
             for role_id in role_ids
@@ -681,28 +708,32 @@ async def validate_thread_parents(
         )
         if (parents.private_staff and effective & hikari.Permissions.VIEW_CHANNEL
                 and effective & hikari.Permissions.MANAGE_THREADS
-                and not effective & hikari.Permissions.ADMINISTRATOR):
+                and not effective & hikari.Permissions.ADMINISTRATOR
+                and not (authorized_handler or authorized_bot)):
             raise ThreadConfigurationError(
-                f"non-admin member {member_id} can view all private staff threads via Manage Threads"
+                f"non-admin member {_configuration_name(member, '(unnamed member)')} can view all private staff threads via Manage Threads"
             )
         if effective & hikari.Permissions.VIEW_CHANNEL and not authorized:
             raise ThreadConfigurationError(
-                f"non-recruiter member {member_id} can view the staff parent"
+                f"non-recruiter member {_configuration_name(member, '(unnamed member)')} can view the {_configuration_parent(staff, 'staff')}"
             )
 
     if parents.private_staff:
-        members = await staff_member_snapshot(rest, parents.guild_id)
         for member in members:
             if int(member.id) == bot_user_id:
                 continue
+            member_role_ids = {_as_int(value) for value in getattr(member, "role_ids", ())}
+            authorized_handler = bool(member_role_ids & manage_thread_handler_roles)
+            authorized_bot = getattr(member, "is_bot", False) is True and bool(member_role_ids & bot_only_roles)
             for label, channel in (("candidate", candidate), ("staff", staff)):
                 effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
                     member=member, roles=roles, channel=channel)
                 if (not effective & hikari.Permissions.ADMINISTRATOR
                         and effective & hikari.Permissions.VIEW_CHANNEL
-                        and effective & hikari.Permissions.MANAGE_THREADS):
+                        and effective & hikari.Permissions.MANAGE_THREADS
+                        and not (authorized_handler or authorized_bot)):
                     raise ThreadConfigurationError(
-                        f"non-admin member {member.id} bypasses private membership in the {label} parent")
+                        f"non-admin member {_configuration_name(member, '(unnamed member)')} bypasses private membership in the {_configuration_parent(channel, label)}")
     if applicant_user_id is not None:
         try:
             applicant = await rest.fetch_member(parents.guild_id, int(applicant_user_id))
