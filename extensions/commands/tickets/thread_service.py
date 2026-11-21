@@ -2903,7 +2903,7 @@ async def _reconcile_ticket_thread_names(
     """Run one checkpointed pair rename, aborting when status or flags race."""
     resolution = ticket.get("resolution_effects") or {}
     until = resolution.get("lease_until")
-    if resolution.get("lease_owner") and isinstance(until, datetime) and until > datetime.now(timezone.utc):
+    if resolution.get("lease_owner") and isinstance(until, datetime) and _aware(until) > datetime.now(timezone.utc):
         # Resolution uses the same desired-name resolver and will retry its
         # own checkpoint; leave this flag generation pending for its next pass.
         return
