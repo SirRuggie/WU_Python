@@ -211,14 +211,14 @@ def test_guided_private_readiness_checks_actual_role_combinations(monkeypatch,ad
         items.append(SimpleNamespace(id=51,permissions=hikari.Permissions.MANAGE_THREADS,is_managed=False))
         return items
     rest.fetch_roles=roles
-    member=SimpleNamespace(id=3,guild_id=10,role_ids=[70] if admin else [40,51])
+    member=SimpleNamespace(id=3,guild_id=10,display_name='Unapproved member',role_ids=[70] if admin else [50,51])
     rest.fetch_members=lambda guild:Members([member])
     parents=thread_service.ThreadParents(10,20,21,40,staff_thread_role_ids=(40,),private_staff=True)
     if admin:
         channels=asyncio.run(thread_service.validate_thread_parents(rest,parents,bot_user_id=99))
         assert [channel.id for channel in channels]==[20,21]
     else:
-        with pytest.raises(thread_service.ThreadConfigurationError,match='non-admin member 3 bypasses'):
+        with pytest.raises(thread_service.ThreadConfigurationError,match='non-admin member Unapproved member bypasses'):
             asyncio.run(thread_service.validate_thread_parents(rest,parents,bot_user_id=99))
 
 

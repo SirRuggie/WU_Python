@@ -350,7 +350,11 @@ export default function ServerManagement({
         message?: string;
         result?: ManagementResult;
       }>(apiPath(url));
-      setNotice(result.message || `Request ${result.status}.`);
+      setNotice(
+        ["failed", "uncertain"].includes(result.status)
+          ? ""
+          : result.message || `Request ${result.status}.`,
+      );
       if (["done", "failed", "uncertain"].includes(result.status)) {
         if (result.status === "done") {
           setActionResult(result.result || null);

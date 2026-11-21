@@ -84,6 +84,8 @@ retains its required permissions. Every handler role must have parent read,
 history and thread-send permission. Existing public pairs keep their previous
 behavior; this change does not claim to make their historical access private.
 
+Ticket handler roles may hold Manage Threads in Desk parents; they can read all Desk threads (Ruggie, 2026-11-21).
+
 Creation snapshots retain typed role identities for restart recovery. A bounded
 member snapshot is shared across the pair; enumeration failure or more than
 10,000 members blocks the attempt rather than publishing an incomplete pair.
