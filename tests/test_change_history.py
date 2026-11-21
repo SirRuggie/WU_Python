@@ -136,17 +136,18 @@ def test_text_command_restore_keeps_name_and_uses_current_revision():
 def test_ticket_worker_journals_success_and_never_confirms_failed_write():
  async def run():
   from utils import manage_web_worker as worker
+  from utils.ticket_settings import settings_revision
   from extensions.commands.tickets import settings
   mongo=db();cfg={'_id':'config','ticket_inactivity_minutes':10080,'ticket_archive_quiet_days':1}
   mongo.ticket_setup=NS(find_one=AsyncMock(side_effect=lambda _:copy.deepcopy(cfg)))
   ctx=NS(member=NS(display_name='Ticket staff'));bot=NS(rest=object())
-  row={'section':'ticket_settings','action':'save','values':{'ticket_archive_quiet_days':2},'revision':content.fingerprint(cfg),'user_id':'1','history_action':'restore'}
+  row={'section':'ticket_settings','action':'save','values':{'ticket_archive_quiet_days':2},'revision':settings_revision(cfg),'user_id':'1','history_action':'restore'}
   async def save(*args):cfg['ticket_archive_quiet_days']=2;return 'Saved'
   with patch.object(settings,'save',save):await worker.dispatch(bot,mongo,row,ctx)
   entry=next(iter(mongo.bot_config.rows.values()))
   assert entry['status']=='saved' and entry['action']=='restore'
   assert entry['before']['ticket_archive_quiet_days']==1 and entry['after']['ticket_archive_quiet_days']==2
-  row['revision']=content.fingerprint(cfg)
+  row['revision']=settings_revision(cfg)
   with patch.object(settings,'save',AsyncMock(side_effect=ValueError('validation failed'))):
    with pytest.raises(ValueError):await worker.dispatch(bot,mongo,row,ctx)
   assert [r['status'] for r in mongo.bot_config.rows.values()]==['saved','pending']

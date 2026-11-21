@@ -243,9 +243,9 @@ async def dispatch(bot, mongo, row, ctx):
         from extensions.commands.tickets import settings
 
         cfg = await mongo.ticket_setup.find_one({"_id": "config"}) or {}
-        from cwl_web.manage_content import fingerprint
+        from utils.ticket_settings import settings_revision
 
-        if fingerprint(cfg) != row["revision"]:
+        if settings_revision(cfg) != row["revision"]:
             raise ValueError("Ticket settings changed. Reload before trying again.")
         if action == "save":
             from utils.ticket_settings import validated_settings
