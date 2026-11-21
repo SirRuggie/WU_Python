@@ -1,4 +1,6 @@
 import type { ReactNode, Ref } from "react";
+import "./tokens.css";
+import "./primitives.css";
 import "./ListToolbar.css";
 
 type Props = {
@@ -26,7 +28,7 @@ export default function ListToolbar({
   return (
     <div
       ref={rootRef}
-      className={`list-toolbar${className ? ` ${className}` : ""}`}
+      className={`roster-ui list-toolbar${className ? ` ${className}` : ""}`}
     >
       {search}
       {scope}

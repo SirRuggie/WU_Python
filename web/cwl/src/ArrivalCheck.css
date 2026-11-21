@@ -254,6 +254,7 @@
   font-size: var(--wu-text-xs);
 }
 .declaration-toolbar {
+  flex-wrap: nowrap;
   align-items: center;
   gap: var(--wu-space-1) var(--wu-space-2);
   min-width: 0;
@@ -305,4 +306,33 @@
 .declaration-clan:has(.declaration-clan-toggle:focus-visible) {
   outline: 2px solid var(--wu-focus);
   outline-offset: 2px;
+}
+
+@media (max-width: 650px) {
+  .declaration-toolbar > .section-tabs {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+  .roster-ui.declaration-toolbar > .section-tabs > button {
+    flex: 1 1 0;
+    padding-inline: var(--wu-space-1);
+    white-space: normal;
+  }
+  .declaration-toolbar > .declaration-filters-trigger {
+    box-sizing: border-box;
+    flex: 0 0 44px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    padding: 0;
+  }
+  .declaration-filters-trigger > span {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    margin: -1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
 }

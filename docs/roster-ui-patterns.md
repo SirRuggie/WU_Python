@@ -342,6 +342,11 @@ introduced A and B; B-6 added C. Prompt258 adds D under Ruggie's R1 amendment
 | C. Navigation items | Lists of records or clans that open an item (settings record list, Family clans directory); the sidebar uses the same look                                                                                                                                                                                | `nav-list` class (`navList.css`)                                                        | Gold edge, 3px gold left bar, gold bold text                        |
 | D. List toolbar     | Optional segmented list scope (All/Main/Lazy, Main/Lazy, All/Main/FWA), Filters and optional Sort in one row; Build roster (Accounts & signups, Compare clans, Hosting clans, Missing weights), Results, Bonus steps, Return reminders, Strikes, Members, Declaration check, Tickets and Signup reminders | `rosterUi/ListToolbar`, `FiltersTrigger`, `SectionTabs mode="segmented"`, `SortTrigger` | Existing segmented scope treatment; normal Filters and Sort buttons |
 
+Signup reminders and Declaration check use the same boxed segmented scope. The
+selected underline is inset inside the box, approximately 4 px from its left,
+right and bottom borders. Primary section-tab underlines retain their existing
+edge treatment.
+
 - No solid-gold selected state. Segmented control only as the scope control in pattern D. Unselected navigation items keep the normal button look.
 - Pattern D keeps full-width search above the controls where the page uses a search field. Main/Lazy underline tabs are retired; only the member Sign up form keeps a pool choice outside pattern D. Results uses segmented Main/Lazy in its existing row; Bonus steps places the same segmented scope above its clan select. Strikes keeps its phone View select and existing search-icon row. Optional slots do not introduce a sort where none exists.
 - Every tab and chip rail scrolls inside its own strip and fades the edge that hides items (`useChoiceRail`, `has-horizontal-fades`). The page never scrolls sideways at 320, 360 and 390px.
