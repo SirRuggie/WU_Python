@@ -36,7 +36,7 @@ import SignupPage, { type Completion, type Notice } from "./SignupPage";
 import DashboardIcon from "./DashboardIcon";
 import { strikePermissions } from "./strikePermissions";
 import { isManagementArea } from "./managementAreas";
-import { Menu } from "lucide-react";
+import { Menu, TriangleAlert } from "lucide-react";
 import SidebarNavigation, {
   navigationSection,
   navigationLabel,
@@ -2033,7 +2033,8 @@ function App() {
                 )}
               {fixtureMode && (
                 <div className="fixture-banner" role="status">
-                  Local fixture data · Development only
+                  <TriangleAlert size={16} aria-hidden="true" />
+                  <span>Local fixture data · Development only</span>
                 </div>
               )}
               {notice && !(view === "signup" && review) && (

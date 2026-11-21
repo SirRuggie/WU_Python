@@ -127,7 +127,7 @@ Global colors live on `:root` in `web/cwl/src/tokens.css`, imported first by
 | `--wu-accent-soft`                                              | `#30291a`                                     | Selected or active tint                     |
 | `--wu-focus`                                                    | `#f5d66e`                                     | Focus ring only; never selection            |
 | `--wu-success` / `--wu-success-surface` / `--wu-success-border` | `#00d659` / `#2b4b38` / `#00d659`             | Success; brand green (bot `WU_GREEN`)       |
-| `--wu-warning` / `--wu-warning-surface` / `--wu-warning-border` | `#efc867` / `#30291c` / `#786435`             | Warning; separate from accent               |
+| `--wu-warning` / `--wu-warning-surface` / `--wu-warning-border` | `#efc867` / `var(--wu-surface)` / `#786435`   | Warning; separate from accent               |
 | `--wu-danger` / `--wu-danger-surface` / `--wu-danger-border`    | `#ff5c5c` / `#2a1215` / `#e00010` (brand red) | Errors, destructive actions                 |
 | `--wu-info` / `--wu-info-surface` / `--wu-info-border`          | `#b9d5ff` / `#1a212b` / `#495563`             | Informational notices only; 1b applies this |
 
@@ -1148,3 +1148,11 @@ labelled 44px Plus button on phones. Compare's Select clans and shown count sit
 below the row; Refresh stays in the page header. Return reminders uses full-width
 search, FWA/Main counts and the shared Status Filters panel. Pool changes retain
 the existing discard guards, shared pool memory and URL parameters.
+
+### Warning and acknowledgement refinement (268)
+
+Warning boxes use the dark surface, a 3px amber left edge and a decorative warning icon.
+Hints use muted 14px text with an info icon, without a box. Pending progress is neutral
+status text; preview-only feedback remains a notice. Each completed action has one
+success box with its message, details and links, without a duplicate notice or Result heading.
+Moderation selection styles and the unused roster selection surface are unchanged.

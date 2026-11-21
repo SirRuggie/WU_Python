@@ -46,7 +46,7 @@
   --wu-success-surface: #2b4b38;
   --wu-success-border: #00d659;
   --wu-warning: #efc867;
-  --wu-warning-surface: #30291c;
+  --wu-warning-surface: var(--wu-surface);
   --wu-warning-border: #786435;
   --wu-danger: #ff5c5c;
   --wu-danger-surface: #2a1215;

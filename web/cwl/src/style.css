@@ -691,13 +691,16 @@ small {
   border-radius: var(--wu-radius-md);
   margin-bottom: var(--wu-space-4);
   font-size: var(--wu-text-sm);
+  border-left: 3px solid var(--wu-warning);
 }
 .notice.error {
+  border-left-width: 1px;
   border-color: var(--wu-danger-border);
   background: var(--wu-danger-surface);
   color: var(--wu-danger);
 }
 .notice.success {
+  border-left-width: 1px;
   border-color: var(--wu-success-border);
   background: var(--wu-success-surface);
   color: var(--wu-success);
@@ -1002,8 +1005,12 @@ small {
   width: 100%;
 }
 .fixture-banner {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
   padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px dashed var(--wu-warning-border);
+  border-left: 3px solid var(--wu-warning);
   background: var(--wu-warning-surface);
   color: var(--wu-warning);
   border-radius: var(--wu-radius-sm);
@@ -2310,4 +2317,8 @@ summary.target-summary-44 {
   .server-join-notice a:hover {
     color: var(--wu-accent-hover);
   }
+}
+
+.fixture-banner > svg {
+  flex: none;
 }

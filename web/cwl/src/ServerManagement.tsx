@@ -1,3 +1,4 @@
+import { Info, TriangleAlert } from "lucide-react";
 import TownHallRecords from "./TownHallRecords";
 import LoadError from "./LoadError";
 import CwlPageHeader from "./CwlPageHeader";
@@ -351,13 +352,17 @@ export default function ServerManagement({
         result?: ManagementResult;
       }>(apiPath(url));
       setNotice(
-        ["failed", "uncertain"].includes(result.status)
+        ["done", "failed", "uncertain"].includes(result.status)
           ? ""
           : result.message || `Request ${result.status}.`,
       );
       if (["done", "failed", "uncertain"].includes(result.status)) {
         if (result.status === "done") {
-          setActionResult(result.result || null);
+          setActionResult({
+            ...result.result,
+            message:
+              result.result?.message || result.message || "Request done.",
+          });
           const key = pendingKeys.current.get(url);
           if (key) requestIds.current.complete(key);
           pendingKeys.current.delete(url);
@@ -392,6 +397,8 @@ export default function ServerManagement({
     setBusy(true);
     setError("");
     setNotice("");
+    setActionResult(null);
+    let queued = false;
     const values =
       document.id === "town_halls" && !document.partial_save
         ? fieldValues(
@@ -432,6 +439,7 @@ export default function ServerManagement({
         },
       );
       if (result.status_url) {
+        queued = true;
         pendingKeys.current.set(result.status_url, requestKey);
         setNotice(result.message || "Waiting for Discord…");
         const status = await checkAction(result.status_url, true);
@@ -467,7 +475,8 @@ export default function ServerManagement({
           onTownHallNavigate?.(path);
           window.requestAnimationFrame(() => editorHeading.current?.focus());
         }
-        setNotice("Saved.");
+        setNotice("");
+        if (!queued) setActionResult({ message: "Saved." });
       }
     } catch (error) {
       setConflict(error instanceof ApiError && error.status === 409);
@@ -557,8 +566,18 @@ export default function ServerManagement({
         }
       />
       {notice && (
-        <p className="manage-notice" role="status">
-          {notice}
+        <p
+          className={
+            notice === "Preview only. Nothing has been sent."
+              ? "manage-notice"
+              : "manage-status"
+          }
+          role="status"
+        >
+          {notice === "Preview only. Nothing has been sent." && (
+            <TriangleAlert size={16} aria-hidden="true" />
+          )}
+          <span>{notice}</span>
         </p>
       )}
       {actionResult && <ManagementActionResult actionResult={actionResult} />}
@@ -646,11 +665,20 @@ export default function ServerManagement({
           {document.return_status && (
             <ReturnStatusSummary status={document.return_status} />
           )}
+          {document.hint && (
+            <p className="manage-hint">
+              <Info size={16} aria-hidden="true" />
+              <span>{document.hint}</span>
+            </p>
+          )}
           {document.warning && (
             <p className="manage-notice">
-              {document.id === "band_monitor"
-                ? bandStatusWarning(document.warning)
-                : document.warning}
+              <TriangleAlert size={16} aria-hidden="true" />
+              <span>
+                {document.id === "band_monitor"
+                  ? bandStatusWarning(document.warning)
+                  : document.warning}
+              </span>
             </p>
           )}
           {document.preview_supported && (
@@ -716,8 +744,11 @@ export default function ServerManagement({
           </SectionTabPanel>
           {publishDirty && (
             <p className="manage-notice">
-              Save or cancel the posting channel change before saving the
-              message.
+              <TriangleAlert size={16} aria-hidden="true" />
+              <span>
+                Save or cancel the posting channel change before saving the
+                message.
+              </span>
             </p>
           )}
           {document.publish_endpoint && (
@@ -728,6 +759,10 @@ export default function ServerManagement({
               dirty={dirty}
               busy={busy}
               onBusy={(value) => {
+                if (value) {
+                  setActionResult(null);
+                  setNotice("");
+                }
                 writing.current = value;
                 setBusy(value);
               }}
@@ -759,6 +794,10 @@ export default function ServerManagement({
           {supportsHistory(endpoint(selected)) && !document.action_only && (
             <ChangeHistory
               onBusy={(value) => {
+                if (value) {
+                  setActionResult(null);
+                  setNotice("");
+                }
                 writing.current = value;
                 setBusy(value);
               }}

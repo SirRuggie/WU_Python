@@ -1,4 +1,5 @@
 import "./maintenance.css";
+import { TriangleAlert } from "lucide-react";
 import { formatDateTime } from "../format";
 import { timeLabel, type ReminderData } from "./types";
 
@@ -36,7 +37,10 @@ export function DeliveryStatus({
         </p>
       ) : enabled && data.health?.category === "maintenance" ? (
         <p className="notice reminder-maintenance" role="status">
-          <strong>Clash maintenance</strong>
+          <strong>
+            <TriangleAlert size={16} aria-hidden="true" />
+            Clash maintenance
+          </strong>
           <span>Reminders continue when it ends.</span>
         </p>
       ) : (

@@ -1401,3 +1401,13 @@ without an additional page heading or an Edit button on each row. The save row
 appears only for unsaved work or a save error and stays hidden on History. Its
 preview is directly above it. Narrow/wide fixture review and the limits of any
 unexecuted browser checks are recorded in the batch's review artifact.
+
+### 268 warning and success feedback scope
+
+Review scope: Server management direct/queued saves, synchronous actions, preview-only
+notices, publishing, hints versus real warnings, failed/uncertain requests and stale
+success clearing. Regression checks preserve request bodies, explicit confirmation,
+revision checks, result details, safe Discord links and account lists. Warning icons
+are decorative; action success has a labelled live status region. Errors retain red
+1px borders. Native review uses isolated fixtures and the reduced Shaka 1307/1308
+AFTER matrix; no live Discord delivery or all-page accessibility claim is implied.

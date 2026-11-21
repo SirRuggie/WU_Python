@@ -1,5 +1,5 @@
 import { countLabel } from "./countLabel";
-import { ArrowUpRight } from "lucide-react";
+import { ArrowUpRight, Check } from "lucide-react";
 import { safeDiscordUrl, type ManagementResult } from "./serverManagement";
 
 export default function ManagementActionResult({
@@ -8,9 +8,13 @@ export default function ManagementActionResult({
   actionResult: ManagementResult;
 }) {
   return (
-    <section className="manage-result" aria-label="Action result">
-      <h3>Result</h3>
-      {actionResult.message && <p>{actionResult.message}</p>}
+    <section className="manage-result" aria-label="Action result" role="status">
+      {actionResult.message && (
+        <p className="manage-result-message">
+          <Check size={16} aria-hidden="true" />
+          <span>{actionResult.message}</span>
+        </p>
+      )}
       {actionResult.details && (
         <p className="manage-result-details">{actionResult.details}</p>
       )}

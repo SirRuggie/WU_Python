@@ -39,6 +39,7 @@ from pymongo.errors import DuplicateKeyError
 from extensions.commands import ticket_runtime
 from extensions.commands.tickets import account_sync, schema, store, testing_service, perms
 from utils.constants import WU_GOLD
+from utils.ticket_errors import ThreadConfigurationError, ThreadTicketError
 from utils.mongo import MongoClient
 from utils import ticket_staff_content
 
@@ -106,14 +107,6 @@ _REQUIRED_CANDIDATE_PARENT_PERMISSIONS = (
 _REQUIRED_STAFF_PARENT_PERMISSIONS = (
     _REQUIRED_BOT_PARENT_PERMISSIONS | hikari.Permissions.CREATE_PUBLIC_THREADS
 )
-
-
-class ThreadTicketError(RuntimeError):
-    """A safe, operator-actionable thread ticket failure."""
-
-
-class ThreadConfigurationError(ThreadTicketError):
-    """Thread parents, roles, or permissions are unsafe or incomplete."""
 
 
 class ThreadCreationBusy(ThreadTicketError):

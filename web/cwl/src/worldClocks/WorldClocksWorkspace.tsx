@@ -1,6 +1,6 @@
 import LoadError from "../LoadError";
 import CwlPageHeader from "../CwlPageHeader";
-import { Ban } from "lucide-react";
+import { Ban, TriangleAlert } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { api } from "../api";
 import SectionTabs, { SectionTabPanel } from "../SectionTabs";
@@ -175,7 +175,11 @@ export default function WorldClocksWorkspace({
         )}
         {!data.channels_available && (
           <p className="world-clock-warning" role="status">
-            Discord is unavailable. Channel names and lists may be out of date.
+            <TriangleAlert size={16} aria-hidden="true" />
+            <span>
+              Discord is unavailable. Channel names and lists may be out of
+              date.
+            </span>
           </p>
         )}
         <div hidden={section !== "clocks"}>

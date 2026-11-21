@@ -2,11 +2,15 @@
   margin: 0 0 var(--wu-space-4);
   padding: var(--wu-space-3) var(--wu-space-4);
   border: 1px solid var(--wu-warning-border);
+  border-left: 3px solid var(--wu-warning);
   border-radius: var(--wu-radius-md);
   background: var(--wu-warning-surface);
 }
 
 .attention-summary h2 {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
   margin: 0 0 var(--wu-space-2);
   color: var(--wu-warning);
   font-size: var(--wu-text-xl);

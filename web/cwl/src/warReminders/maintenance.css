@@ -8,9 +8,16 @@
   background: var(--wu-warning-surface);
   color: var(--wu-warning);
   border: 1px solid var(--wu-warning-border);
+  border-left: 3px solid var(--wu-warning);
 }
 
 .notice.reminder-maintenance strong,
 .notice.reminder-maintenance span {
   color: inherit;
+}
+
+.notice.reminder-maintenance strong {
+  display: flex;
+  align-items: center;
+  gap: var(--wu-space-2);
 }

@@ -47,7 +47,11 @@
 }
 
 .world-clock-warning {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--wu-space-2);
   border-color: var(--wu-warning-border);
+  border-left: 3px solid var(--wu-warning);
   background: var(--wu-warning-surface);
   color: var(--wu-warning);
 }
@@ -456,4 +460,13 @@
     flex-wrap: nowrap;
     overflow-x: auto;
   }
+}
+
+.world-clock-warning > svg {
+  flex: none;
+  margin-top: 0.2em;
+}
+.world-clock-warning > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
