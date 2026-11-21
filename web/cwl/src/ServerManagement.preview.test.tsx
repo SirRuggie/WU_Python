@@ -296,11 +296,13 @@ it("shows a status notice once", () => {
   renderDraft();
   hooks.index = 0;
   hooks.effects = [];
-  hooks.values[8] = "Saved.";
+  hooks.values[8] = "Queued. Waiting for the bot.";
   const html = renderToStaticMarkup(
     <ServerManagement area="applications-settings" />,
   );
-  expect(html.split('role="status">Saved.</p>').length - 1).toBe(1);
+  expect(html.split('class="manage-status" role="status"').length - 1).toBe(1);
+  expect(html).toContain("Queued. Waiting for the bot.");
+  expect(html).not.toContain('class="manage-notice"');
 });
 
 it("only preview-supported editors expose linked tab panels", () => {
@@ -324,4 +326,29 @@ it("only preview-supported editors expose linked tab panels", () => {
   expect(unsupported).not.toContain('role="tabpanel"');
   expect(unsupported).not.toContain("management-editor-panel-");
   expect(unsupported).not.toContain("management-editor-tab-");
+});
+
+it("preview stays an amber notice while hints and dirty-post warnings keep separate roles", () => {
+  renderDraft();
+  hooks.index = 0;
+  hooks.effects = [];
+  hooks.values[4] = {
+    ...document,
+    hint: "An advisory hint.",
+    warning: "A real warning.",
+  };
+  hooks.values[8] = "Preview only. Nothing has been sent.";
+  hooks.values[19] = true;
+  const html = renderToStaticMarkup(
+    <ServerManagement area="applications-settings" />,
+  );
+  expect(html).toContain('class="manage-hint"');
+  expect(html).toContain("An advisory hint.");
+  expect(html).toContain("A real warning.");
+  expect(html).toContain(
+    "Save or cancel the posting channel change before saving the",
+  );
+  expect(html).toContain("Preview only. Nothing has been sent.");
+  expect(html).not.toContain('class="manage-status"');
+  expect(html).not.toContain('class="manage-result"');
 });

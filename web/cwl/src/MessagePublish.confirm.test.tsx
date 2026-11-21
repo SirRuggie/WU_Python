@@ -52,6 +52,7 @@ beforeEach(async () => {
   );
 });
 afterEach(async () => {
+  vi.useRealTimers();
   await act(async () => root.unmount());
   host.remove();
 });
@@ -168,4 +169,61 @@ it("changes the posting channel with one picker and no separate search box", asy
   );
   expect(trigger.textContent).toContain("#general");
   expect(button("Save channel", host).disabled).toBe(false);
+});
+
+it.each([false, true])(
+  "terminal publishing has one honest success fallback (queued=%s)",
+  async (queued) => {
+    vi.useFakeTimers();
+    api.mockImplementation(async (path: string, method?: string) =>
+      method === "POST"
+        ? queued
+          ? { status_url: "/fixture/request" }
+          : {}
+        : path === "/fixture/request"
+          ? { status: "done" }
+          : page,
+    );
+    await act(async () => button("Post saved message", host).click());
+    await act(async () =>
+      button(
+        "Post saved message",
+        document.querySelector(".confirm-dialog")!,
+      ).click(),
+    );
+    if (queued) {
+      expect(host.querySelector(".manage-status")?.textContent).toBe(
+        "Queued for publishing.",
+      );
+      expect(host.querySelector(".manage-result")).toBeNull();
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(2532);
+      });
+    }
+    expect(host.querySelectorAll(".manage-result")).toHaveLength(1);
+    expect(host.querySelector(".manage-result")?.textContent).toBe(
+      "Request done.",
+    );
+    expect(host.querySelector(".manage-status")).toBeNull();
+    expect(writes()).toHaveLength(1);
+  },
+);
+it("publishing keeps backend completion copy exactly once", async () => {
+  api.mockImplementation(async (_path: string, method?: string) =>
+    method === "POST" ? { message: "The saved message was posted." } : page,
+  );
+  await act(async () => button("Post saved message", host).click());
+  await act(async () =>
+    button(
+      "Post saved message",
+      document.querySelector(".confirm-dialog")!,
+    ).click(),
+  );
+  expect(host.textContent?.split("The saved message was posted.")).toHaveLength(
+    2,
+  );
+  expect(host.querySelector(".manage-result")?.getAttribute("role")).toBe(
+    "status",
+  );
+  expect(host.querySelector(".manage-status")).toBeNull();
 });

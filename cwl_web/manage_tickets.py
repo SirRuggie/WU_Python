@@ -26,11 +26,11 @@ async def settings(request):
     elif part in ('main','fwa'):
         result['description']="Select application channels and the recruiter role."
         result['fields']=[field(f'{part}_{key}',label,str(cfg.get(f'{part}_{key}') or ''),kind) for key,label,kind in [('candidate_parent','Recruit channel','channel'),('staff_parent','Staff channel','channel'),('thread_recruiter_role','Recruiter role','role')]]
-        result['warning']='The recruit channel must match the active Apply panel. Moving intake requires updating that binding first.'
+        result['hint']='The recruit channel must match the active Apply panel. Moving intake requires updating that binding first.'
     elif part=='desk':
         result['description']='Select the Warrior Desk channel, where staff threads go, and the roles that handle each request type.'
         result['fields']=[field(key,label,str(cfg.get(key) or ''),kind) for key,label,kind in [('desk_channel_id','Warrior Desk channel','channel'),('desk_staff_parent','Staff thread channel','channel'),('account_thread_recruiter_role','Add account staff role','role'),('staff_thread_recruiter_role','Contact staff role','role')]]
-        result['warning']='Leaving the staff thread channel empty uses the Main staff channel. Setup checks Discord permissions again before posting.'
+        result['hint']='Leaving the staff thread channel empty uses the Main staff channel. Setup checks Discord permissions again before posting.'
         readiness=desk_readiness(cfg,phase=rollout.phase,rollout_valid=rollout.valid)
         readiness['live']=bool(rollout.desk_intake)
         result['desk_readiness']=readiness

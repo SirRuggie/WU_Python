@@ -1,3 +1,5 @@
+import ManagementActionResult from "./ManagementActionResult";
+import { TriangleAlert } from "lucide-react";
 import { visibleRefresh } from "./visibleRefresh";
 import useConfirmDialog from "./useConfirmDialog";
 import { useEffect, useRef, useState } from "react";
@@ -7,6 +9,7 @@ import {
   ManagementRequestIds,
   safeDiscordUrl,
   type ManagementDocument,
+  type ManagementResult,
 } from "./serverManagement";
 type PublishPage = {
   revision: string;
@@ -37,6 +40,7 @@ export default function MessagePublish({
   const [page, setPage] = useState<PublishPage | null>(null),
     [error, setError] = useState(""),
     [notice, setNotice] = useState(""),
+    [actionResult, setActionResult] = useState<ManagementResult | null>(null),
     [loading, setLoading] = useState(true),
     [statusUrl, setStatusUrl] = useState(""),
     [channelEditor, setChannelEditor] = useState<ManagementDocument | null>(
@@ -90,16 +94,23 @@ export default function MessagePublish({
       const result = await api<{
         status: string;
         message?: string;
-        result?: { message?: string; url?: string };
+        result?: ManagementResult;
       }>(path(url));
       if (!alive.current) return;
       setNotice(
-        result.result?.message || result.message || "Waiting for Discord…",
+        ["done", "failed", "uncertain"].includes(result.status)
+          ? ""
+          : result.message || "Waiting for Discord…",
       );
       if (["done", "failed", "uncertain"].includes(result.status)) {
         finished = true;
         setStatusUrl("");
         if (result.status === "done") {
+          setActionResult({
+            ...result.result,
+            message:
+              result.result?.message || result.message || "Request done.",
+          });
           ids.current.complete(pendingKey.current);
           await load();
         } else
@@ -136,6 +147,7 @@ export default function MessagePublish({
     onBusy(true);
     setError("");
     setNotice("");
+    setActionResult(null);
     const key = ids.current.key(action.endpoint, page.revision, {});
     pendingKey.current = key;
     let queued = false;
@@ -146,11 +158,14 @@ export default function MessagePublish({
         { revision: page.revision, request_id: ids.current.get(key) },
       );
       if (!alive.current) return;
-      setNotice(result.message || "Queued for publishing.");
       if (result.status_url) {
+        setNotice(result.message || "Queued for publishing.");
         queued = true;
         setStatusUrl(result.status_url);
       } else {
+        setActionResult({
+          message: result.message || "Request done.",
+        });
         ids.current.complete(key);
         await load();
       }
@@ -192,6 +207,8 @@ export default function MessagePublish({
     sending.current = true;
     onBusy(true);
     setError("");
+    setNotice("");
+    setActionResult(null);
     try {
       await api(path(page.destination_editor), "PATCH", {
         revision: channelEditor.revision,
@@ -200,7 +217,7 @@ export default function MessagePublish({
       if (alive.current) {
         setChannelEditor(null);
         await load();
-        setNotice("Posting channel saved.");
+        setActionResult({ message: "Posting channel saved." });
       }
     } catch (e) {
       if (alive.current) setError(message(e));
@@ -222,7 +239,12 @@ export default function MessagePublish({
           </button>
         </p>
       )}
-      {notice && <p role="status">{notice}</p>}
+      {notice && (
+        <p className="manage-status" role="status">
+          {notice}
+        </p>
+      )}
+      {actionResult && <ManagementActionResult actionResult={actionResult} />}
       {page && (
         <>
           <p>
@@ -291,8 +313,11 @@ export default function MessagePublish({
           )}
           {dirty && (
             <p className="manage-notice">
-              Save your message changes before publishing. Preview is always
-              available.
+              <TriangleAlert size={16} aria-hidden="true" />
+              <span>
+                Save your message changes before publishing. Preview is always
+                available.
+              </span>
             </p>
           )}
           {!page.actions.length && !page.destination_editor && (

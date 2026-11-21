@@ -2101,3 +2101,15 @@ Status: implemented for isolated review; check and native evidence are recorded
 in the short batch report. No merge, release or live delivery is asserted here.
 Existing request bodies, pool discard guards, comparison swipe/rail behavior,
 permission checks and URL contracts remain in scope for regression verification.
+
+### 268 — warning fill and one success message
+
+Ruggie requested removing the olive panels and duplicate Warrior Desk save/post
+acknowledgements on 2026-11-21. Both display changes were accepted; the optional
+Ticket settings hint response field was explicitly approved at 15:51 UTC. Advisory
+Main/FWA/Desk copy is a hint; true warnings stay warnings. Shared warning fill now
+uses the dark surface, with the owner-confirmed 3px edge (1307 overrides the prompt's
+doc-only 4px typo). Success appears once. No schema, policy or request-body change.
+Source implementation is pending review/release; Shaka 1308 accepts the owner's
+phone screenshots as BEFORE and one reduced AFTER pass. Unused roster selection
+fill remains for later cleanup; moderation source is protected in this batch.

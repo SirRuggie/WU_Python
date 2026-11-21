@@ -12,6 +12,7 @@ import hikari
 from pymongo import ReturnDocument, timeout
 from utils.manage_poll_cache import state_for
 from utils.member_profiles import ProfileOutcomeUncertain
+from utils.ticket_errors import ThreadConfigurationError
 
 WORKER_ID = "manage-web-worker:644963518025826315"
 GUILD_ID = 644963518025826315
@@ -151,11 +152,11 @@ def _warn_uncertain(row, error):
 
 async def _ticket_settings_precheck(mongo, rest, cfg):
     """Only this read-only boundary can reclassify a known setup failure."""
-    from extensions.commands.tickets import settings, thread_service
+    from extensions.commands.tickets import settings
 
     try:
         return await settings.validate(mongo, rest, cfg, GUILD_ID)
-    except thread_service.ThreadConfigurationError as error:
+    except ThreadConfigurationError as error:
         reason = str(error).rstrip(".")
         raise ValueError(
             f"Ticket settings check failed: {reason}. Nothing was saved or posted."

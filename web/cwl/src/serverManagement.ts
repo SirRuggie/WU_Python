@@ -79,6 +79,7 @@ export type ManagementDocument = ManagementSection & {
   publish_endpoint?: string | null;
   preview_supported?: boolean;
   preview?: PreviewPart[];
+  hint?: string;
   warning?: string;
   readonly?: boolean;
   desk_readiness?: {

@@ -13,7 +13,7 @@
   max-width: 100%;
   padding: var(--wu-space-1) var(--wu-space-3);
   border: 1px solid var(--wu-warning-border);
-  border-left: 4px solid var(--wu-warning);
+  border-left: 3px solid var(--wu-warning);
   border-radius: var(--wu-radius-md);
   background: var(--wu-warning-surface);
   color: var(--wu-warning);

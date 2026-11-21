@@ -134,6 +134,7 @@ export default function ManagementActions({
                     writing.current = true;
                     setBusy(true);
                     setError("");
+                    setNotice("");
                     setActionResult(null);
                     const actionEndpoint = apiPath(
                       action.endpoint ||
@@ -161,8 +162,8 @@ export default function ManagementActions({
                         values: draft,
                         request_id: requestIds.current.get(requestKey),
                       });
-                      setNotice(outcome.message || "Change saved.");
                       if (outcome.status_url) {
+                        setNotice(outcome.message || "Waiting for Discord…");
                         pendingKeys.current.set(outcome.status_url, requestKey);
                         const status = await checkAction(
                           outcome.status_url,
@@ -171,11 +172,11 @@ export default function ManagementActions({
                         if (status !== "done") return;
                       } else {
                         requestIds.current.complete(requestKey);
-                        setActionResult(
-                          outcome.url || outcome.details || outcome.accounts
-                            ? outcome
-                            : null,
-                        );
+                        setNotice("");
+                        setActionResult({
+                          ...outcome,
+                          message: outcome.message || "Change saved.",
+                        });
                       }
                       if (outcome.draft_values) {
                         setDraft((current) => ({
