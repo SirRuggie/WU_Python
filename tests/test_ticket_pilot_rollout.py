@@ -1671,7 +1671,10 @@ def test_reclick_with_open_ticket_reaccesses_candidate_thread(monkeypatch):
     assert reaccess_calls == [("ticket_1", 50)]
     # A bare <#id> mention only resolves in the channel's own guild; a jump
     # URL resolves everywhere, including outside the ticket's server.
-    assert "https://discord.com/channels/11/999" in edits[-1]["content"]
+    assert edits[-1]["components"][0].components[0].url == "https://discord.com/channels/11/999"
+    assert edits[-1]["components"][0].components[0].label == "Open your ticket"
+    assert edits[-1]["user_mentions"] is False and edits[-1]["role_mentions"] is False
+    assert "already open" in edits[-1]["content"]
 
 
 def test_reclick_duplicate_guard_links_the_tickets_own_server_not_the_viewers(
@@ -1735,7 +1738,10 @@ def test_reclick_duplicate_guard_links_the_tickets_own_server_not_the_viewers(
         mongo=SimpleNamespace(),
     ))
 
-    assert "https://discord.com/channels/77/999" in edits[-1]["content"]
+    assert edits[-1]["components"][0].components[0].url == "https://discord.com/channels/77/999"
+    assert edits[-1]["components"][0].components[0].label == "Open your ticket"
+    assert edits[-1]["user_mentions"] is False and edits[-1]["role_mentions"] is False
+    assert "already open" in edits[-1]["content"]
     assert "<#999>" not in edits[-1]["content"]
 
 
@@ -1787,7 +1793,10 @@ def test_reclick_reply_survives_reaccess_failure(monkeypatch):
         mongo=SimpleNamespace(),
     ))
 
-    assert "https://discord.com/channels/11/999" in edits[-1]["content"]
+    assert edits[-1]["components"][0].components[0].url == "https://discord.com/channels/11/999"
+    assert edits[-1]["components"][0].components[0].label == "Open your ticket"
+    assert edits[-1]["user_mentions"] is False and edits[-1]["role_mentions"] is False
+    assert "already open" in edits[-1]["content"]
 
 
 def _my_ticket_fixture(monkeypatch, rows):

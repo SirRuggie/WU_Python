@@ -57,10 +57,10 @@ def test_shared_staff_parent_never_unions_other_ticket_roles(kind, expected):
         'main_staff_parent':21,'fwa_staff_parent':21,'desk_channel_id':30,
         'desk_staff_parent':21,'ticket_staff_viewer_role_ids':[999]}
     parents=thread_service.parents_from_config(config,GUILD,kind)
-    actual=set(parents.staff_thread_role_ids)
+    from utils.ticket_access import ticket_type_role_ids
+    actual=set(ticket_type_role_ids(config,kind))
     assert actual==expected
     assert parents.staff_viewer_role_ids == (999,)
-    assert parents.private_staff
 
 class Members:
     def __init__(self, items):
@@ -74,58 +74,6 @@ class Members:
         return iterate()
 
 
-def test_private_invites_remove_stale_roles_before_adding_exact_handlers():
-    from extensions.commands.tickets import thread_service
-    members = [SimpleNamespace(id=key, guild_id=GUILD, role_ids=roles, is_bot=False)
-               for key, roles in [(1, [100]), (2, [102]), (3, [103]), (4, [999])]]
-    actions = []
-    async def remove(thread, member): actions.append(('remove', thread, member))
-    async def add(thread, member): actions.append(('add', thread, member))
-    async def fresh(guild, key): return next(member for member in members if member.id == key)
-    rest = SimpleNamespace(fetch_members=lambda guild: Members(members),
-        fetch_thread_members=lambda thread: Members([SimpleNamespace(user_id=3), SimpleNamespace(user_id=99)]),
-        fetch_member=fresh, remove_thread_member=remove, add_thread_member=add)
-    asyncio.run(thread_service.sync_private_staff_members(rest, guild_id=GUILD,
-        thread_id=45, role_ids={100,101,102}, bot_user_id=99))
-    assert actions == [('remove',45,3),('add',45,1),('add',45,2)]
-
-
-def test_private_invites_role_loss_during_scan_does_not_grant_access():
-    from extensions.commands.tickets import thread_service
-    old = SimpleNamespace(id=1, guild_id=GUILD, role_ids=[103], is_bot=False)
-    rest = SimpleNamespace(fetch_members=lambda guild: Members([old]),
-        fetch_thread_members=lambda thread: Members([]),
-        fetch_member=AsyncMock(return_value=SimpleNamespace(id=1, guild_id=GUILD, role_ids=[])),
-        remove_thread_member=AsyncMock(), add_thread_member=AsyncMock())
-    asyncio.run(thread_service.sync_private_staff_members(rest,guild_id=GUILD,
-        thread_id=45,role_ids={103},bot_user_id=99))
-    rest.add_thread_member.assert_not_awaited()
-
-
-def test_private_member_scan_bound_fails_before_any_permission_write(monkeypatch):
-    from extensions.commands.tickets import thread_service
-    monkeypatch.setattr(thread_service, 'STAFF_MEMBER_SCAN_LIMIT', 1)
-    rest = SimpleNamespace(fetch_members=lambda guild: Members([
-        SimpleNamespace(id=1), SimpleNamespace(id=2)]),
-        remove_thread_member=AsyncMock(), add_thread_member=AsyncMock())
-    with pytest.raises(thread_service.ThreadConfigurationError, match='safe bound'):
-        asyncio.run(thread_service.sync_private_staff_members(rest,guild_id=GUILD,
-            thread_id=45,role_ids={103},bot_user_id=99))
-    rest.remove_thread_member.assert_not_awaited()
-    rest.add_thread_member.assert_not_awaited()
-
-
-def test_cleared_handler_configuration_revokes_explicit_private_invites():
-    from extensions.commands.tickets import thread_service
-    rest = SimpleNamespace(fetch_members=lambda guild: Members([]),
-        fetch_thread_members=lambda thread: Members([SimpleNamespace(user_id=3),SimpleNamespace(user_id=99)]),
-        remove_thread_member=AsyncMock(), add_thread_member=AsyncMock())
-    asyncio.run(thread_service.sync_private_staff_members(rest,guild_id=GUILD,
-        thread_id=45,role_ids=(),bot_user_id=99))
-    rest.remove_thread_member.assert_awaited_once_with(45,3)
-    rest.add_thread_member.assert_not_awaited()
-
-
 def test_private_role_recovery_does_not_reassign_roles_to_other_types():
     from extensions.commands.tickets import thread_service
     state = {'candidate_parent_id':30,'staff_parent_id':21,'recruiter_role_id':103,
@@ -133,69 +81,30 @@ def test_private_role_recovery_does_not_reassign_roles_to_other_types():
         'shared_staff_role_ids':[100,101,102],'staff_viewer_role_ids':[999]}
     cfg = thread_service._recovery_config(state,'staff',GUILD)
     parents = thread_service.parents_from_config(cfg,GUILD,'staff')
-    assert parents.private_staff
-    assert parents.staff_thread_role_ids == (103,)
+    assert parents.recruiter_role_id == 103
+    assert parents.staff_parent_id == 21
     assert parents.staff_viewer_role_ids == (999,)
 
 
 @pytest.mark.parametrize('private',[True,False])
-def test_live_pair_uses_exact_private_invites_and_preserves_old_public_staff_pairs(monkeypatch,private):
+def test_existing_staff_pair_is_retained_without_enumeration_or_reparent(monkeypatch,private):
     from extensions.commands.tickets import thread_service
     state={'_id':'creation','ticket_number':1,'candidate_name':'fixture-candidate','staff_name':'fixture-staff',
         'guild_id':GUILD,'user_id':10,'username':'Fixture','ticket_type':'account',
-        'candidate_parent_id':20,'staff_parent_id':21,'staff_thread_private':private,
-        'staff_thread_role_ids':[100,101,102]}
-    async def update(mongo,creation,owner,**values):
-        state.update(values);return dict(state)
+        'candidate_parent_id':20,'staff_parent_id':99,'staff_thread_private':private,
+        'candidate_thread_id':201,'staff_thread_id':202}
+    channels=[SimpleNamespace(id=201,is_archived=False,is_locked=False),
+              SimpleNamespace(id=202,is_archived=False,is_locked=False)]
+    fetch=AsyncMock(side_effect=channels)
+    monkeypatch.setattr(thread_service,'_fetch_or_recover_thread',fetch)
+    monkeypatch.setattr(thread_service,'_unarchive_if_needed',AsyncMock(side_effect=lambda rest,ch:ch))
+    async def update(mongo,creation,owner,**values):state.update(values);return dict(state)
     monkeypatch.setattr(thread_service,'_state_update',update)
-    monkeypatch.setattr(thread_service,'_fetch_or_recover_thread',AsyncMock(return_value=None))
-    members=[SimpleNamespace(id=key,guild_id=GUILD,role_ids=roles,is_bot=False)
-        for key,roles in [(1,[100]),(2,[101]),(3,[102]),(4,[103]),(5,[999]),(10,[])]]
-    created=[]
-    async def create(parent,kind,name,**kwargs):
-        created.append((parent,kind,kwargs))
-        return SimpleNamespace(id=200+len(created),is_archived=False,is_locked=False)
-    def invited(thread):
-        return Members([SimpleNamespace(user_id=99),*([SimpleNamespace(user_id=10)] if thread==201 else [])])
-    rest=SimpleNamespace(create_thread=create,add_thread_member=AsyncMock(),remove_thread_member=AsyncMock(),
-        fetch_members=lambda guild:Members(members),fetch_thread_members=invited,
-        fetch_member=AsyncMock(side_effect=lambda guild,key:next(member for member in members if member.id==key)))
+    rest=SimpleNamespace(create_thread=AsyncMock(),add_thread_member=AsyncMock(),fetch_members=AsyncMock())
     asyncio.run(thread_service._ensure_live_thread_pair(rest=rest,mongo=SimpleNamespace(),state=state,owner='owner',bot_user_id=99))
-    assert created[0][1]==hikari.ChannelType.GUILD_PRIVATE_THREAD
-    assert created[1][1]==(hikari.ChannelType.GUILD_PRIVATE_THREAD if private else hikari.ChannelType.GUILD_PUBLIC_THREAD)
-    calls=[call.args for call in rest.add_thread_member.await_args_list]
-    if private:
-        assert calls==[(201,10),(201,1),(201,2),(201,3),(202,1),(202,2),(202,3)]
-        assert created[1][2]['invitable'] is False
-        rest.remove_thread_member.assert_not_awaited()
-    else:
-        assert calls==[(201,10)]
-
-
-def test_role_loss_event_revokes_both_new_private_spaces(monkeypatch):
-    from extensions.commands.tickets import staff_access,store
-    row={'_id':'ticket_1','guild_id':GUILD,'ticket_type':'account','user_id':10,
-        'staff_thread_private':True,'location':{'id':201,'staff_space_id':202}}
-    monkeypatch.setattr(store,'private_staff_tickets',AsyncMock(return_value=[row]))
-    monkeypatch.setattr(store,'find_one',AsyncMock(return_value=row))
-    member=SimpleNamespace(id=3,guild_id=GUILD,role_ids=[])
-    rest=SimpleNamespace(fetch_member=AsyncMock(return_value=member),
-        fetch_channel=AsyncMock(side_effect=lambda cid:SimpleNamespace(id=cid,guild_id=GUILD,owner_id=99,type=hikari.ChannelType.GUILD_PRIVATE_THREAD)),
-        fetch_thread_member=AsyncMock(return_value=SimpleNamespace(user_id=3)),
-        remove_thread_member=AsyncMock(),add_thread_member=AsyncMock())
-    db=SimpleNamespace(ticket_setup=SimpleNamespace(find_one=AsyncMock(return_value=CONFIG)))
-    asyncio.run(staff_access.member_changed(SimpleNamespace(rest=rest,get_me=lambda:SimpleNamespace(id=99)),db,member))
-    assert [call.args for call in rest.remove_thread_member.await_args_list]==[(202,3),(201,3)]
-    rest.add_thread_member.assert_not_awaited()
-
-
-def test_foreign_guild_role_event_never_enumerates_private_tickets(monkeypatch):
-    from extensions.commands.tickets import staff_access,store
-    rows=AsyncMock();monkeypatch.setattr(store,'private_staff_tickets',rows)
-    db=SimpleNamespace(ticket_setup=SimpleNamespace(find_one=AsyncMock(return_value=CONFIG)))
-    asyncio.run(staff_access.member_changed(SimpleNamespace(get_me=lambda:SimpleNamespace(id=99)),db,
-        SimpleNamespace(id=3,guild_id=GUILD+1,role_ids=[100])))
-    rows.assert_not_awaited()
+    rest.create_thread.assert_not_awaited();rest.fetch_members.assert_not_called()
+    rest.add_thread_member.assert_awaited_once_with(201,10)
+    assert state['staff_parent_id']==99 and state['staff_thread_private'] is private
 
 
 @pytest.mark.parametrize('admin',[False,True])
@@ -213,7 +122,7 @@ def test_guided_private_readiness_checks_actual_role_combinations(monkeypatch,ad
     rest.fetch_roles=roles
     member=SimpleNamespace(id=3,guild_id=10,display_name='Unapproved member',role_ids=[70] if admin else [50,51])
     rest.fetch_members=lambda guild:Members([member])
-    parents=thread_service.ThreadParents(10,20,21,40,staff_thread_role_ids=(40,),private_staff=True)
+    parents=thread_service.ThreadParents(10,20,21,40,desk_permission_policy=True)
     if admin:
         channels=asyncio.run(thread_service.validate_thread_parents(rest,parents,bot_user_id=99))
         assert [channel.id for channel in channels]==[20,21]

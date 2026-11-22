@@ -374,3 +374,33 @@ it("stops after the All recovery also receives a permanent denial", async () => 
   expect(host.querySelector(".ticket-toolbar")).toBeNull();
   expect(host.textContent).not.toContain("Try again");
 });
+
+it("shows account clan without inferring a clan for historical rows", async () => {
+  api.mockResolvedValue({
+    tickets: ["main", "fwa", null].map((clan, index) => ({
+      id: String(index + 1),
+      number: index + 1,
+      name: "Account owner",
+      user_id: "50",
+      kind: "account",
+      account_clan: clan,
+      status: "open",
+      created_at: null,
+      flags: [],
+    })),
+    has_more: false,
+  });
+  await act(async () => root.render(<TicketBrowser />));
+  const rows = [...host.querySelectorAll<HTMLElement>(".ticket-row")];
+  expect(rows).toHaveLength(3);
+  expect(rows[0].textContent).toContain("Add account · Main");
+  expect(rows[1].textContent).toContain("Add account · FWA");
+  expect(rows[2].textContent).toContain("Add account");
+  expect(rows[2].textContent).not.toMatch(/Main|FWA/);
+  expect(
+    rows[0].querySelector(".ticket-read")?.getAttribute("aria-label"),
+  ).toContain("Add account · Main");
+  expect(api.mock.calls.every((call) => !call[1] || call[1] === "GET")).toBe(
+    true,
+  );
+});

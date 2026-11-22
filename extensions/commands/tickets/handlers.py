@@ -291,21 +291,6 @@ async def capture_candidate_thread_activity(
         )
 
 
-@loader.listener(hikari.MemberUpdateEvent)
-@lightbulb.di.with_di
-async def reconcile_ticket_role_change(event: hikari.MemberUpdateEvent,
-        bot: hikari.GatewayBot = lightbulb.di.INJECTED,
-        mongo: MongoClient = lightbulb.di.INJECTED) -> None:
-    if event.old_member is not None and event.old_member.role_ids == event.member.role_ids:
-        return
-    from . import staff_access
-    try:
-        async with asyncio.timeout(30):
-            await staff_access.member_changed(bot,mongo,event.member)
-    except Exception:
-        _log.exception("Ticket role reconciliation deferred to bounded maintenance")
-
-
 @loader.listener(hikari.GuildThreadDeleteEvent)
 @lightbulb.di.with_di
 async def handle_ticket_thread_deleted(
@@ -355,6 +340,7 @@ async def handle_create_ticket(
     bot: hikari.GatewayBot = lightbulb.di.INJECTED,
     mongo: MongoClient = lightbulb.di.INJECTED,
     _source_message_id: int | None = None,
+    _account_clan: str | None = None,
     **_kwargs,
 ) -> None:
     """Create or safely resume a private candidate/public staff thread pair."""
@@ -421,6 +407,17 @@ async def handle_create_ticket(
         )
         await edit_error(ctx, rest=bot.rest, content=message)
         return
+
+    if ticket_type == "account":
+        if _account_clan is None:
+            from .rite import open_account_clans
+            await open_account_clans(ctx,mongo,message_id)
+            return
+        try:
+            _account_clan = schema.account_clan(_account_clan,required=True)
+        except schema.TicketSchemaError as exc:
+            await edit_error(ctx,rest=bot.rest,content=str(exc))
+            return
 
     cleanup_expired_cooldowns()
 
@@ -534,11 +531,10 @@ async def handle_create_ticket(
                     store.as_int(existing_ticket.get("guild_id"))
                     if existing_ticket is not None else None
                 ) or int(ctx.guild_id)
-                noun = "request" if ticket_type in schema.DESK_TICKET_TYPES else "ticket"
-                message = (
-                    f"✅ You already have an open {ticket_type.upper()} {noun}: "
-                    f"https://discord.com/channels/{ticket_guild_id}/{location_id}"
-                )
+                await _show_created_ticket(ctx, existing_ticket or {
+                    "ticket_type":ticket_type,"guild_id":ticket_guild_id,"location":{"id":location_id}
+                },resumed=True)
+                return
         else:
             message = f"⏳ We are already creating your {noun}. Try again in a moment."
         await ctx.interaction.edit_initial_response(content=message)
@@ -582,6 +578,7 @@ async def handle_create_ticket(
             display_name=display_name,
             ticket_type=ticket_type,
             config=config,
+            account_clan=_account_clan if ticket_type == "account" else None,
             open_slot_claim=slot_claim,
             on_ready=on_ready,
         )

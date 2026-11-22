@@ -22,17 +22,20 @@ export type Ticket = {
   name: string;
   user_id: string;
   kind: string;
+  account_clan?: "main" | "fwa" | null;
   status: string;
   created_at: string | null;
   flags: { kind: string; label: string; reason: string }[];
 };
-const ticketTypeName = (kind: string) =>
-  ({
-    main: "Recruit",
-    fwa: "Recruit",
-    account: "Add account",
-    staff: "Contact staff",
-  })[kind] || "Ticket";
+const ticketTypeName = (kind: string, accountClan?: string | null) =>
+  kind === "account" && (accountClan === "main" || accountClan === "fwa")
+    ? `Add account · ${accountClan === "main" ? "Main" : "FWA"}`
+    : {
+        main: "Recruit",
+        fwa: "Recruit",
+        account: "Add account",
+        staff: "Contact staff",
+      }[kind] || "Ticket";
 const ticketIcon = (kind: string) =>
   kind === "staff" ? Shield : kind === "account" ? UserPlus : Users;
 const initialTicketType = () => {
@@ -447,8 +450,8 @@ export default function TicketBrowser() {
                     const Icon = ticketIcon(t.kind);
                     return <Icon size={16} aria-hidden="true" />;
                   })()}
-                  {ticketTypeName(t.kind)} · {statusName(t.status)} · Opened{" "}
-                  {when(t.created_at)}
+                  {ticketTypeName(t.kind, t.account_clan)} ·{" "}
+                  {statusName(t.status)} · Opened {when(t.created_at)}
                 </small>
               </div>
               <a
@@ -458,7 +461,7 @@ export default function TicketBrowser() {
                   if (node) ticketButtons.current.set(t.id, node);
                   else ticketButtons.current.delete(t.id);
                 }}
-                aria-label={`Read ${discordIdentityName(t.user_id, null, t.name) || "Discord member unavailable"} #${t.number}, ${ticketTypeName(t.kind)}`}
+                aria-label={`Read ${discordIdentityName(t.user_id, null, t.name) || "Discord member unavailable"} #${t.number}, ${ticketTypeName(t.kind, t.account_clan)}`}
                 onClick={(event) => {
                   if (
                     event.button !== 0 ||

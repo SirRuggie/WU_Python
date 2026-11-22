@@ -93,3 +93,68 @@ it("does not repeat Warrior Desk in the older ticket-settings document list", as
   expect(nav.textContent).toContain("Ticket wait times");
   expect(nav.textContent).not.toContain("Warrior Desk");
 });
+
+it("shows both named account roles and the shared staff channel without writes on read", async () => {
+  const previous = transport.getMockImplementation()!;
+  transport.mockImplementation(async (path: string, ...args: unknown[]) => {
+    if (path === "/manage/ticket-settings/desk")
+      return {
+        id: "ticket_settings",
+        label: "Ticket settings",
+        group: "Recruitment",
+        revision: "fixture",
+        hint: "Staff threads use the Main staff channel.",
+        fields: [
+          {
+            key: "main_staff_parent",
+            label: "Staff thread channel",
+            value: "21",
+            type: "channel",
+            readonly: true,
+            options: [{ value: "21", label: "#recruit-staff", type: 0 }],
+          },
+          {
+            key: "account_main_thread_recruiter_role",
+            label: "Add account role (Main)",
+            value: "104",
+            type: "role",
+            options: [{ value: "104", label: "Main account handlers" }],
+          },
+          {
+            key: "account_fwa_thread_recruiter_role",
+            label: "Add account role (FWA)",
+            value: "105",
+            type: "role",
+            options: [{ value: "105", label: "FWA account handlers" }],
+          },
+        ],
+      };
+    return previous(path, ...args);
+  });
+  await act(async () =>
+    root.render(<ServerManagement area="applications-settings" />),
+  );
+  await act(async () =>
+    [...host.querySelectorAll<HTMLButtonElement>("button")]
+      .find((b) => b.textContent?.startsWith("Warrior Desk"))!
+      .click(),
+  );
+  expect(host.textContent).toContain(
+    "Staff threads use the Main staff channel.",
+  );
+  expect(host.textContent).toContain("Main account handlers");
+  expect(host.textContent).toContain("FWA account handlers");
+  expect(
+    host.querySelector<HTMLButtonElement>("#manage-main-staff-parent")!
+      .disabled,
+  ).toBe(true);
+  expect(
+    host.querySelector("#manage-account-main-thread-recruiter-role"),
+  ).not.toBeNull();
+  expect(
+    host.querySelector("#manage-account-fwa-thread-recruiter-role"),
+  ).not.toBeNull();
+  expect(
+    transport.mock.calls.every(([, method]) => !method || method === "GET"),
+  ).toBe(true);
+});

@@ -348,7 +348,8 @@ def _ticket_number(ticket_doc: Mapping) -> str:
         return "?"
 
 
-def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool = True) -> str:
+def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool = True,
+                  name_limit: int = 45, display_name: bool = False) -> str:
     """A ticket's display label.
 
     ``markdown=False`` is for a Discord select-option label: those fields
@@ -370,8 +371,18 @@ def _ticket_label(ticket_doc: Mapping, *, username: bool = False, markdown: bool
         if markdown:
             label += f" · {_mention(ticket_doc.get('user_id'))}"
         else:
-            label += f" · {_clean_code_span(ticket_doc.get('username'), limit=45)}"
+            name = (ticket_doc.get("display_name") or ticket_doc.get("username")) if display_name else ticket_doc.get("username")
+            label += f" · {_clean_code_span(name, limit=name_limit)}"
+    if kind == "account" and ticket_doc.get("account_clan") in schema.RECRUIT_TICKET_TYPES:
+        suffix = " · " + ("Main" if ticket_doc["account_clan"] == "main" else "FWA")
+        label = label[:100 - len(suffix)] + suffix
     return label[:100]
+
+
+def _ticket_emoji(ticket_doc):
+    if _ticket_type(ticket_doc) == "account" and ticket_doc.get("account_clan") in schema.RECRUIT_TICKET_TYPES:
+        return _TICKET_TYPE_EMOJI[ticket_doc["account_clan"]]
+    return _TICKET_TYPE_EMOJI.get(_ticket_type(ticket_doc), "🏆")
 
 
 def _ticket_id(ticket_doc: Mapping) -> str:
@@ -688,7 +699,7 @@ def _open_picker_options(open_tickets: Sequence[Mapping]) -> list[SelectOption]:
             label=_ticket_label(ticket_doc, username=True, markdown=False),
             value=ticket_id,
             description=description[:100],
-            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(ticket_doc), "🏆"),
+            emoji=_ticket_emoji(ticket_doc),
         ))
     if options:
         return options
@@ -843,16 +854,13 @@ def _hub_type_select(
 ) -> ActionRow:
     options = [
         SelectOption(
-            label=(
-                f"{_TICKET_TYPE_LABEL.get(_ticket_type(doc), 'Ticket')} #{doc.get('ticket_number', '?')} · "
-                f"{_clean_code_span(doc.get('display_name') or doc.get('username') or 'Member', limit=70)}"
-            )[:100],
+            label=_ticket_label(doc,username=True,markdown=False,name_limit=70,display_name=True),
             value=_ticket_id(doc),
             description=(
                 f"{_TICKET_TYPE_LABEL.get(_ticket_type(doc), 'Ticket')} · "
                 f"opened {_age_label(doc.get('created_at'))}"
             )[:100],
-            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(doc), "🏆"),
+            emoji=_ticket_emoji(doc),
         )
         for doc in tickets[:MAX_OPEN_PICKER]
         if _ticket_id(doc) and len(_ticket_id(doc)) <= 100
@@ -2153,7 +2161,7 @@ def _browse_picker_options(results: Sequence[Mapping]) -> list[SelectOption]:
         options.append(SelectOption(
             label=_ticket_label(ticket_doc, username=True, markdown=False),
             value=ticket_id,
-            emoji=_TICKET_TYPE_EMOJI.get(_ticket_type(ticket_doc), "🏆"),
+            emoji=_ticket_emoji(ticket_doc),
         ))
     if options:
         return options

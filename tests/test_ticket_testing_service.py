@@ -1,3 +1,4 @@
+from tests.ticket_followup271_fixtures import opening_mongo
 import asyncio
 from datetime import datetime, timezone
 from types import SimpleNamespace
@@ -288,9 +289,9 @@ def test_actual_opening_delivery_reuses_questions_and_deduplicates():
         user_id=30, username="Applicant",
     )
     ticket.update({"mode": "test", "recruiter_role_id": 40})
-    asyncio.run(thread_service._deliver_opening_messages(guarded, ticket, bot_id=99))
+    asyncio.run(thread_service._deliver_opening_messages(guarded, ticket, bot_id=99, mongo=opening_mongo(ticket)))
     first_counts = {channel: len(messages) for channel, messages in rest.messages.items()}
-    asyncio.run(thread_service._deliver_opening_messages(guarded, ticket, bot_id=99))
+    asyncio.run(thread_service._deliver_opening_messages(guarded, ticket, bot_id=99, mongo=opening_mongo(ticket)))
     assert {channel: len(messages) for channel, messages in rest.messages.items()} == first_counts
     public_text = str(rest.messages[101])
     staff_text = str(rest.messages[102])

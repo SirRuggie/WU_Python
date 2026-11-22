@@ -77,21 +77,25 @@ and historical migration recovery are not deleted or implicitly resolved.
 
 ## Warrior Desk
 
-The `desk` part edits `desk_channel_id`, `desk_staff_parent`,
-`account_thread_recruiter_role` and `staff_thread_recruiter_role`; the staff parent
-may fall back to Main's configured staff parent. Its status names every missing
-saved prerequisite and focuses the corresponding field. Post is disabled with
-an explanation and `aria-disabled` while incomplete or dirty. Save changes
-remains separate. A live binding offers secondary **Repair panel**.
+The `desk` part edits `desk_channel_id`, `account_main_thread_recruiter_role`,
+`account_fwa_thread_recruiter_role` and `staff_thread_recruiter_role`. It displays
+Main's staff channel read-only: **Staff threads use the Main staff channel.** A
+saved different `desk_staff_parent` is retained but ignored for new Desk threads.
+Existing recorded thread pairs remain unchanged. Missing Main staff setup is
+explained in the status instead of linking to a disabled control.
 
-The existing `restore_desk_entry` action now lives beside these fields, retaining
-confirmation/revision/idempotency guards. It refuses unless both roles, the
-channel, effective staff parent and `thread_default`/`thread_only` are saved.
-Native checks verify target ownership and bot/handler permissions before posts.
-New Desk-enabled pairs use private per-type invitations; non-admin Manage
-Threads would bypass that boundary and fails guided readiness. Extra viewer
-roles read the parent, not every new private thread. Historical public pairs are
-not converted or made a startup-wide failure.
+Each missing account role reads the old `account_thread_recruiter_role`, then
+its corresponding Main/FWA recruiter role. Existing values are not rewritten on
+read. Explicit empty role edits fail validation; Save/history/CAS retain their
+existing behavior. The status names missing prerequisites; dirty or incomplete
+setup disables Post with an explanation. A live binding offers **Repair panel**.
+
+The existing `restore_desk_entry` action retains confirmation/revision/idempotency
+guards. Native checks verify destination ownership and bot/handler permissions.
+New staff threads are public and staff join by role mention for all ticket types;
+there is no per-member invitation/reconciliation mode. View + Manage Threads
+readers can see every shared staff thread. Candidate threads remain private with
+the owner added, and retain their permission checks. No existing pair is moved.
 
 Pure validation/history helpers belong to `utils/ticket_settings.py`, shared by
 native and HTTP adapters. No live settings, roles, permissions or panel post was

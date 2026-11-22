@@ -29,8 +29,8 @@ const doc = (ready = false, live = false): ManagementDocument => ({
       ? []
       : [
           {
-            key: "account_thread_recruiter_role",
-            label: "Add account staff role",
+            key: "account_main_thread_recruiter_role",
+            label: "Add account role (Main)",
           },
           { key: "", label: "Thread-default or thread-only rollout" },
         ],
@@ -41,17 +41,17 @@ it("names missing prerequisites and focuses the exact field", async () => {
     root.render(
       <>
         <WarriorDeskStatus document={doc()} dirty={false} />
-        <input id="manage-account-thread-recruiter-role" />
+        <input id="manage-account-main-thread-recruiter-role" />
       </>,
     ),
   );
   expect(host.textContent).toContain("Complete setup");
   expect(host.textContent).toContain("Enable the ticket thread workflow");
-  expect(host.textContent).toContain("Select Add account staff role");
+  expect(host.textContent).toContain("Select Add account role (Main)");
   expect(host.textContent).not.toContain("Thread-default");
   await act(async () => host.querySelector<HTMLAnchorElement>("a")!.click());
   expect(document.activeElement?.id).toBe(
-    "manage-account-thread-recruiter-role",
+    "manage-account-main-thread-recruiter-role",
   );
 });
 it("keeps unsaved edits visible even when saved prerequisites are ready", async () => {
@@ -66,4 +66,18 @@ it("describes repair as the live-panel action", async () => {
   );
   expect(host.textContent).toContain("Panel is live");
   expect(host.textContent).toContain("Repair the existing panel");
+});
+
+it("explains missing shared parent without a link to a disabled field", async () => {
+  const missing = doc();
+  missing.desk_readiness!.missing = [
+    { key: "main_staff_parent", label: "Main staff channel" },
+  ];
+  await act(async () =>
+    root.render(<WarriorDeskStatus document={missing} dirty={false} />),
+  );
+  expect(host.textContent).toContain(
+    "Set the Main staff channel in Main application channels.",
+  );
+  expect(host.querySelector("a")).toBeNull();
 });

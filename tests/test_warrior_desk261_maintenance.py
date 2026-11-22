@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock
 import hikari
 import pytest
 from pymongo.errors import DuplicateKeyError
-from extensions.commands.tickets import auto_archive as aa, staff_access, store
+from extensions.commands.tickets import auto_archive as aa, store
 from tests import test_ticket_storage_foundation as fake
 
 NOW = datetime(2026, 11, 21, tzinfo=timezone.utc)
@@ -55,7 +55,6 @@ def fixture_clock_and_queries(monkeypatch):
     monkeypatch.setattr(fake, '_condition', condition)
     monkeypatch.setattr(aa, 'now', lambda: NOW)
     monkeypatch.setattr(aa, '_member_expiry_after', '')
-    monkeypatch.setattr(staff_access, '_after', '')
 
 
 def ticket(number=1):
@@ -151,46 +150,4 @@ def test_lock_pass_claim_is_hourly_and_survives_restart(monkeypatch):
         monkeypatch.setattr(aa,'now',lambda:NOW+timedelta(hours=1))
         await aa.sweep(NS(),db)
         assert expiry.await_count==2
-    asyncio.run(run())
-
-
-def staff_rows(count=7):
-    rows=[]
-    for i in range(count):
-        row=ticket(i+1);row.update(staff_thread_private=True,ticket_type='account');rows.append(row)
-    return rows
-
-
-def test_periodic_staff_progresses_more_than_five_then_no_row_reread(monkeypatch):
-    db=mongo(*staff_rows());b=bot();snapshot=AsyncMock(return_value=[]);sync=AsyncMock()
-    monkeypatch.setattr(staff_access.thread_service,'staff_member_snapshot',snapshot)
-    monkeypatch.setattr(staff_access.thread_service,'sync_private_staff_members',sync)
-    async def run():
-        await staff_access.sweep(b,db)
-        assert sync.await_count==10
-        await staff_access.sweep(b,db)
-        assert sync.await_count==14
-        count=b.rest.fetch_channel.await_count
-        staff_access._after=''  # Restart cannot restart REST for recent rows.
-        await staff_access.sweep(b,db)
-        assert b.rest.fetch_channel.await_count==count
-    asyncio.run(run());assert snapshot.await_count==2
-
-
-def test_failed_staff_claim_does_not_fetch_any_rest(monkeypatch):
-    db=mongo(*staff_rows(1));b=bot();snapshot=AsyncMock()
-    monkeypatch.setattr(store,'claim_staff_access_check',AsyncMock(return_value=False))
-    monkeypatch.setattr(staff_access.thread_service,'staff_member_snapshot',snapshot)
-    asyncio.run(staff_access.sweep(b,db))
-    b.rest.fetch_channel.assert_not_awaited();snapshot.assert_not_awaited()
-
-
-def test_failed_periodic_staff_rest_waits_hour_before_retry(monkeypatch):
-    db=mongo(*staff_rows(1));b=bot();b.rest.fetch_channel.side_effect=RuntimeError('offline')
-    monkeypatch.setattr(staff_access.thread_service,'staff_member_snapshot',AsyncMock(return_value=[]))
-    async def run():
-        await staff_access.sweep(b,db);staff_access._after=''
-        await staff_access.sweep(b,db)
-        assert b.rest.fetch_channel.await_count==1
-        assert await store.claim_staff_access_check(db,staff_rows(1)[0],at=datetime.now(timezone.utc)+timedelta(hours=1,seconds=1))
     asyncio.run(run())

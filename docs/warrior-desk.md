@@ -19,12 +19,14 @@ Configuration remains in `ticket_setup`, `_id: "config"`. Pure validation and
 history projections belong to `utils/ticket_settings.py`; HTTP and Discord
 adapters do not import one another for them.
 
-| Key                             | Meaning                                       |
-| ------------------------------- | --------------------------------------------- |
-| `desk_channel_id`               | Panel and private member-thread parent.       |
-| `desk_staff_parent`             | Staff parent; empty uses `main_staff_parent`. |
-| `account_thread_recruiter_role` | Add account handler role.                     |
-| `staff_thread_recruiter_role`   | Contact staff handler role.                   |
+| Key                                  | Meaning                                                  |
+| ------------------------------------ | -------------------------------------------------------- |
+| `desk_channel_id`                    | Panel and private member-thread parent.                  |
+| `desk_staff_parent`                  | Retained legacy value; ignored for new Desk routing.     |
+| `account_main_thread_recruiter_role` | Add account role (Main).                                 |
+| `account_fwa_thread_recruiter_role`  | Add account role (FWA).                                  |
+| `account_thread_recruiter_role`      | Read-only compatibility fallback for both account roles. |
+| `staff_thread_recruiter_role`        | Contact staff handler role.                              |
 
 The existing rollout stores `desk_intake` (guild/channel/message). Desk requests
 route only through that exact binding, in `thread_default` or `thread_only`.
@@ -36,7 +38,7 @@ field-focus link where applicable. Unsaved edits disable posting. Post is the
 primary action only before the panel is live; **Repair panel** is secondary for
 an existing binding. Both use the existing confirmation, revision and worker
 receipt path. Posting requires the saved channel, effective staff parent, both
-roles and the allowed rollout phase; native validation checks Discord ownership,
+account roles, Contact staff role and the allowed rollout phase; native validation checks Discord ownership,
 permissions and roles again before any post or configuration change.
 
 **Release/setup is guided by Ruggie under entry 1251 after Shaka approval.** No
@@ -57,7 +59,7 @@ privilege for a Desk role.
 | Administrator                 | Yes  | Yes | Yes         | Yes           |
 | Main recruiter                | Yes  | Yes | Yes         | No            |
 | FWA recruiter                 | Yes  | Yes | Yes         | No            |
-| Account role                  | No   | No  | Yes         | No            |
+| Either account role           | No   | No  | Yes         | No            |
 | Staff role                    | No   | No  | No          | Yes           |
 | None / another guild          | No   | No  | No          | No            |
 
@@ -67,34 +69,58 @@ Linked-account review checks the canonical ticket, and onboarding's `open_ticket
 lookup explicitly excludes Desk requests. `/tickets list` uses these helpers and
 groups Main, FWA, Add account and Contact staff, oldest first, with a 100-row bound.
 
-## Private thread membership
+## Thread access and creation notifications (271)
 
-New Desk-enabled pairs use private staff threads. Main/FWA staff threads invite
-both recruiter roles; account staff threads invite the account role plus both
-recruiter roles; Contact staff invites only its staff role. Candidate threads
-preserve their member and invite the same exact handlers. Administrator access
-is inherent in Discord. Extra configured viewer roles may read the parent but
-are not invited to every private thread. Sharing a parent never unions unrelated
-types' invitation sets.
+New staff threads are public threads, with role mentions instead of individual
+staff additions for all four types. Candidate threads stay private and the bot
+adds the owner. Existing public/private pairs retain their recorded parents and
+visibility; creation recovery does not reparent or convert them. The former
+staff-invitation role listener and periodic reconciliation task are removed.
 
-Discord's **Manage Threads** permission can view all private threads. Guided
-readiness therefore rejects non-admin roles/members which can bypass membership
-in a new private parent, including combined roles and member overwrites. The bot
-retains its required permissions. Every handler role must have parent read,
-history and thread-send permission. Existing public pairs keep their previous
-behavior; this change does not claim to make their historical access private.
+New Desk staff threads always use `main_staff_parent`, even when a different
+legacy `desk_staff_parent` is saved. **Staff threads use the Main staff channel.**
+Ordinary Main/FWA recruit routing remains unchanged. Non-admin roles with View
+Channel and Manage Threads may read every staff thread there, including Contact
+staff. Action authority remains per type. Candidate-parent security checks are
+retained. Unrelated View-only human roles remain rejected; a bounded nonempty,
+explicitly all-bot membership snapshot can prove the existing bot-role exception.
+This enumeration is permission validation only and never adds staff members.
 
-Ticket handler roles may hold Manage Threads in Desk parents; they can read all Desk threads (Ruggie, 2026-11-21).
+Add another account first asks Main clan or FWA clan. The owner/guild/channel-
+bound choice expires after 30 minutes and is atomically consumed once, including
+Cancel. Creation rechecks the original public-panel binding and existing account
+slot. `account_clan` is stored only for known new choices; historical account rows
+without it remain unknown. Either account handler role and Main/FWA recruiters
+can handle all account requests. Missing new role keys read the old single role,
+then the corresponding recruiter role. An explicit new empty value is invalid,
+not a fallback request. Read/default resolution performs no configuration write.
+An explicit normal Save persists only the changed keys through existing CAS and
+history; the old key remains stored for compatibility.
 
-Creation snapshots retain typed role identities for restart recovery. A bounded
-member snapshot is shared across the pair; enumeration failure or more than
-10,000 members blocks the attempt rather than publishing an incomplete pair.
-Membership preparation has a 120-second bound. Role events reconcile up to 50
-marked pairs within 30 seconds; the existing maintenance task pages five pairs
-per pass and covers missed events/restarts and configuration changes. Stale
-invitations are removed before additions, with fresh role checks before grants.
-This is eventual reconciliation, not a promise of instantaneous Discord role
-revocation. Archived-thread invitation behavior has not been verified live.
+Every newly inserted ticket has a permanent pending owner-notification receipt.
+The bot claims it before sending one plain owner mention with only that user
+allowed. New V2 welcome cards no longer repeat the mention. Attempted/unknown
+acceptance and cancellation are retained and never automatically resent, even
+if short-lived creation/component state expires. Historical tickets without a
+receipt get no retroactive ping. An existing bot-authored welcome containing
+that exact owner's mention can prove legacy notification; a title alone or
+failed history read cannot. Mocked transport tests do not prove a live Discord
+or push notification, and at-most-once sending can mean a notification is missed.
+
+The pinned Desk staff message is `<@&role> a member opened a request.` Recruit
+copy stays unchanged; old proven pinned messages are reused. Fresh and resumed
+creation use the common private thread-link reply.
+
+New account names include `add-account-main` / `add-account-fwa`; Contact staff
+uses `contact-staff`, with a `staff-` prefix for the staff pair. Status prefixes,
+slug rules and Discord's 100-character limit remain. Old account/staff names
+remain recognizable for recovery and ordinary status renames; no bulk rename is
+performed. Console account options use 🏆/💎 and a Main/FWA suffix. Dashboard rows
+show Add account · Main/FWA when known, retaining the old label for unknown rows.
+
+Release 271 still requires Ruggie's own release words with Ruggie present, after
+Shaka approves the exact head. No live configuration or Discord change is part
+of development.
 
 ## Close, Done and member reopening
 

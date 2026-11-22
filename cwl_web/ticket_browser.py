@@ -111,6 +111,7 @@ def public_ticket(row, flags=()):
     created=row.get('created_at')
     return {'id':str(row['_id']), 'number':row.get('ticket_number'), 'name':row.get('display_name') or row.get('username') or 'Unknown member',
             'user_id':str(row.get('user_id') or ''), 'kind':row.get('ticket_type',''), 'status':row.get('status',''),
+            'account_clan':row.get('account_clan') if row.get('account_clan') in {'main','fwa'} else None,
             'created_at':created.isoformat() if isinstance(created,datetime) else None,
             'flags':[{'kind': str(item.get('kind') or ''), 'label': FLAG_LABELS.get(str(item.get('kind') or ''), 'Applicant flag'),
                       'reason': str(item.get('reason') or '')[:500]} for item in flags if item.get('active', True)]}

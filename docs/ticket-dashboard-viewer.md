@@ -76,3 +76,11 @@ Current 261 checks and native fixture limits belong to its review artifact.
 Historical verification above describes the earlier revisions only. No live
 Discord/client/provider delivery, production permission changes or all-page
 accessibility certification is inferred from fixture tests.
+
+## Prompt 271 account labels
+
+Known account subtypes display **Add account · Main** or **Add account · FWA**.
+Missing historical `account_clan` remains unknown and uses the existing Add account
+label. Both account handler roles and both recruiter roles retain account action
+scope. Shared public staff-thread visibility does not grant a new dashboard
+permission; existing dashboard, type and fresh Discord access gates still apply.

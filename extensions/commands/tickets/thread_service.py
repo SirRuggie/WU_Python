@@ -121,9 +121,8 @@ class ThreadParents:
     recruiter_role_id: int
     shared_staff_role_ids: tuple[int, ...] = ()
     staff_viewer_role_ids: tuple[int, ...] = ()
-    staff_thread_role_ids: tuple[int, ...] = ()
     staff_role_config: tuple[tuple[str, int], ...] = ()
-    private_staff: bool = False
+    desk_permission_policy: bool = False
 
 
 @dataclass(frozen=True, slots=True)
@@ -211,7 +210,7 @@ _FLEW_THE_COOP_NAME_PREFIX = "🐔 "
 _KNOWN_NAME_PREFIXES = (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX, _FLEW_THE_COOP_NAME_PREFIX)
 THREAD_NAME_RECONCILE_LEASE = timedelta(minutes=10)
 _CANONICAL_THREAD_NAME = re.compile(
-    r"^(?:staff-)?(?:main|fwa|account|staff)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
+    r"^(?:staff-)?(?:main|fwa|account|staff|add-account-(?:main|fwa)|contact-staff)-[1-9][0-9]*-[a-z0-9]+(?:-[a-z0-9]+)*$"
 )
 
 
@@ -224,6 +223,7 @@ def thread_names(
     ghosted: bool = False,
     flew_the_coop: bool = False,
     test: bool = False,
+    account_clan: str | None = None,
 ) -> tuple[str, str]:
     """Return the pair's canonical Discord names for one durable status.
 
@@ -231,7 +231,9 @@ def thread_names(
     chicken marker before the existing Ghosted or durable status emoji.
     """
     number = (testing_service.number_label(ticket_number) if test else str(int(ticket_number)))
-    suffix = f"{ticket_type}-{number}-{_slug(username)}"
+    stem = (f"add-account-{account_clan}" if ticket_type == "account" and account_clan in schema.RECRUIT_TICKET_TYPES
+            else "contact-staff" if ticket_type == "staff" else ticket_type)
+    suffix = f"{stem}-{number}-{_slug(username)}"
     # A ghost report supersedes the durable decision emoji; a departure
     # report sits before either emoji and leaves that decision visible.
     prefix = (
@@ -266,6 +268,7 @@ async def thread_names_for_ticket(mongo: MongoClient, ticket: Mapping[str, Any])
         ghosted=ghosted,
         flew_the_coop=flew_the_coop,
         test=testing_service.is_test_ticket(ticket),
+        account_clan=ticket.get("account_clan"),
     )
 
 
@@ -289,7 +292,13 @@ def _name_variants(name: str) -> frozenset[str]:
             break
     if len(base) > 100 or not _CANONICAL_THREAD_NAME.fullmatch(base):
         return frozenset({raw})
-    inner = (base, *(prefix + base for prefix in (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX)))
+    stems = {base}
+    for current, old in (("staff-contact-staff-", "staff-staff-"), ("contact-staff-", "staff-")):
+        if base.startswith(current):
+            stems.add(old + base[len(current):])
+        elif base.startswith(old) and re.match(r"[1-9][0-9]*-", base[len(old):]):
+            stems.add(current + base[len(old):])
+    inner = tuple(value for stem in stems for value in (stem, *(prefix + stem for prefix in (*_STATUS_NAME_PREFIXES.values(), _GHOSTED_NAME_PREFIX))))
     return frozenset({*inner, *(_FLEW_THE_COOP_NAME_PREFIX + variant for variant in inner)})
 
 
@@ -421,6 +430,8 @@ async def validate_thread_parents(
     test_window: Mapping[str, Any] | None = None,
 ) -> tuple[Any, Any]:
     """Fail closed unless both parents and bot/recruiter access are safe."""
+    if type(parents.desk_permission_policy) is not bool:
+        raise ThreadConfigurationError("invalid Desk permission policy")
     if parents.candidate_parent_id == parents.staff_parent_id:
         raise ThreadConfigurationError("candidate and staff parents must be different channels")
 
@@ -560,7 +571,7 @@ async def validate_thread_parents(
             channel=channel,
         )
         required = required_recruiter
-        if parents.private_staff:
+        if parents.desk_permission_policy:
             required &= ~hikari.Permissions.MANAGE_THREADS
         missing = required & ~recruiter_permissions
         if missing:
@@ -568,21 +579,6 @@ async def validate_thread_parents(
                 f"recruiter role {_configuration_name(recruiter_role, '(unnamed role)')} is missing {_permission_names(missing)} in the {_configuration_parent(channel, label)}"
             )
 
-    if parents.private_staff:
-        for handler_id in parents.staff_thread_role_ids:
-            handler_role = next((role for role in roles
-                                 if _as_int(getattr(role, "id", 0)) == handler_id), None)
-            if handler_role is None:
-                raise ThreadConfigurationError("configured handler role is not in the target guild")
-            handler = type("RoleMember", (), {"id": 0, "role_ids": (handler_id,)})()
-            for label, channel in (("candidate", candidate), ("staff", staff)):
-                effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
-                    member=handler, roles=roles, channel=channel)
-                missing = (hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.READ_MESSAGE_HISTORY
-                           | hikari.Permissions.SEND_MESSAGES_IN_THREADS) & ~effective
-                if missing:
-                    raise ThreadConfigurationError(
-                        f"handler role {_configuration_name(handler_role, '(unnamed role)')} is missing {_permission_names(missing)} in the {_configuration_parent(channel, label)}")
     everyone_role = next(
         (role for role in roles if _as_int(getattr(role, "id", 0)) == parents.guild_id),
         None,
@@ -612,7 +608,22 @@ async def validate_thread_parents(
     }
     # One bounded snapshot proves nonempty bot-only roles and is reused below.
     # No observation, unknown bot flags, or any human means no bot-role waiver.
-    members = await staff_member_snapshot(rest, parents.guild_id) if parents.private_staff else ()
+    # Permission proof only: never enumerate members to invite staff. View-only
+    # non-handler roles need the existing nonempty/all-bot proof. Manage Threads
+    # is accepted in the shared staff parent, not in private member threads.
+    needs_bot_proof = False
+    for role_id, role in (roles_by_id.items() if parents.desk_permission_policy else ()):
+        if role_id in manage_thread_handler_roles or hikari.Permissions(getattr(role, "permissions", 0)) & hikari.Permissions.ADMINISTRATOR:
+            continue
+        if role_id in bot_role_ids and bool(getattr(role, "is_managed", False)):
+            continue
+        probe = type("RoleMember", (), {"id":0,"role_ids":(role_id,)})()
+        staff_permissions = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id, member=probe, roles=roles, channel=staff)
+        candidate_permissions = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id, member=probe, roles=roles, channel=candidate)
+        if ((staff_permissions & hikari.Permissions.VIEW_CHANNEL and not staff_permissions & hikari.Permissions.MANAGE_THREADS)
+                or candidate_permissions & hikari.Permissions.MANAGE_THREADS):
+            needs_bot_proof = True
+    members = await permission_member_snapshot(rest, parents.guild_id) if needs_bot_proof else ()
     role_bot_proof = {}
     for member in members:
         for role_id in getattr(member, "role_ids", ()):
@@ -624,9 +635,9 @@ async def validate_thread_parents(
         # Manage Threads bypasses private-thread membership. This readiness gate
         # applies only to new Desk-enabled private pairs, not historical public
         # pairs or the legacy runtime.
-        if (parents.private_staff and role_id not in manage_thread_handler_roles | bot_only_roles
+        if (parents.desk_permission_policy and role_id not in manage_thread_handler_roles | bot_only_roles
                 and not (role_id in bot_role_ids and bool(getattr(role, "is_managed", False)))):
-            for private_parent in (candidate, staff):
+            for private_parent in (candidate,):
                 effective = _effective_permissions(
                     guild_id=parents.guild_id, owner_id=owner_id,
                     member=type("RoleMember", (), {"id": 0, "role_ids": (role_id,)})(),
@@ -651,13 +662,19 @@ async def validate_thread_parents(
             roles=roles,
             channel=staff,
         )
-        if effective & hikari.Permissions.VIEW_CHANNEL:
+        if (effective & hikari.Permissions.VIEW_CHANNEL
+                and (not parents.desk_permission_policy or not effective & hikari.Permissions.MANAGE_THREADS)):
             raise ThreadConfigurationError(
                 f"non-recruiter role {_configuration_name(role, '(unnamed role)')} can view the {_configuration_parent(staff, 'staff')}"
             )
 
     member_overwrite_ids: set[int] = set()
-    for overwrite in _overwrite_values(getattr(staff, "permission_overwrites", ())):
+    overwrite_channels = (candidate, staff) if parents.desk_permission_policy else (staff,)
+    overwrite_permissions = (hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.MANAGE_THREADS
+                             if parents.desk_permission_policy else hikari.Permissions.VIEW_CHANNEL)
+    overwrites = [overwrite for channel in overwrite_channels
+                  for overwrite in _overwrite_values(getattr(channel, "permission_overwrites", ()))]
+    for overwrite in overwrites:
         overwrite_id = _as_int(getattr(overwrite, "id", 0))
         overwrite_type = getattr(overwrite, "type", None)
         is_member = overwrite_type == hikari.PermissionOverwriteType.MEMBER
@@ -668,7 +685,7 @@ async def validate_thread_parents(
             and overwrite_id
             and overwrite_id != _as_int(getattr(bot_member, "id", 0))
             and hikari.Permissions(getattr(overwrite, "allow", 0))
-            & hikari.Permissions.VIEW_CHANNEL
+            & overwrite_permissions
         ):
             member_overwrite_ids.add(overwrite_id)
 
@@ -699,26 +716,29 @@ async def validate_thread_parents(
             roles=roles,
             channel=staff,
         )
-        if (parents.private_staff and effective & hikari.Permissions.VIEW_CHANNEL
-                and effective & hikari.Permissions.MANAGE_THREADS
-                and not effective & hikari.Permissions.ADMINISTRATOR
+        candidate_effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
+            member=member, roles=roles, channel=candidate)
+        if (parents.desk_permission_policy and candidate_effective & hikari.Permissions.VIEW_CHANNEL
+                and candidate_effective & hikari.Permissions.MANAGE_THREADS
+                and not candidate_effective & hikari.Permissions.ADMINISTRATOR
                 and not (authorized_handler or authorized_bot)):
             raise ThreadConfigurationError(
-                f"non-admin member {_configuration_name(member, '(unnamed member)')} can view all private staff threads via Manage Threads"
-            )
-        if effective & hikari.Permissions.VIEW_CHANNEL and not authorized:
+                f"non-admin member {_configuration_name(member, '(unnamed member)')} bypasses private membership in the {_configuration_parent(candidate, 'candidate')}")
+        if (effective & hikari.Permissions.VIEW_CHANNEL
+                and (not parents.desk_permission_policy or not effective & hikari.Permissions.MANAGE_THREADS)
+                and not authorized):
             raise ThreadConfigurationError(
                 f"non-recruiter member {_configuration_name(member, '(unnamed member)')} can view the {_configuration_parent(staff, 'staff')}"
             )
 
-    if parents.private_staff:
+    if members:
         for member in members:
             if int(member.id) == bot_user_id:
                 continue
             member_role_ids = {_as_int(value) for value in getattr(member, "role_ids", ())}
             authorized_handler = bool(member_role_ids & manage_thread_handler_roles)
             authorized_bot = getattr(member, "is_bot", False) is True and bool(member_role_ids & bot_only_roles)
-            for label, channel in (("candidate", candidate), ("staff", staff)):
+            for label, channel in (("candidate", candidate),):
                 effective = _effective_permissions(guild_id=parents.guild_id, owner_id=owner_id,
                     member=member, roles=roles, channel=channel)
                 if (not effective & hikari.Permissions.ADMINISTRATOR
@@ -755,66 +775,75 @@ async def validate_thread_parents(
     return candidate, staff
 
 
-def _config_parents(config: Mapping[str, Any], kind: str) -> tuple[int, int, int]:
-    """(candidate parent, staff parent, recruiter role) configured for one type."""
-    role = _as_int(config.get(f"{kind}_thread_recruiter_role"))
+def _recorded_permission_policy(state: Mapping[str, Any]) -> bool:
+    """Use explicit receipt evidence; absent historical context keeps old mode.
+
+    The old private flag is a fallback only. New receipts keep a separate mode
+    because replacement-thread intent may legitimately turn that flag false.
+    """
+    if "desk_permission_policy" in state:
+        value = state["desk_permission_policy"]
+    else:
+        value = state.get("staff_thread_private", False)
+    if type(value) is not bool:
+        raise ThreadConfigurationError("invalid stored Desk permission policy")
+    return value
+
+
+def _config_parents(config: Mapping[str, Any], kind: str, *, account_clan=None) -> tuple[int, int, int]:
+    """Configured destination/notification role; no settings are rewritten."""
+    from utils.ticket_access import account_role_value
+    role = (_as_int(account_role_value(config, account_clan))
+            if kind == "account" and account_clan in schema.RECRUIT_TICKET_TYPES
+            else _as_int(config.get(f"{kind}_thread_recruiter_role")))
     if kind in schema.DESK_TICKET_TYPES:
-        staff_parent = _as_int(config.get("desk_staff_parent")) or _as_int(
-            config.get("main_staff_parent")
-        )
-        return _as_int(config.get("desk_channel_id")), staff_parent, role
-    return (
-        _as_int(config.get(f"{kind}_candidate_parent")),
-        _as_int(config.get(f"{kind}_staff_parent")),
-        role,
-    )
+        # 1334: only new Desk routing uses Main. Recovery reconstructs a local
+        # config with Main set to the receipt's immutable recorded staff parent.
+        return _as_int(config.get("desk_channel_id")), _as_int(config.get("main_staff_parent")), role
+    return (_as_int(config.get(f"{kind}_candidate_parent")),
+            _as_int(config.get(f"{kind}_staff_parent")), role)
 
 
-def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: str) -> ThreadParents:
+def parents_from_config(config: Mapping[str, Any], guild_id: int, ticket_type: str, *, account_clan=None) -> ThreadParents:
+    from utils.ticket_access import account_role_value
     if ticket_type not in schema.TICKET_TYPES:
         raise ThreadConfigurationError(f"unknown ticket type: {ticket_type!r}")
-    prefix = ticket_type
     target_guild = _as_int(config.get("ticket_target_guild_id"))
     if not target_guild:
         raise ThreadConfigurationError("missing ticket configuration: ticket_target_guild_id")
     if target_guild != int(guild_id):
         raise ThreadConfigurationError("thread ticketing is configured for a different guild")
-    candidate_parent, staff_parent, recruiter_role = _config_parents(config, prefix)
-    desk = prefix in schema.DESK_TICKET_TYPES
-    missing = [
-        label
-        for label, value in (
-            ("desk_channel_id" if desk else f"{prefix}_candidate_parent", candidate_parent),
-            ("desk_staff_parent" if desk else f"{prefix}_staff_parent", staff_parent),
-            (f"{prefix}_thread_recruiter_role", recruiter_role),
-        )
-        if not value
-    ]
+    candidate_parent, staff_parent, recruiter_role = _config_parents(config, ticket_type, account_clan=account_clan)
+    desk = ticket_type in schema.DESK_TICKET_TYPES
+    role_key = (f"account_{account_clan}_thread_recruiter_role"
+                if ticket_type == "account" and account_clan in schema.RECRUIT_TICKET_TYPES
+                else f"{ticket_type}_thread_recruiter_role")
+    missing = [label for label, value in (
+        ("desk_channel_id" if desk else f"{ticket_type}_candidate_parent", candidate_parent),
+        ("main_staff_parent" if desk else f"{ticket_type}_staff_parent", staff_parent),
+        (role_key, recruiter_role)) if not value]
     if missing:
         raise ThreadConfigurationError("missing ticket configuration: " + ", ".join(missing))
-    # Parent visibility is not private-thread membership. Keep all roles which
-    # legitimately share this parent in the validation allowlist, but invite
-    # only the exact per-type role set into a new private staff thread.
+    role_config = {kind: _as_int(config.get(f"{kind}_thread_recruiter_role"))
+                   for kind in schema.TICKET_TYPES}
+    role_config.update({f"account_{clan}": _as_int(account_role_value(config, clan))
+                        for clan in schema.RECRUIT_TICKET_TYPES})
+    role_config = {kind: role for kind, role in role_config.items() if role}
     shared_roles = set()
-    for kind in schema.TICKET_TYPES - {ticket_type}:
+    for kind in schema.TICKET_TYPES:
         _, other_parent, other_role = _config_parents(config, kind)
         if other_parent == staff_parent and other_role:
             shared_roles.add(other_role)
+    if _as_int(config.get("desk_channel_id")) and _as_int(config.get("main_staff_parent")) == staff_parent:
+        shared_roles.update(role_config.get(f"account_{clan}", 0) for clan in schema.RECRUIT_TICKET_TYPES)
     shared_roles.update(_as_int(role) for role in config.get("_staff_parent_role_ids", ()) if _as_int(role))
-    viewer_roles = tuple(sorted({
-        _as_int(value) for value in config.get("ticket_staff_viewer_role_ids", ())
-        if _as_int(value)
-    }))
-    role_config = tuple(sorted(
-        (kind, role) for kind in schema.TICKET_TYPES
-        if (role := _as_int(config.get(f"{kind}_thread_recruiter_role")))
-    ))
-    return ThreadParents(
-        int(guild_id), candidate_parent, staff_parent, recruiter_role,
-        tuple(sorted(shared_roles - {recruiter_role})), viewer_roles,
-        tuple(sorted(perms.ticket_type_role_ids(config, ticket_type))), role_config,
-        bool(config.get("desk_channel_id") or config.get("_private_staff_threads")),
-    )
+    viewer_roles = tuple(sorted({_as_int(value) for value in config.get("ticket_staff_viewer_role_ids", ()) if _as_int(value)}))
+    policy = config.get("_desk_permission_policy", bool(config.get("desk_channel_id")))
+    if type(policy) is not bool:
+        raise ThreadConfigurationError("invalid Desk permission policy")
+    return ThreadParents(int(guild_id), candidate_parent, staff_parent, recruiter_role,
+                         tuple(sorted(shared_roles - {0, recruiter_role})), viewer_roles,
+                         tuple(sorted(role_config.items())), policy)
 
 
 async def ensure_creation_indexes(mongo: MongoClient) -> None:
@@ -881,6 +910,7 @@ async def _claim_creation(
     open_slot_claim: ticket_runtime.SlotClaim,
     now: datetime,
     opened_by: int | None = None,
+    account_clan: str | None = None,
 ) -> tuple[str, dict, bool]:
     """Acquire or resume a reusable applicant lease."""
     await ensure_creation_indexes(mongo)
@@ -912,9 +942,8 @@ async def _claim_creation(
         "recruiter_role_id": parents.recruiter_role_id,
         "shared_staff_role_ids": list(parents.shared_staff_role_ids),
         "staff_viewer_role_ids": list(parents.staff_viewer_role_ids),
-        "staff_thread_private": parents.private_staff,
-        "staff_thread_role_ids": list(parents.staff_thread_role_ids),
         "staff_role_config": dict(parents.staff_role_config),
+        "desk_permission_policy": parents.desk_permission_policy,
         "route": ticket_runtime.ROUTE_THREAD,
         "runtime": ticket_runtime.THREAD_RUNTIME,
         "open_slot_id": str(slot["_id"]),
@@ -926,6 +955,8 @@ async def _claim_creation(
         "updated_at": now,
     }
 
+    if account_clan is not None:
+        base["account_clan"] = schema.account_clan(account_clan, required=True)
     if opened_by is not None:
         base["opened_by"] = int(opened_by)
 
@@ -968,6 +999,9 @@ async def _claim_creation(
                 return owner, {"_id": creation_id, **base}, False
             continue
 
+        # A retry keeps the original permission contract, even if configuration
+        # changed or a missing private half now has public replacement intent.
+        retry_policy = _recorded_permission_policy(current)
         bound = bool(
             current.get("ticket_number")
             or current.get("candidate_thread_id")
@@ -1018,7 +1052,7 @@ async def _claim_creation(
                     {"lease_until": {"$exists": False}},
                 ],
             },
-            {"$set": {**base, "last_resumed_at": now}},
+            {"$set": {**base, "desk_permission_policy": retry_policy, "last_resumed_at": now}},
             return_document=ReturnDocument.AFTER,
         )
         if claimed is not None:
@@ -1238,53 +1272,18 @@ async def _cleanup_interrupted_creation(
     await _mark_interrupted_creation_retry(mongo, state, owner, error)
 
 
-STAFF_MEMBER_SCAN_LIMIT = 10000
+PERMISSION_MEMBER_SCAN_LIMIT = 10000
 
 
-async def staff_member_snapshot(rest, guild_id):
-    """One bounded member enumeration shared across one maintenance page."""
+async def permission_member_snapshot(rest, guild_id):
+    """Bounded permission-only evidence for bot-role waivers; never invites members."""
     members = []
     async with asyncio.timeout(30):
-        async for member in rest.fetch_members(guild_id).limit(STAFF_MEMBER_SCAN_LIMIT + 1):
+        async for member in rest.fetch_members(guild_id).limit(PERMISSION_MEMBER_SCAN_LIMIT + 1):
             members.append(member)
-    if len(members) > STAFF_MEMBER_SCAN_LIMIT:
-        raise ThreadConfigurationError("staff membership scan exceeded its safe bound")
+    if len(members) > PERMISSION_MEMBER_SCAN_LIMIT:
+        raise ThreadConfigurationError("permission membership scan exceeded its safe bound")
     return members
-
-
-async def sync_private_staff_members(
-    rest, *, guild_id: int, thread_id: int, role_ids, bot_user_id: int, preserve_member_ids=(), members=None,
-) -> None:
-    """Reconcile explicit invites, removing stale access before granting any.
-
-    Listing failures or an exhausted bound fail closed before membership writes.
-    Administrators do not need an invite; Discord already grants their access.
-    This only targets newly marked private staff threads, never legacy pairs.
-    """
-    allowed_roles = {_as_int(role) for role in role_ids} - {0}
-    members = await staff_member_snapshot(rest, guild_id) if members is None else members
-    if len(members) > STAFF_MEMBER_SCAN_LIMIT:
-        raise ThreadConfigurationError("staff membership scan exceeded its safe bound")
-    invited = []
-    async for member in rest.fetch_thread_members(thread_id).limit(STAFF_MEMBER_SCAN_LIMIT + 1):
-        invited.append(_as_int(member.user_id))
-    if len(invited) > STAFF_MEMBER_SCAN_LIMIT:
-        raise ThreadConfigurationError("private staff membership exceeded its safe bound")
-    preserved = {_as_int(value) for value in preserve_member_ids} - {0}
-    desired = preserved | {
-        int(member.id) for member in members
-        if int(member.guild_id) == guild_id
-        and allowed_roles.intersection(map(int, member.role_ids))
-        and not getattr(member, "is_bot", False)
-    }
-    existing = set(invited) - {bot_user_id}
-    for member_id in sorted(existing - desired):
-        await rest.remove_thread_member(thread_id, member_id)
-    for member_id in sorted(desired - existing):
-        # A fresh member read closes the role-loss window during a long scan.
-        member = await rest.fetch_member(guild_id, member_id)
-        if member_id in preserved or allowed_roles.intersection(map(int, member.role_ids)):
-            await rest.add_thread_member(thread_id, member_id)
 
 
 async def _ensure_live_thread_pair(
@@ -1303,7 +1302,7 @@ async def _ensure_live_thread_pair(
             "ticket_type": state["ticket_type"], "ticket_number": ticket_number,
             "username": state["username"], "status": "open",
             "user_id": state.get("user_id"), "player_tags": state.get("player_tags") or (),
-            "mode": state.get("mode"),
+            "mode": state.get("mode"), "account_clan": state.get("account_clan"),
         })
         state = await _state_update(
             mongo,
@@ -1316,10 +1315,12 @@ async def _ensure_live_thread_pair(
     candidate_name = state.get("candidate_name") or thread_names(
         state["ticket_type"], ticket_number, state["username"],
         test=state.get("mode") == testing_service.MODE,
+        account_clan=state.get("account_clan"),
     )[0]
     staff_name = state.get("staff_name") or thread_names(
         state["ticket_type"], ticket_number, state["username"],
         test=state.get("mode") == testing_service.MODE,
+        account_clan=state.get("account_clan"),
     )[1]
 
     candidate = staff = None
@@ -1358,29 +1359,23 @@ async def _ensure_live_thread_pair(
             expected_owner_id=bot_user_id,
         )
         if staff is None:
+            if state.get("staff_thread_private"):
+                # The recorded private half was definitively absent. Persist the
+                # replacement type before Discord: a lost response must recover
+                # the accepted public thread, including after it is archived.
+                state = await _state_update(
+                    mongo, creation_id, owner, staff_thread_private=False,
+                    desk_permission_policy=_recorded_permission_policy(state),
+                )
             staff = await rest.create_thread(
                 state["staff_parent_id"],
-                (hikari.ChannelType.GUILD_PRIVATE_THREAD if state.get("staff_thread_private")
-                 else hikari.ChannelType.GUILD_PUBLIC_THREAD),
+                hikari.ChannelType.GUILD_PUBLIC_THREAD,
                 staff_name,
                 auto_archive_duration=AUTO_ARCHIVE_MINUTES,
-                **({"invitable": False} if state.get("staff_thread_private") else {}),
                 reason=f"Recruiter workspace for {state['ticket_type'].upper()} ticket {ticket_number}",
             )
         staff = await _unarchive_if_needed(rest, staff)
         state = await _state_update(mongo, creation_id, owner, staff_thread_id=int(staff.id))
-        if state.get("staff_thread_private"):
-            async with asyncio.timeout(120):
-                members = await staff_member_snapshot(rest, int(state["guild_id"]))
-                await sync_private_staff_members(
-                    rest, guild_id=int(state["guild_id"]), thread_id=int(candidate.id),
-                    role_ids=state.get("staff_thread_role_ids") or (), bot_user_id=bot_user_id,
-                    preserve_member_ids=(state["user_id"],), members=members,
-                )
-                await sync_private_staff_members(
-                    rest, guild_id=int(state["guild_id"]), thread_id=int(staff.id),
-                    role_ids=state.get("staff_thread_role_ids") or (), bot_user_id=bot_user_id, members=members,
-                )
         return candidate, staff, state
     except asyncio.CancelledError:
         await _quarantine_incomplete_creation_threads(rest, (candidate, staff))
@@ -1640,7 +1635,7 @@ def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
                 Text(content=title),
                 *([Text(content="🧪 TEST MODE — this is a simulated request.")]
                   if testing_service.is_test_ticket(ticket) else []),
-                Text(content=f"<@{user_id}> {body}"),
+                Text(content=body),
             ],
         )]
     return [Container(
@@ -1650,7 +1645,7 @@ def _candidate_welcome_components(ticket: Mapping[str, Any]) -> list:
             *([Text(content="🧪 TEST MODE — this is a simulated ticket; no live application is created.")]
               if testing_service.is_test_ticket(ticket) else []),
             Text(content=(
-                f"<@{user_id}> Thank you for your interest in Warriors United. "
+                "Thank you for your interest in Warriors United. "
                 "A recruiter will reply soon. Please answer the questions below "
                 "while you wait."
             )),
@@ -1818,8 +1813,12 @@ async def _notify_candidate_recruiters(
         return
     channel_id = _as_int(ticket.get("location", {}).get("id") or ticket.get("channel_id"))
     marker = f"ticket-setup:{channel_id}:candidate-recruiters"
-    content = f"<@&{role_id}> — a new applicant ticket is ready for your review."
-    match = _bot_authored_content_match(bot_id, content)
+    old_content = f"<@&{role_id}> — a new applicant ticket is ready for your review."
+    content = f"<@&{role_id}> a member opened a request." if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES else old_content
+    current_match = _bot_authored_content_match(bot_id, content)
+    legacy_match = _bot_authored_content_match(bot_id, old_content)
+    def match(message):
+        return current_match(message) or legacy_match(message)
     message = await _find_marker_message(rest, channel_id, marker, is_match=match)
     if message is None:
         message = await rest.create_message(
@@ -1850,8 +1849,57 @@ async def _pin_recruiter_ping(
         )
 
 
+async def _notify_opening_member_once(rest, mongo, ticket, *, bot_id):
+    """One plain owner mention, with a permanent at-most-once storage claim."""
+    user_id = _as_int(ticket.get("user_id"))
+    channel_id = _as_int((ticket.get("location") or {}).get("id") or ticket.get("channel_id"))
+    current = await store.find_one(mongo,{"_id":ticket["_id"],"guild_id":ticket["guild_id"],
+        "user_id":user_id,"location.id":channel_id})
+    if current is None:
+        raise ThreadTicketError("The member notification is not bound to its canonical ticket.")
+    receipt = current.get("opening_member_notification")
+    if receipt and receipt.get("state") != "pending":
+        return  # Sent, legacy-confirmed, or uncertain: never replay.
+    mention = f"<@{user_id}>"
+    noun = "request" if ticket.get("ticket_type") in schema.DESK_TICKET_TYPES else "ticket"
+    text = f"{mention} Your {noun} is here."
+    # Failure to read history is not proof that no notification was delivered.
+    messages = await _collect_rest_iterator(rest.fetch_messages(channel_id))
+    for message in messages:
+        if _as_int(getattr(getattr(message,"author",None),"id",0)) != bot_id:
+            continue
+        prior_plain = getattr(message,"content","") == text
+        prior_v2 = _is_candidate_welcome_card(message) and any(
+            mention in str(getattr(component,"content","") or "")
+            for component in _walk_message_components(getattr(message,"components",()) or ()))
+        if prior_plain or prior_v2:
+            await store.claim_member_opening_notification(mongo,ticket,legacy_message_id=_as_int(getattr(message,"id",0)))
+            return
+    if not receipt:
+        return  # Historical rows never gain a new notification from missing history.
+    if not await store.claim_member_opening_notification(mongo,ticket):
+        return
+    try:
+        message = await rest.create_message(channel_id,content=text,user_mentions=[user_id],
+            role_mentions=False,mentions_everyone=False)
+        if not _as_int(getattr(message,"id",0)):
+            raise ThreadTicketError("Member notification acceptance was not confirmed.")
+        await store.finish_member_opening_notification(mongo,ticket,message.id)
+    except asyncio.CancelledError:
+        raise  # The attempted claim remains; restart cannot replay it.
+    except Exception as exc:
+        _log.warning("Member notification not confirmed ticket=%s error=%s; no automatic retry",
+                     ticket["_id"],type(exc).__name__)
+
+
+def _walk_message_components(components):
+    for component in components:
+        yield component
+        yield from _walk_message_components(getattr(component,"components",()) or ())
+
+
 async def _deliver_opening_messages(
-    rest: hikari.api.RESTClient, ticket: dict, *, bot_id: int | None = None
+    rest: hikari.api.RESTClient, ticket: dict, *, mongo: MongoClient, bot_id: int | None = None
 ) -> None:
     public_id = _as_int(ticket.get("location", {}).get("id") or ticket.get("channel_id"))
     staff_id = _as_int(ticket.get("location", {}).get("staff_space_id") or ticket.get("thread_id"))
@@ -1888,13 +1936,14 @@ async def _deliver_opening_messages(
     # The role mention invites eligible recruiters without explicit member-add
     # calls and is the first regular candidate-thread message.
     await _notify_candidate_recruiters(rest, ticket, bot_id=bot_id)
+    await _notify_opening_member_once(rest,mongo,ticket,bot_id=bot_id)
 
     await _send_components_once(
         rest,
         public_id,
         candidate_marker,
         _candidate_welcome_components(ticket),
-        user_mentions=[user_id],
+        user_mentions=False,
         role_mentions=False,
         post_marker=False,
         is_match=candidate_card_match,
@@ -2097,9 +2146,8 @@ async def _set_committed_creation_state(
         "recruiter_role_id": _as_int(ticket.get("recruiter_role_id")),
         "shared_staff_role_ids": list(ticket.get("shared_staff_role_ids") or ()),
         "staff_viewer_role_ids": list(ticket.get("staff_viewer_role_ids") or ()),
-        "staff_thread_private": bool(ticket.get("staff_thread_private")),
-        "staff_thread_role_ids": list(ticket.get("staff_thread_role_ids") or ()),
         "staff_role_config": dict(ticket.get("staff_role_config") or {}),
+        "desk_permission_policy": _recorded_permission_policy(ticket),
         "candidate_thread_id": _as_int(location.get("id") or ticket.get("channel_id")),
         "staff_thread_id": _as_int(
             location.get("staff_space_id") or ticket.get("thread_id")
@@ -2107,6 +2155,10 @@ async def _set_committed_creation_state(
         "updated_at": now,
         "delivery.state": "complete" if complete else "retry" if error else "pending",
     }
+    if ticket.get("account_clan") in schema.RECRUIT_TICKET_TYPES:
+        fields["account_clan"] = ticket["account_clan"]
+    if ticket.get("staff_thread_private"):
+        fields["staff_thread_private"] = True  # Read-only recovery compatibility.
     if complete:
         fields.update({
             "completed_at": now,
@@ -2197,7 +2249,7 @@ async def _finish_committed_creation(
         get_me = getattr(bot, "get_me", None)
         me = get_me() if callable(get_me) else None
         await _deliver_opening_messages(
-            bot.rest, ticket, bot_id=int(me.id) if me is not None else None
+            bot.rest, ticket, mongo=mongo, bot_id=int(me.id) if me is not None else None
         )
     except Exception as error:
         try:
@@ -2331,10 +2383,13 @@ async def create_live_thread_ticket(
     coc_client: coc.Client | None = None,
     on_ready: Callable[[dict], Awaitable[None]] | None = None,
     opened_by: int | None = None,
+    account_clan: str | None = None,
 ) -> CreatedThreadTicket:
     """Create or resume one live thread ticket without duplicating resources."""
     if ticket_type not in schema.TICKET_TYPES:
         raise ThreadConfigurationError("unsupported ticket type")
+    if _as_int(config.get("ticket_target_guild_id")) != int(guild_id):
+        raise ThreadConfigurationError("thread ticketing is configured for a different guild")
     slot = _validated_open_slot_claim(
         open_slot_claim,
         guild_id=guild_id,
@@ -2353,7 +2408,23 @@ async def create_live_thread_ticket(
         elif coc_client is None:
             coc_client = account_sync.configured_coc_client()
         await ensure_creation_indexes(mongo)
-        parents = parents_from_config(config, guild_id, ticket_type)
+        # A previously authorized receipt owns its original parent, role and
+        # subtype. New public routing never reparents an unfinished old pair.
+        pending = await mongo.ticket_creation_state.find_one({"_id": _creation_id(guild_id, user_id, ticket_type)})
+        recorded = (pending and pending.get("state") != "complete"
+                    and pending.get("kind") == "thread_ticket_creation"
+                    and _as_int(pending.get("guild_id")) == int(guild_id)
+                    and _as_int(pending.get("user_id")) == int(user_id)
+                    and pending.get("ticket_type") == ticket_type)
+        if recorded:
+            config = _recovery_config(pending, ticket_type, guild_id)
+            account_clan = pending.get("account_clan") if ticket_type == "account" else None
+        elif ticket_type == "account":
+            try:
+                account_clan = schema.account_clan(account_clan, required=True)
+            except schema.TicketSchemaError as exc:
+                raise ThreadConfigurationError(str(exc)) from exc
+        parents = parents_from_config(config, guild_id, ticket_type, account_clan=account_clan)
         existing = await store.find_open_for_applicant(
             mongo, user_id=int(user_id), ticket_type=ticket_type
         )
@@ -2478,6 +2549,7 @@ async def create_live_thread_ticket(
                     open_slot_claim=open_slot_claim,
                     now=utcnow(),
                     opened_by=opened_by,
+                    account_clan=account_clan,
                 )
             except Exception:
                 # A durable workflow row may already represent Discord work in
@@ -2527,12 +2599,18 @@ async def create_live_thread_ticket(
                     ticket["window_generation"] = state.get("window_generation")
                 ticket["staff_thread_content"] = staff_template
                 ticket["candidate_recruiter_notification"] = True
+                ticket["opening_member_notification"] = {
+                    "state":"pending", "user_id":int(user_id), "channel_id":int(candidate.id),
+                }
+                if state.get("account_clan") in schema.RECRUIT_TICKET_TYPES:
+                    ticket["account_clan"] = state["account_clan"]
                 ticket["recruiter_role_id"] = parents.recruiter_role_id
                 ticket["shared_staff_role_ids"] = list(parents.shared_staff_role_ids)
                 ticket["staff_viewer_role_ids"] = list(parents.staff_viewer_role_ids)
-                ticket["staff_thread_private"] = bool(state.get("staff_thread_private"))
-                ticket["staff_thread_role_ids"] = list(state.get("staff_thread_role_ids") or ())
+                if state.get("staff_thread_private"):
+                    ticket["staff_thread_private"] = True  # Existing recorded private pair only.
                 ticket["staff_role_config"] = dict(state.get("staff_role_config") or {})
+                ticket["desk_permission_policy"] = _recorded_permission_policy(state)
                 ticket.update(ticket_runtime.thread_ticket_fields(slot))
                 try:
                     ticket = await store.insert_one(mongo, ticket)
@@ -2725,6 +2803,7 @@ async def rename_ticket_pair_for_status(
         str(ticket.get("username") or "candidate"),
         status=status,
         test=testing_service.is_test_ticket(ticket),
+        account_clan=ticket.get("account_clan"),
     )
     targets = (
         ("candidate", public_id, public_name),
@@ -3211,7 +3290,7 @@ def _recovery_config(state: Mapping[str, Any], ticket_type: str, guild_id: int) 
     staff_parent = state.get("staff_parent_id")
     config: dict[str, Any] = {
         "ticket_target_guild_id": guild_id,
-        "_private_staff_threads": bool(state.get("staff_thread_private")),
+        "_desk_permission_policy": _recorded_permission_policy(state),
         "_staff_parent_role_ids": list(state.get("shared_staff_role_ids") or ()),
         "ticket_staff_viewer_role_ids": state.get("staff_viewer_role_ids") or (),
         f"{ticket_type}_thread_recruiter_role": state.get("recruiter_role_id"),
@@ -3219,13 +3298,16 @@ def _recovery_config(state: Mapping[str, Any], ticket_type: str, guild_id: int) 
     if ticket_type in schema.DESK_TICKET_TYPES:
         config["desk_channel_id"] = candidate_parent
         config["desk_staff_parent"] = staff_parent
+        config["main_staff_parent"] = staff_parent  # Recovery-only local routing; never reparent.
     else:
         config[f"{ticket_type}_candidate_parent"] = candidate_parent
         config[f"{ticket_type}_staff_parent"] = staff_parent
+    if ticket_type == "account" and state.get("account_clan") in schema.RECRUIT_TICKET_TYPES:
+        config[f"account_{state['account_clan']}_thread_recruiter_role"] = state.get("recruiter_role_id")
     role_config = state.get("staff_role_config") or {}
     if role_config:
         for kind, role in role_config.items():
-            if kind not in schema.TICKET_TYPES or not _as_int(role):
+            if kind not in schema.TICKET_TYPES | {"account_main", "account_fwa"} or not _as_int(role):
                 raise ThreadConfigurationError("invalid stored staff role mapping")
             config[f"{kind}_thread_recruiter_role"] = _as_int(role)
     others = sorted(schema.RECRUIT_TICKET_TYPES - {ticket_type})

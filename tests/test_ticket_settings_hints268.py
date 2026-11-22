@@ -22,7 +22,8 @@ class TicketHintTests(unittest.IsolatedAsyncioTestCase):
                     body=json.loads(response.text)
                     self.assertIn("hint",body)
                     self.assertNotIn("warning",body)
-                    self.assertTrue(body["hint"].startswith("Leaving the staff" if part=="desk" else "The recruit channel"))
+                    if part=="desk": self.assertEqual(body["hint"],"Staff threads use the Main staff channel.")
+                    else: self.assertTrue(body["hint"].startswith("The recruit channel"))
         self.assertEqual(cfg,before)
 
     async def test_test_window_remains_a_real_warning(self):

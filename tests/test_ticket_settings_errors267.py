@@ -124,7 +124,7 @@ def test_permission_error_uses_available_role_and_channel_names_without_ids():
         value.name = 'warrior-desk' if channel_id == 20 else 'ticket-staff'
         return value
     rest.fetch_roles, rest.fetch_channel = roles, channel
-    parents = thread_service.ThreadParents(10, 20, 21, 40, staff_thread_role_ids=(role_id,), private_staff=True)
+    parents = thread_service.ThreadParents(10, 20, 21, role_id, desk_permission_policy=True)
     with pytest.raises(thread_service.ThreadConfigurationError) as failure:
         asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
     assert 'Recruitment Team' in str(failure.value) and '#warrior-desk' in str(failure.value)
@@ -175,7 +175,7 @@ def test_manage_threads_allows_configured_handler_roles_but_not_unrelated_roles(
         extra['shared_staff_role_ids'] = (role_id,)
     elif role_source == 'viewer':
         extra['staff_viewer_role_ids'] = (role_id,)
-    parents = thread_service.ThreadParents(10, 20, 21, 40, staff_thread_role_ids=(40,), private_staff=True, **extra)
+    parents = thread_service.ThreadParents(10, 20, 21, 40, desk_permission_policy=True, **extra)
     if role_source == 'unrelated':
         with pytest.raises(thread_service.ThreadConfigurationError) as failure:
             asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
@@ -217,7 +217,7 @@ def test_member_manage_threads_exception_requires_a_configured_handler_role(sour
             return iterate()
     rest.fetch_roles, rest.fetch_channel, rest.fetch_member = roles, channel, fetch_member
     rest.fetch_members = lambda _guild: Members()
-    parents = thread_service.ThreadParents(10, 20, 21, 40, staff_thread_role_ids=(40,), private_staff=True)
+    parents = thread_service.ThreadParents(10, 20, 21, 40, desk_permission_policy=True)
     if handler:
         channels = asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
         assert [item.id for item in channels] == [20, 21]
@@ -242,7 +242,7 @@ def _bot_role_readiness_fixture(membership, *, manage_threads=True, fresh_bot_fl
     reads = []
     class Members:
         def limit(self, amount):
-            assert amount == thread_service.STAFF_MEMBER_SCAN_LIMIT + 1
+            assert amount == thread_service.PERMISSION_MEMBER_SCAN_LIMIT + 1
             return self
         def __aiter__(self):
             async def iterate():
@@ -268,7 +268,7 @@ def _bot_role_readiness_fixture(membership, *, manage_threads=True, fresh_bot_fl
         if user_id != member_id: return await original_member(guild, user_id)
         return NS(id=member_id, display_name='Fresh member', role_ids=[role_id], is_bot=fresh_bot_flag)
     rest.fetch_roles, rest.fetch_channel, rest.fetch_member, rest.fetch_members = roles, channel, fetch_member, fetch_members
-    parents = thread_service.ThreadParents(10, 20, 21, 40, staff_thread_role_ids=(40,), private_staff=True)
+    parents = thread_service.ThreadParents(10, 20, 21, 40, desk_permission_policy=True)
     return rest, parents, reads, role_id, member_id
 
 
@@ -305,4 +305,4 @@ def test_mapped_handler_human_passes_remaining_staff_view_guard():
     parents = replace(parents, staff_role_config=(('fwa', role_id),))
     channels = asyncio.run(thread_service.validate_thread_parents(rest, parents, bot_user_id=99))
     assert [item.id for item in channels] == [20, 21]
-    assert reads == [10]
+    assert reads == []  # configured handlers need no bot-only proof scan
