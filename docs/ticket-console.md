@@ -67,7 +67,7 @@ Approve / Deny / Close (Done for staff) actions. The shared message never
 changes for one person's selection.
 
 Below the dropdowns: Console tools (Find Ticket, Browse Tickets, Member History,
-Flags, Refresh), then Create for Recruit and Admin Settings, then a footer
+Check flags, Refresh), then Create for Recruit and Admin Settings, then a footer
 "**N open tickets** · Oldest first", the update time and the total-ticket
 count. There is no paging. Old `ticket_v2_hub_page:previous` / `next` and the
 old `ticket_v2_hub_details` / `ticket_v2_hub_closure` ids stay registered so
@@ -373,6 +373,30 @@ The chart uses **PREVIOUSLY DENIED** for the
 `Previously denied` count. **Blacklisted**, not “On blacklist,” is the
 authoritative blacklist label. Blacklist state is binary, not tiered; the bot
 never renders a “maybe” verdict.
+
+### Check flags is a private read-only lookup
+
+Ticket Command → **Check flags** opens a private panel with **Select a member**
+and **Search by player tag**. The tag form asks only for **Player tag**, with
+`#ABC123` as its example. It accepts the existing player-tag validation and
+normalization; other input says “Use a player tag that starts with #.” Staff
+never need to enter a raw Discord ID in this flow.
+
+Both controls use the same recruiter-owned, guild-bound component session and
+its existing fixed 24-hour expiry. Member selection, opening the tag form and
+submitting it each recheck ownership, guild, expiry and recruiter access. Reads
+retain the existing flag reasons and disable user, role and everyone mentions.
+The shared no-match wording is “No flag matches that member or player tag.”
+Invalid search guidance names members and player tags rather than requesting
+an ID. No flag is added, updated or removed by a search. The existing
+`/tickets flag-add` and `/tickets flag-remove` commands are unchanged.
+
+Already-posted **Flags** buttons open the new panel through their existing
+custom id. The hub layout version is bumped so an ordinary refresh redraws the
+label. The old ID-entry modal and its submit handler are removed; a stale old
+modal cannot perform a lookup. This change has no migration, backfill or new
+storage owner. Component-state expiry is unchanged. Release 276 requires
+Ruggie's own release words with Ruggie present.
 
 ### Manage Flags is the primary authoring path
 

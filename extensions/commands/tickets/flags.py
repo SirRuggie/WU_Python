@@ -333,8 +333,9 @@ class FlagsCommand(
         await show_flags(ctx, mongo, self.identity)
 
 
-async def show_flags(ctx, mongo, identity):
-    await ctx.defer(ephemeral=True)
+async def show_flags(ctx, mongo, identity, *, already_deferred=False):
+    if not already_deferred:
+        await ctx.defer(ephemeral=True)
     # The read is staff-only too: reasons can contain private recruiter notes.
     from extensions.commands.tickets import perms
 
@@ -351,13 +352,13 @@ async def show_flags(ctx, mongo, identity):
         discord_ids = _discord_ids(identity) if identity.isdigit() else ()
         player_tags = _tags(identity) if identity.startswith("#") else ()
     except ValueError as exc:
-        await _reply(ctx, "Flag search not run", str(exc), accent=ACCENT_RED)
+        await _reply(ctx, "Flag search not run", "Select a member, or use a player tag that starts with #.", accent=ACCENT_RED)
         return
     if not discord_ids and not player_tags:
         await _reply(
             ctx,
             "Flag search not run",
-            "Use a Discord ID, or a player tag that starts with #.",
+            "Select a member, or use a player tag that starts with #.",
             accent=ACCENT_RED,
         )
         return
@@ -368,13 +369,13 @@ async def show_flags(ctx, mongo, identity):
             player_tags=player_tags,
         )
     except ValueError as exc:
-        await _reply(ctx, "Flag search not run", str(exc), accent=ACCENT_RED)
+        await _reply(ctx, "Flag search not run", "Select a member, or use a player tag that starts with #.", accent=ACCENT_RED)
         return
     if not records:
         await _reply(
             ctx,
             "No active flags",
-            "No flag matches that Discord ID or player tag.",
+            "No flag matches that member or player tag.",
             accent=ACCENT_BLUE,
         )
         return

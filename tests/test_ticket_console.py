@@ -454,7 +454,7 @@ def test_empty_actions_retains_tools_without_unneeded_navigation():
     view = console.build_hub_actions(groups, counts=counts, total=0)
     nodes = _nodes(view)
     buttons = [node for node in nodes if node.get("type") == hikari.ComponentType.BUTTON]
-    assert [button["label"] for button in buttons] == ["Find Ticket", "Browse Tickets", "Member History", "Flags", "Refresh", "Create for Recruit", "Admin Settings"]
+    assert [button["label"] for button in buttons] == ["Find Ticket", "Browse Tickets", "Member History", "Check flags", "Refresh", "Create for Recruit", "Admin Settings"]
     _assert_component_limits(view)
 
 
@@ -465,7 +465,7 @@ def test_ticket_command_tools_stay_grouped_below_the_dropdowns():
     rows = [child for child in children if child.type == hikari.ComponentType.ACTION_ROW]
     assert [[getattr(c, "label", getattr(c, "placeholder", None)) for c in row.components] for row in rows] == [
         ["New recruits (1 open)"], ["Add account (0 open)"], ["Staff (0 open)"],
-        ["Find Ticket", "Browse Tickets", "Member History", "Flags", "Refresh"],
+        ["Find Ticket", "Browse Tickets", "Member History", "Check flags", "Refresh"],
         ["Create for Recruit", "Admin Settings"],
     ]
     tools_index = next(i for i, child in enumerate(children) if getattr(child, "content", "") == "### Console tools")
