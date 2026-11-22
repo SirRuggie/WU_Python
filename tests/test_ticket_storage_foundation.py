@@ -94,6 +94,17 @@ def _condition(values, expected):
                 continue
             if not any(any(_equal(value, choice) for choice in operand) for value in values):
                 return False
+        elif operator == "$nin":
+            if any(any(_equal(value, choice) for choice in operand) for value in values):
+                return False
+        elif operator == "$type":
+            assert operand == "date"
+            if not any(isinstance(value, datetime) for value in values):
+                return False
+        elif operator == "$gt":
+            # Mongo comparisons are type-bracketed; None cannot select dates.
+            if not any(type(value) is type(operand) and value is not None and value > operand for value in values):
+                return False
         elif operator == "$lte":
             if not any(value is not None and value <= operand for value in values):
                 return False
@@ -194,7 +205,7 @@ class Cursor:
         for path, direction in reversed(spec):
             def key(item, path=path):
                 value = _get(item, path, MISSING_VALUE)
-                return (0, None) if value is MISSING_VALUE else (1, value)
+                return (0, None) if value is MISSING_VALUE or value is None else (1, value)
 
             self.documents.sort(key=key, reverse=direction < 0)
         return self
@@ -627,12 +638,22 @@ def test_flag_identity_propagation_survives_post_snapshot_failure(monkeypatch):
         account_sync, "utcnow",
         lambda: datetime.now(timezone.utc) + timedelta(minutes=11),
     )
+    queued = []
+
+    async def queue_context(ticket_doc):
+        queued.append(ticket_doc["_id"])
+        return f"ticket_staff_context:{ticket_doc['_id']}"
+
     recovered = asyncio.run(account_sync.recover_pending_account_syncs(
-        mongo, object()
+        mongo, object(), after_sync=queue_context,
     ))
     assert recovered == {"processed": 1, "completed": 1, "failed": 0}
     assert loads == 1
     assert expansions == 2
+    assert queued == [ticket["_id"]]
+    assert mongo.tickets.documents[ticket["_id"]]["linked_accounts"][
+        "context_refresh_required"
+    ] is False
     assert mongo.tickets.documents[ticket["_id"]]["linked_accounts"][
         "flag_refresh_required"
     ] is False
@@ -1924,7 +1945,7 @@ def test_account_recovery_executes_the_frozen_indexed_predicate(monkeypatch):
     # the lookups sharing the same bounded batch.
     assert query["$or"][0]["$and"][0] == {"$or": [
         {"linked_accounts.retry_required": True},
-        {"status": "open", "linked_accounts.version": {"$exists": False}},
+        {"status": "open", "ticket_type": {"$ne": "staff"}, "linked_accounts.version": {"$exists": False}},
     ]}
     assert query["$or"][1]["$and"][0] == {"$or": [
         {"linked_accounts.context_refresh_required": True},

@@ -408,9 +408,13 @@ per-page messages in its thread; the next delivery keeps the oldest as the
 single paginated message and retires the rest in place.
 
 A failed lookup and a successful result with zero accounts are different states
-in the staff copy. Before the first account result is persisted, the candidate
-sees the pending check while staff account and Chocolate panels may be absent.
-Recovery creates or updates the staff panels after a result is stored. On a
+in the staff copy. Before the first account result is persisted, the staff account
+card says **Loading accounts**. Opening messages, member and staff notifications,
+and the thread-link reply precede the first account lookup. The existing context
+outbox updates the same card after the lookup; it does not create a second account
+card. Contact staff tickets skip that open-time lookup. Chocolate can remain
+absent until a result is stored. Recovery creates or updates the staff panels
+after a result is stored. On a
 later failure, the last confirmed current snapshot can remain visible while the
 lookup retries. The checklist is staff only; no per-tag `/fwa chocolate`
 command is required for the ticket workflow.
@@ -464,6 +468,18 @@ rows remain outside this console:
 (`<t:1700000000:R>` is Discord's relative-timestamp markup; it renders
 client-side as something like "5 months ago." The last line is a button, not
 text — `build_staff_identity_context` in `console.py`.)
+
+Opening-account failures and timeouts remain independent account recovery work.
+They do not quarantine the committed thread pair or reset completed opening
+delivery. New tickets carry a non-TTL generation-bound opening proof before creation
+completion starts its short-lived retention. First-lookup recovery requires that
+proof; older tickets without the additive marker retain their existing route.
+A bounded process-local cursor advances past pending rows without changing their
+receipts, and an open-time result durably queues its context refresh before
+returning. No migration or backfill is performed.
+Final decision-time account checks are unchanged. One `ticket_open` INFO line per
+committed opening attempt records pair, row, delivery, account sync, DM and console
+durations in milliseconds, with no identifying data beyond the ticket id.
 
 This history is deliberately broader than flags: an unflagged returning
 applicant still gets it. Delivery and later refreshes are durable retry work,

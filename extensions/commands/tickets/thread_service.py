@@ -2261,6 +2261,8 @@ async def _finish_committed_creation(
         _log.exception("ticket opening-message delivery failed for %s", ticket.get("_id"))
         return False
     try:
+        if not await store.finish_opening_delivery(mongo, ticket):
+            raise ThreadTicketError("opening completion receipt changed")
         await _mark_committed_creation_complete(mongo, ticket)
     except Exception:
         _log.exception("ticket delivery completion checkpoint failed for %s", ticket.get("_id"))
@@ -2277,6 +2279,67 @@ async def _acknowledge_ready_ticket(ticket: dict, callback: Callable[[dict], Awa
         _log.exception("failed to acknowledge committed ticket %s", ticket.get("_id"))
 
 
+_OPEN_STAGES = ("pair", "row", "delivery", "account_sync", "dm", "console")
+
+
+async def _timed_open_step(timings: dict, stage: str, operation):
+    started = time.monotonic()
+    try:
+        return await operation
+    finally:
+        timings[stage] += time.monotonic() - started
+
+
+def _log_open_timings(ticket: Mapping[str, Any], timings: dict) -> None:
+    # One bounded line per committed opening attempt, including cancellation.
+    # Only the canonical ticket id identifies the request; no member data.
+    _log.info(
+        "ticket_open ticket=%s pair_ms=%d row_ms=%d delivery_ms=%d "
+        "account_sync_ms=%d dm_ms=%d console_ms=%d",
+        ticket.get("_id"),
+        *(max(0, round(timings[stage] * 1000)) for stage in _OPEN_STAGES),
+    )
+
+
+async def opening_delivery_complete(mongo: MongoClient, ticket: Mapping[str, Any]) -> bool:
+    """Read permanent proof, never infer modern completion from an expired lease.
+
+    Pre-275 rows lack the additive marker and retain their historical recovery
+    route, without a claim that old Discord delivery is proven. New pending or
+    malformed markers fail closed until normal opening recovery commits proof.
+    """
+    return "opening_delivery" not in ticket or store.opening_delivery_proven(ticket)
+
+
+async def _sync_after_opening(mongo, coc_client, ticket: dict, *, source: str) -> dict:
+    """Account work cannot undo already delivered opening notifications."""
+    if coc_client is None or ticket.get("ticket_type") == "staff":
+        return ticket
+    try:
+        synced = await account_sync.sync_ticket_accounts(
+            mongo, coc_client, ticket["_id"], source=source,
+        )
+        if synced.ticket is None:
+            raise account_sync.AccountSyncError("ticket disappeared after opening delivery")
+        return synced.ticket
+    except asyncio.CancelledError:
+        # A missing snapshot is already durable recovery work. Keep the
+        # completed delivery receipt and let cancellation close this attempt.
+        raise
+    except Exception as error:
+        _log.warning("ticket opening account sync pending for %s: %s", ticket.get("_id"), type(error).__name__)
+        try:
+            failed = await account_sync.record_ticket_account_failure(
+                mongo, ticket["_id"], source=source, error=type(error).__name__,
+            )
+            return failed.ticket or ticket
+        except Exception:
+            # If persistence also fails, a missing/pending snapshot remains
+            # eligible through the existing independent account recovery.
+            _log.exception("ticket account retry checkpoint failed for %s", ticket.get("_id"))
+            return ticket
+
+
 async def _reconcile_existing_ticket(
     bot: hikari.GatewayBot,
     mongo: MongoClient,
@@ -2287,25 +2350,27 @@ async def _reconcile_existing_ticket(
 ) -> CreatedThreadTicket:
     """Heal every post-commit Discord/state step before returning an open ticket."""
     await _acknowledge_ready_ticket(ticket, on_ready)
-    snapshot = account_sync.snapshot_from_ticket(ticket)
-    if coc_client is not None and snapshot.retry_required:
-        synced = await account_sync.sync_ticket_accounts(
-            mongo,
-            coc_client,
-            ticket["_id"],
-            source=account_sync.SOURCE_OPEN_RETRY,
+    timings = dict.fromkeys(_OPEN_STAGES, 0.0)
+    try:
+        delivery_complete = await _timed_open_step(timings, "delivery", _finish_committed_creation(
+            bot, mongo, ticket, reconcile_pair=True
+        ))
+        await _timed_open_step(timings, "console", notify_console_after_change(
+            bot, mongo, ticket, reason="ticket creation reconciled"
+        ))
+        snapshot = account_sync.snapshot_from_ticket(ticket)
+        if delivery_complete and snapshot.retry_required and ticket.get("ticket_type") != "staff" and coc_client is not None:
+            ticket = await _timed_open_step(timings, "account_sync", _sync_after_opening(
+                mongo, coc_client, ticket, source=account_sync.SOURCE_OPEN_RETRY,
+            ))
+            await _timed_open_step(timings, "console", notify_console_after_change(
+                bot, mongo, ticket, reason="ticket opening accounts refreshed", force=False,
+            ))
+        return CreatedThreadTicket(
+            ticket, resumed=True, delivery_pending=not delivery_complete
         )
-        if synced.ticket is not None:
-            ticket = synced.ticket
-    delivery_complete = await _finish_committed_creation(
-        bot, mongo, ticket, reconcile_pair=True
-    )
-    await notify_console_after_change(
-        bot, mongo, ticket, reason="ticket creation reconciled"
-    )
-    return CreatedThreadTicket(
-        ticket, resumed=True, delivery_pending=not delivery_complete
-    )
+    finally:
+        _log_open_timings(ticket, timings)
 
 
 async def notify_console_after_change(
@@ -2567,18 +2632,22 @@ async def create_live_thread_ticket(
                 raise
             candidate = staff = None
             committed_ticket: dict | None = None
+            delivery_complete = False
+            timings = dict.fromkeys(_OPEN_STAGES, 0.0)
+            row_started = None
             try:
                 staff_template = (
                     None if ticket_type in schema.DESK_TICKET_TYPES
                     else await ticket_staff_content.load(mongo, guild_id, ticket_type)
                 )
-                candidate, staff, state = await _ensure_live_thread_pair(
+                candidate, staff, state = await _timed_open_step(timings, "pair", _ensure_live_thread_pair(
                     rest=bot.rest,
                     mongo=mongo,
                     state=state,
                     owner=owner,
                     bot_user_id=int(me.id),
-                )
+                ))
+                row_started = time.monotonic()
                 ticket = store.new_ticket_document(
                     ticket_type=ticket_type,
                     ticket_number=int(state["ticket_number"]),
@@ -2612,6 +2681,7 @@ async def create_live_thread_ticket(
                 ticket["staff_role_config"] = dict(state.get("staff_role_config") or {})
                 ticket["desk_permission_policy"] = _recorded_permission_policy(state)
                 ticket.update(ticket_runtime.thread_ticket_fields(slot))
+                ticket["opening_delivery"] = store.pending_opening_delivery(ticket)
                 try:
                     ticket = await store.insert_one(mongo, ticket)
                 except Exception:
@@ -2640,6 +2710,8 @@ async def create_live_thread_ticket(
                         and str(bound_slot.get("ticket_id")) == str(ticket["_id"])
                     ):
                         raise
+                timings["row"] += time.monotonic() - row_started
+                row_started = None
 
                 if ticket.get("status") != "open":
                     await _mark_committed_creation_complete(mongo, ticket)
@@ -2647,29 +2719,24 @@ async def create_live_thread_ticket(
 
                 await _acknowledge_ready_ticket(ticket, on_ready)
 
-                # The Discord pair and ticket row are durable before any external
-                # identity lookup. A timeout therefore resumes this exact pair.
-                if coc_client is not None:
-                    synced = await account_sync.sync_ticket_accounts(
-                        mongo,
-                        coc_client,
-                        ticket["_id"],
-                        source=account_sync.SOURCE_OPEN,
-                    )
-                    if synced.ticket is None:
-                        raise ThreadTicketError(
-                            "committed ticket disappeared during linked-account sync"
-                        )
-                    ticket = synced.ticket
-
-                delivery_complete = await _finish_committed_creation(
+                delivery_complete = await _timed_open_step(timings, "delivery", _finish_committed_creation(
                     bot, mongo, ticket, reconcile_pair=False
-                )
+                ))
                 if delivery_complete and not testing_service.is_test_scope(mongo):
-                    await _send_ticket_creation_dm(bot.rest, mongo, ticket, bot=bot)
-                await notify_console_after_change(
+                    await _timed_open_step(timings, "dm", _send_ticket_creation_dm(bot.rest, mongo, ticket, bot=bot))
+                await _timed_open_step(timings, "console", notify_console_after_change(
                     bot, mongo, ticket, reason="ticket created"
-                )
+                ))
+                # Deliver all opening messages and the initial loading context
+                # before external account providers. Their independent durable
+                # retry path never rewinds opening delivery or quarantines a pair.
+                if delivery_complete and coc_client is not None and ticket_type != "staff":
+                    ticket = await _timed_open_step(timings, "account_sync", _sync_after_opening(
+                        mongo, coc_client, ticket, source=account_sync.SOURCE_OPEN,
+                    ))
+                    await _timed_open_step(timings, "console", notify_console_after_change(
+                        bot, mongo, ticket, reason="ticket opening accounts refreshed", force=False,
+                    ))
                 return CreatedThreadTicket(
                     ticket,
                     resumed=resumed,
@@ -2677,9 +2744,10 @@ async def create_live_thread_ticket(
                 )
             except asyncio.CancelledError as error:
                 if committed_ticket is not None:
-                    await _set_committed_creation_state(
-                        mongo, committed_ticket, state="delivery_retry", error=error
-                    )
+                    if not delivery_complete:
+                        await _set_committed_creation_state(
+                            mongo, committed_ticket, state="delivery_retry", error=error
+                        )
                     raise
                 await _cleanup_interrupted_creation(
                     rest=bot.rest,
@@ -2695,15 +2763,16 @@ async def create_live_thread_ticket(
                     # The row binds this pair permanently.  A post-commit
                     # lookup/delivery failure is recoverable work, not an
                     # incomplete creation, so never quarantine the live pair.
-                    try:
-                        await _set_committed_creation_state(
-                            mongo, committed_ticket, state="delivery_retry", error=error
-                        )
-                    except Exception:
-                        _log.exception(
-                            "failed to checkpoint committed ticket retry for %s",
-                            committed_ticket.get("_id"),
-                        )
+                    if not delivery_complete:
+                        try:
+                            await _set_committed_creation_state(
+                                mongo, committed_ticket, state="delivery_retry", error=error
+                            )
+                        except Exception:
+                            _log.exception(
+                                "failed to checkpoint committed ticket retry for %s",
+                                committed_ticket.get("_id"),
+                            )
                     raise
                 await _cleanup_interrupted_creation(
                     rest=bot.rest,
@@ -2714,6 +2783,11 @@ async def create_live_thread_ticket(
                     error=error,
                 )
                 raise
+            finally:
+                if row_started is not None:
+                    timings["row"] += time.monotonic() - row_started
+                if committed_ticket is not None:
+                    _log_open_timings(committed_ticket, timings)
         raise ThreadTicketError("terminal ticket replay could not allocate a fresh pair")
 
 

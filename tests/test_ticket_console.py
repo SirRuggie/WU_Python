@@ -2156,7 +2156,10 @@ def test_staff_context_worst_case_payload_has_no_marker_and_stays_within_limit(
 
     # No hidden marker line is posted; only visible content is present.
     assert not any("ticket-staff-context:" in content for content in contents)
-    assert all("**Why:**" in content for content in contents[1:9])
+    flag_contents = [content for content in contents if "Matching flag" in content]
+    assert len(flag_contents) == 8
+    assert all("**Why:**" in content for content in flag_contents)
+    assert any("Loading accounts" in content for content in contents)
     _assert_component_limits(view)
 
 

@@ -3142,8 +3142,7 @@ def _staff_account_summary(ticket_doc: Mapping) -> str:
     if snapshot.state == account_sync.STATE_PENDING:
         return (
             "### 🔄 Linked Clash accounts\n"
-            "The first account check is not done. We did not record a result of zero accounts. "
-            "It will try again automatically."
+            "Loading accounts. The result will appear here when the check finishes."
         )
     if snapshot.state == account_sync.STATE_FAILED:
         retained = len(snapshot.observed_tags)
@@ -3352,7 +3351,10 @@ async def build_staff_identity_context(
         ),
     )
     flags = _active_flags(flags)[:8]
-    has_account_snapshot = isinstance(ticket_doc.get("linked_accounts"), Mapping)
+    has_account_snapshot = isinstance(ticket_doc.get("linked_accounts"), Mapping) or (
+        ticket_doc.get("status") == "open"
+        and ticket_doc.get("ticket_type") in {"main", "fwa", "account"}
+    )
     if not flags and not history and not has_account_snapshot:
         return None
     blacklisted = any(
