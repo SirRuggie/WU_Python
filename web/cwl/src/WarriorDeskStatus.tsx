@@ -22,7 +22,9 @@ export default function WarriorDeskStatus({
         <ul>
           {status.missing.map((item) => (
             <li key={item.key || "rollout"}>
-              {item.key ? (
+              {item.key === "main_staff_parent" ? (
+                "Set the Main staff channel in Main application channels."
+              ) : item.key ? (
                 <a
                   href={`#manage-${item.key.replace(/[^a-z0-9]/gi, "-")}`}
                   onClick={(event) => {

@@ -1,3 +1,4 @@
+from tests.ticket_followup271_fixtures import opening_mongo
 """Warrior Desk: account and staff request types, routing, perms, copy, end states."""
 import asyncio
 from copy import deepcopy
@@ -150,8 +151,8 @@ def test_configure_rollout_keeps_or_sets_desk_intake():
 def test_parents_from_config_desk_and_unknown_type():
     account = thread_service.parents_from_config(CONFIG, GUILD, "account")
     assert (account.candidate_parent_id, account.staff_parent_id, account.recruiter_role_id) == (30, 21, 102)
-    # Parent visibility is shared; private thread invitations remain per type.
-    assert set(account.staff_thread_role_ids) == {100, 101, 102}
+    # Shared public staff visibility does not grant cross-type action authority.
+    assert not hasattr(account, "private_staff")
     assert set(account.shared_staff_role_ids) == {100, 103}
     main = thread_service.parents_from_config(CONFIG, GUILD, "main")
     assert set(main.shared_staff_role_ids) == {102, 103}
@@ -335,10 +336,10 @@ def test_account_cannot_use_default_denial_bodies():
 def test_welcome_and_opening_copy_for_desk_types():
     account = _texts(thread_service._candidate_welcome_components(_ticket("account")))
     assert account[0] == "## ➕ Add another account"
-    assert account[1] == "<@30> Answer here. Staff check your accounts."
+    assert account[1] == "Answer here. Staff check your accounts."
     staff = _texts(thread_service._candidate_welcome_components(_ticket("staff")))
     assert staff[0] == "## 💬 Contact staff"
-    assert staff[1] == "<@30> Tell us what you need. Staff reply here."
+    assert staff[1] == "Tell us what you need. Staff reply here."
     for kind in ("account", "staff"):
         opening = _texts(thread_service._staff_opening_components(_ticket(kind)))
         assert f"<@&{ROLES[kind]}> a member opened a request." in opening
@@ -396,11 +397,11 @@ def test_opening_delivery_per_type(kind, public, staff):
     rest = _Rest()
     doc = _ticket(kind)
     doc["recruiter_role_id"] = 0
-    asyncio.run(thread_service._deliver_opening_messages(rest, doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, doc, mongo=opening_mongo(doc)))
     assert (len(rest.channels[101]), len(rest.channels[102])) == (public, staff)
     # A retry posts nothing new (questionnaire and cards are found by title).
     before = rest.creates
-    asyncio.run(thread_service._deliver_opening_messages(rest, doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, doc, mongo=opening_mongo(doc)))
     assert rest.creates == before
 
 
@@ -506,7 +507,7 @@ def test_published_desk_panel_follows_desk_intake():
 
 # --- settings, web, worker ------------------------------------------------
 
-DESK_KEYS = ("desk_channel_id", "desk_staff_parent", "account_thread_recruiter_role", "staff_thread_recruiter_role")
+DESK_KEYS = ("desk_channel_id", "desk_staff_parent", "account_main_thread_recruiter_role", "account_fwa_thread_recruiter_role", "staff_thread_recruiter_role")
 
 
 def test_settings_fields_and_web_validation_for_desk_keys():
@@ -553,9 +554,10 @@ def test_web_desk_part_and_tools_action():
             tools = __import__("json").loads((await module.settings(Request())).text)
         finally:
             module.require_manage, module.mongo = real
-        assert [f["key"] for f in part["fields"]] == list(DESK_KEYS)
+        assert [f["key"] for f in part["fields"]] == ["desk_channel_id", "main_staff_parent", "account_main_thread_recruiter_role", "account_fwa_thread_recruiter_role", "staff_thread_recruiter_role"]
+        assert part["fields"][1]["readonly"] is True
         assert [f["label"] for f in part["fields"]] == [
-            "Warrior Desk channel", "Staff thread channel", "Add account staff role", "Contact staff role",
+            "Warrior Desk channel", "Staff thread channel", "Add account role (Main)", "Add account role (FWA)", "Contact staff role",
         ]
         assert ("desk", "Warrior Desk") in [(d["id"], d["label"]) for d in index["documents"]]
         action = next(a for a in part["actions"] if a["id"] == "restore_desk_entry")
@@ -584,7 +586,7 @@ def test_validate_reports_desk_not_set_or_passed(monkeypatch):
         cfg = {**cfg, "main_candidate_parent": 21, "fwa_candidate_parent": 21}
         return await settings.validate(mongo, rest, cfg, 11), calls
 
-    bare = {k: v for k, v in CONFIG.items() if k not in DESK_KEYS}
+    bare = {k: v for k, v in CONFIG.items() if k not in (*DESK_KEYS,"account_thread_recruiter_role")}
     bare["ticket_target_guild_id"] = 11
     result, calls = asyncio.run(run(bare))
     assert result == "Warrior Desk not set." and calls == [21, 21]

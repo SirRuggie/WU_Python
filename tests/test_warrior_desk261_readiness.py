@@ -7,7 +7,7 @@ FULL={'desk_channel_id':1,'main_staff_parent':2,'account_thread_recruiter_role':
 def test_readiness_lists_every_missing_saved_field_and_rollout():
     result=desk_readiness({},phase='prepared')
     assert not result['ready']
-    assert {item['key'] for item in result['missing']}=={'desk_channel_id','desk_staff_parent','account_thread_recruiter_role','staff_thread_recruiter_role',''}
+    assert {item['key'] for item in result['missing']}=={'desk_channel_id','main_staff_parent','account_main_thread_recruiter_role','account_fwa_thread_recruiter_role','staff_thread_recruiter_role',''}
 
 
 @pytest.mark.parametrize('phase',['thread_default','thread_only'])
@@ -17,8 +17,15 @@ def test_readiness_accepts_explicit_main_staff_fallback_and_ready_phase(phase):
 
 def test_invalid_rollout_and_each_missing_role_stay_blocked():
     assert not desk_readiness(FULL,phase='thread_default',rollout_valid=False)['ready']
-    for key in ('account_thread_recruiter_role','staff_thread_recruiter_role'):
-        assert desk_readiness({**FULL,key:0},phase='thread_default')['missing']==[{'key':key,'label':'Add account staff role' if key.startswith('account') else 'Contact staff role'}]
+    for key,label in [('account_main_thread_recruiter_role','Add account role (Main)'),
+                      ('account_fwa_thread_recruiter_role','Add account role (FWA)'),
+                      ('staff_thread_recruiter_role','Contact staff role')]:
+        assert desk_readiness({**FULL,key:0},phase='thread_default')['missing']==[{'key':key,'label':label}]
+    fallback={**FULL,'account_thread_recruiter_role':0}
+    assert desk_readiness(fallback,phase='thread_default')['missing']==[
+        {'key':'account_main_thread_recruiter_role','label':'Add account role (Main)'},
+        {'key':'account_fwa_thread_recruiter_role','label':'Add account role (FWA)'}]
+
 
 
 @pytest.mark.parametrize('invalid', [False, True])

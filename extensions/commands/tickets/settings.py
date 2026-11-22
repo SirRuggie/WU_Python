@@ -22,6 +22,7 @@ from utils.component_state import insert_state, get_state
 from utils.constants import WU_GOLD
 from utils.mongo import MongoClient
 from utils.ticket_settings import FIELDS as SETTING_FIELDS, desk_readiness
+from utils.ticket_access import account_role_value
 
 NO_MENTIONS = dict(user_mentions=False, role_mentions=False, mentions_everyone=False)
 FIELDS = tuple(sorted(SETTING_FIELDS))
@@ -188,7 +189,7 @@ async def validate(mongo,rest,cfg,gid):
     """Raise on a bad setup; return the Warrior Desk result line."""
     me=await rest.fetch_my_user()
     state=await ticket_runtime.get_rollout(mongo)
-    if any(cfg.get(key) for key in ('desk_channel_id','desk_staff_parent','account_thread_recruiter_role','staff_thread_recruiter_role')):
+    if any(cfg.get(key) for key in ('desk_channel_id','desk_staff_parent','account_thread_recruiter_role','account_main_thread_recruiter_role','account_fwa_thread_recruiter_role','staff_thread_recruiter_role')):
         readiness=desk_readiness(cfg,phase=state.phase,rollout_valid=state.valid)
         if not readiness['ready']:
             raise ValueError('Warrior Desk is missing: '+', '.join(item['label'] for item in readiness['missing'])+'. Nothing was posted.')
@@ -196,10 +197,11 @@ async def validate(mongo,rest,cfg,gid):
         parents=thread_service.parents_from_config(cfg,gid,kind)
         await thread_service.validate_thread_parents(rest,parents,bot_user_id=int(me.id))
     desk=[]
-    for kind in ('account','staff'):
-        if not (cfg.get('desk_channel_id') and cfg.get(f'{kind}_thread_recruiter_role')):
+    for kind,clan in (('account','main'),('account','fwa'),('staff',None)):
+        role=account_role_value(cfg,clan) if kind=='account' else cfg.get('staff_thread_recruiter_role')
+        if not (cfg.get('desk_channel_id') and role):
             continue
-        parents=thread_service.parents_from_config(cfg,gid,kind)
+        parents=thread_service.parents_from_config(cfg,gid,kind,account_clan=clan)
         await thread_service.validate_thread_parents(rest,parents,bot_user_id=int(me.id))
         desk.append(kind)
     state=await ticket_runtime.get_rollout(mongo)
@@ -256,7 +258,7 @@ async def save(ctx,mongo,rest,data):
     await validate(mongo,rest,cfg,guild(ctx))
     # Compare every relevant setting; two admins cannot silently overwrite one another.
     query={'_id':'config','ticket_target_guild_id':guild(ctx)}
-    for k in (*FIELDS,'ticket_settings_revision'):
+    for k in (*FIELDS,'account_thread_recruiter_role','ticket_settings_revision'):
         query[k]=baseline[k] if k in baseline else {'$exists':False}
     histories=[]
     if not getattr(ctx,'dashboard_actor',None):

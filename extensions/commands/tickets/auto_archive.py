@@ -216,10 +216,7 @@ async def _run(bot, mongo):
         try:
             from . import thread_intake_ready
             if thread_intake_ready():
-                from . import staff_access
                 await sweep(bot, mongo)
-                async with asyncio.timeout(30):
-                    await staff_access.sweep(bot, mongo)
         except Exception:
             _log.exception('Daily resolved ticket archive failed')
         await asyncio.sleep(60)

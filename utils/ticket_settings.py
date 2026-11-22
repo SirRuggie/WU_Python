@@ -7,6 +7,8 @@ owners. These helpers preserve the ticket adapter's accepted values and defaults
 import hashlib
 import json
 
+from utils.ticket_access import account_role_value
+
 
 _RUNTIME_REVISION_KEYS = frozenset({
     "thread_name_capability_version",
@@ -30,8 +32,8 @@ def settings_revision(cfg):
     ).hexdigest()
 
 
-DESK_KEYS = ('desk_channel_id', 'desk_staff_parent', 'account_thread_recruiter_role',
-             'staff_thread_recruiter_role')
+DESK_KEYS = ('desk_channel_id', 'desk_staff_parent', 'account_main_thread_recruiter_role',
+             'account_fwa_thread_recruiter_role', 'staff_thread_recruiter_role')
 
 FIELDS = {
     f'{kind}_{name}'
@@ -72,7 +74,9 @@ def validated_settings(values):
 
 def history_values(cfg, part):
     if part == 'desk':
-        return {key: str(cfg.get(key) or '') for key in DESK_KEYS}
+        return {key: str(account_role_value(cfg, key.split('_')[1]) or '')
+                if key in {'account_main_thread_recruiter_role', 'account_fwa_thread_recruiter_role'}
+                else str(cfg.get(key) or '') for key in DESK_KEYS}
     if part == 'timers':
         return {
             'ticket_inactivity_minutes': cfg.get('ticket_inactivity_minutes', 10080),
@@ -92,8 +96,9 @@ def history_values(cfg, part):
 
 DESK_REQUIRED_FIELDS = (
     ("desk_channel_id", "Warrior Desk channel"),
-    ("desk_staff_parent", "Staff thread channel"),
-    ("account_thread_recruiter_role", "Add account staff role"),
+    ("main_staff_parent", "Main staff channel"),
+    ("account_main_thread_recruiter_role", "Add account role (Main)"),
+    ("account_fwa_thread_recruiter_role", "Add account role (FWA)"),
     ("staff_thread_recruiter_role", "Contact staff role"),
 )
 
@@ -103,8 +108,10 @@ def desk_readiness(config, *, phase, rollout_valid=True):
     missing = []
     for key, label in DESK_REQUIRED_FIELDS:
         value = config.get(key)
-        if key == "desk_staff_parent":
-            value = value or config.get("main_staff_parent")
+        if key == "main_staff_parent":
+            value = config.get("main_staff_parent")
+        elif key in {"account_main_thread_recruiter_role", "account_fwa_thread_recruiter_role"}:
+            value = account_role_value(config, key.split("_")[1])
         try:
             valid = int(value or 0) > 0
         except (TypeError, ValueError):

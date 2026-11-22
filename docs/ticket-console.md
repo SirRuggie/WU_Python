@@ -582,5 +582,14 @@ set control. The Done note is labelled “Note for the member (shown in their
 thread)”. Manual Ghosted on an open non-staff ticket reuses the inactivity Close
 receipt/CAS/effects with the same reason; terminal rows are not closed again.
 Newer flag edits survive recovery. See [Warrior Desk](warrior-desk.md) for the
-permission matrix, private membership, 60-day member-message reopening, guided
+permission matrix, shared staff visibility, 60-day member-message reopening, guided
 setup and exact evidence limits. Mocked notifications are not live delivery proof.
+
+## Prompt 271 labels and access
+
+Account options show 🏆 Main or 💎 FWA and `Account #12 · name · Main/FWA` when
+`account_clan` is known. Older account rows keep their generic label. The new
+account clan chooses the notification role, not narrower action authority: either
+account handler role and either recruiter retain access. New staff threads use
+role mentions without individual staff joins; historical pairs are retained.
+See [Warrior Desk](warrior-desk.md) for notification receipt and release limits.

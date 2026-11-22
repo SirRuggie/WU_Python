@@ -73,6 +73,15 @@ def ticket_type(value: str) -> str:
     return normalized
 
 
+
+def account_clan(value: str | None, *, required=False) -> str | None:
+    if value is None and not required:
+        return None  # Historical account tickets have no inferred clan.
+    if value not in RECRUIT_TICKET_TYPES:
+        raise TicketSchemaError("Select Main clan or FWA clan.")
+    return value
+
+
 def ticket_status(value: str) -> str:
     normalized = str(value or "").strip().casefold()
     if normalized not in TICKET_STATUSES:
@@ -163,6 +172,7 @@ def new_ticket_document(
     user_id,
     username: str,
     display_name: str | None = None,
+    account_clan: str | None = None,
     player_tags: Iterable[str] | str = (),
     created_at: datetime | None = None,
     status: str = "open",
@@ -174,6 +184,9 @@ def new_ticket_document(
     always starts open and reaches a terminal value through ``store.transition``.
     """
     kind = globals()["ticket_type"](ticket_type)
+    clan = globals()["account_clan"](account_clan)
+    if clan is not None and kind != "account":
+        raise TicketSchemaError("Only Add account tickets have an account clan.")
     state = ticket_status(status)
     source_doc = normalize_source(source)
     if state != "open" and source_doc is None:
@@ -245,6 +258,8 @@ def new_ticket_document(
     }
     if source_doc is not None:
         document["source"] = source_doc
+    if clan is not None:
+        document["account_clan"] = clan
     return document
 
 
@@ -289,6 +304,10 @@ def normalize_ticket_document(document: Mapping) -> dict:
 
     if out.get("ticket_type") is not None:
         out["ticket_type"] = ticket_type(out["ticket_type"])
+    if "account_clan" in out:
+        out["account_clan"] = account_clan(out["account_clan"])
+        if out["account_clan"] is not None and out.get("ticket_type") != "account":
+            raise TicketSchemaError("Only Add account tickets have an account clan.")
     if out.get("ticket_number") is not None:
         try:
             out["ticket_number"] = int(out["ticket_number"])

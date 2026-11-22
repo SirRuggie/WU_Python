@@ -1496,22 +1496,6 @@ async def _install_indexes(mongo: MongoClient) -> list[str]:
     return [str(name) for name in specs]
 
 
-async def private_staff_tickets(mongo, *, guild_id: int, after: str = "", limit: int = 5, not_checked_since=None):
-    """Bounded recovery page of explicitly new private staff threads only."""
-    limit = min(max(int(limit), 1), 50)
-    query = {**RUNTIME_FILTER, "guild_id": int(guild_id), "staff_thread_private": True}
-    if not_checked_since is not None:
-        query["$or"] = [
-            {"staff_access_check_started_at": {"$exists": False}},
-            {"staff_access_check_started_at": {"$lte": not_checked_since}},
-        ]
-    if after:
-        query["_id"] = {"$gt": after}
-    return await mongo.tickets.find(query, {
-        "_id": 1, "guild_id": 1, "ticket_type": 1, "location": 1,
-        "staff_thread_private": 1,
-    }).sort("_id", 1).limit(limit + 1).to_list(length=limit + 1)
-
 
 async def claim_member_window_sweep(mongo, *, guild_id, at):
     """Persist one expiry page attempt per guild/hour, including restarts."""
@@ -1524,17 +1508,6 @@ async def claim_member_window_sweep(mongo, *, guild_id, at):
     except DuplicateKeyError:
         return False  # Existing hourly claim does not match; never run REST.
     return row is not None
-
-
-async def claim_staff_access_check(mongo, ticket, *, at):
-    """At most one periodic REST attempt per private pair/hour; events bypass."""
-    result = await mongo.tickets.update_one({
-        **RUNTIME_FILTER, "_id": ticket["_id"], "guild_id": ticket["guild_id"],
-        "staff_thread_private": True,
-        "$or": [{"staff_access_check_started_at": {"$exists": False}},
-                {"staff_access_check_started_at": {"$lte": at - timedelta(hours=1)}}],
-    }, {"$set": {"staff_access_check_started_at": at}})
-    return bool(result.matched_count)
 
 
 async def claim_member_reopen_notice(mongo, ticket):
@@ -1626,3 +1599,35 @@ async def claim_manual_ghosted(mongo, ticket, *, actor_id, actor_name, reason, t
         "activity_revision": _rev_filter(int(ticket.get("activity_revision") or 0)),
         "inactivity.prompt.state": {"$ne": "yes"},
     }, {"$set": {"inactivity.prompt": prompt}}, return_document=ReturnDocument.AFTER)
+
+
+async def claim_member_opening_notification(mongo, ticket, *, legacy_message_id=None):
+    """Claim the one creation notification before Discord, independent of TTL state.
+
+    An attempted receipt is deliberately permanent: uncertain acceptance, process
+    cancellation, or a lost completion write must never trigger an automatic ping.
+    """
+    location = ticket.get("location") or {}
+    channel_id = as_int(location.get("id") or ticket.get("channel_id"))
+    receipt = {"state":"legacy-confirmed" if legacy_message_id else "attempted",
+               "channel_id":channel_id,"user_id":as_int(ticket.get("user_id")),
+               "attempted_at":datetime.now(timezone.utc)}
+    if legacy_message_id:
+        receipt["message_id"] = as_int(legacy_message_id)
+    guard = ({"$or":[{"opening_member_notification":{"$exists":False}},
+                     {"opening_member_notification.state":"pending"}]}
+             if legacy_message_id else {"opening_member_notification.state":"pending"})
+    result = await mongo.tickets.update_one({**RUNTIME_FILTER,"_id":ticket["_id"],
+        "guild_id":ticket["guild_id"],"user_id":ticket["user_id"],
+        "location.id":channel_id,**guard},
+        {"$set":{"opening_member_notification":receipt}})
+    return bool(result.matched_count)
+
+
+async def finish_member_opening_notification(mongo, ticket, message_id):
+    result = await mongo.tickets.update_one({**RUNTIME_FILTER,"_id":ticket["_id"],
+        "guild_id":ticket["guild_id"],"user_id":ticket["user_id"],
+        "opening_member_notification.state":"attempted"},
+        {"$set":{"opening_member_notification.state":"sent",
+                 "opening_member_notification.message_id":as_int(message_id)}})
+    return bool(result.matched_count)

@@ -1,8 +1,10 @@
+from tests.ticket_followup271_fixtures import opening_mongo
 import asyncio
 import time
 from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import hikari
 import pytest
@@ -800,11 +802,11 @@ def test_opening_message_mentions_only_candidate_and_recruiter(monkeypatch):
     ticket_doc = _ticket()
     ticket_doc["recruiter_role_id"] = 40
     asyncio.run(thread_service._deliver_opening_messages(
-        SimpleNamespace(fetch_my_user=fetch_my_user), ticket_doc
-    ))
-    assert calls[0][1]["user_mentions"] == [30]
+        SimpleNamespace(fetch_my_user=fetch_my_user, fetch_messages=lambda channel: SimpleNamespace(to_list=AsyncMock(return_value=[]))), ticket_doc
+    , mongo=opening_mongo(ticket_doc)))
+    assert calls[0][1]["user_mentions"] is False
     assert calls[0][1]["role_mentions"] is False
-    assert "<@30>" in repr(calls[0][0][3])
+    assert "<@30>" not in repr(calls[0][0][3])
     assert "<@&40>" not in repr(calls[0][0][3])
     assert calls[1][1]["user_mentions"] is False
     assert calls[1][1]["role_mentions"] == [40]
@@ -851,7 +853,7 @@ def test_opening_cards_have_no_marker_text_and_recover_structurally(monkeypatch)
     rest = Rest()
     ticket_doc = _ticket()
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
     # 2 opening cards + 2 recruiter talking points (`_ticket()` sets no
     # `recruiter_role_id`, so the role line is skipped; how-heard and hook
     # still post for a "main" ticket).
@@ -874,7 +876,7 @@ def test_opening_cards_have_no_marker_text_and_recover_structurally(monkeypatch)
     for message in (*rest.channels[101], *rest.channels[102]):
         assert "ticket-setup:" not in _flat_text(message)
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
     assert rest.creates == 4
     assert len(rest.channels[101]) == 1
     assert len(rest.channels[102]) == 3
@@ -933,7 +935,7 @@ def test_legacy_opening_card_marker_messages_are_still_recognised(monkeypatch):
     rest = Rest()
     ticket_doc = _ticket()
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
     assert rest.creates == 0
 
 
@@ -993,7 +995,7 @@ def test_main_ticket_staff_talking_points_match_legacy_byte_for_byte(monkeypatch
     ticket_doc = _ticket()
     ticket_doc["recruiter_role_id"] = 40
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
 
     messages = _staff_plain_messages(rest)
     assert len(messages) == 3
@@ -1030,7 +1032,7 @@ def test_fwa_ticket_staff_talking_points_include_donations_line(monkeypatch):
     )
     ticket_doc["recruiter_role_id"] = 40
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
 
     messages = _staff_plain_messages(rest)
     assert len(messages) == 4
@@ -1065,11 +1067,11 @@ def test_staff_talking_points_are_not_duplicated_on_recovery_rerun(monkeypatch):
     )
     ticket_doc["recruiter_role_id"] = 40
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
     first_pass_creates = rest.creates
     assert len(_staff_plain_messages(rest)) == 4
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
 
     assert rest.creates == first_pass_creates
     assert len(_staff_plain_messages(rest)) == 4
@@ -1084,7 +1086,7 @@ def test_staff_talking_points_never_reach_the_candidate_thread(monkeypatch):
     ticket_doc = _ticket()
     ticket_doc["recruiter_role_id"] = 40
 
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket_doc, mongo=opening_mongo(ticket_doc)))
 
     candidate_plain_messages = [
         message
@@ -2115,6 +2117,7 @@ def test_live_creation_queue_failure_resumes_without_duplicate_resources(monkeyp
         config=config,
         open_slot_claim=_slot_claim(),
     ))
+    assert first.ticket["opening_member_notification"] == {"state":"pending","user_id":30,"channel_id":101}
     assert first.delivery_pending is True
     assert creation_states.document["state"] == "delivery_pending"
     assert automation_states.documents == {}
@@ -2131,6 +2134,7 @@ def test_live_creation_queue_failure_resumes_without_duplicate_resources(monkeyp
         open_slot_claim=_slot_claim(),
     ))
     assert resumed.ticket["_id"] == first.ticket["_id"] == "ticket_101"
+    assert resumed.ticket["opening_member_notification"] == first.ticket["opening_member_notification"]
     assert resumed.resumed is True
     assert resumed.delivery_pending is False
     assert calls == {"claim": 1, "pair": 1, "insert": 1, "opening": 2}
@@ -4455,7 +4459,7 @@ def test_recruiter_ping_is_first_regular_message_and_recovery_does_not_repeat_it
     rest.pins = []
     ticket = _ticket()
     ticket.update(recruiter_role_id=40, candidate_recruiter_notification=True)
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7, mongo=opening_mongo(ticket)))
     candidate = rest.channels[101]
     assert len(candidate) == 3
     assert candidate[0].content == "<@&40> — a new applicant ticket is ready for your review."
@@ -4463,7 +4467,7 @@ def test_recruiter_ping_is_first_regular_message_and_recovery_does_not_repeat_it
     assert thread_service._is_candidate_welcome_card(candidate[1])
     assert "Clan Entry Ticket" in repr(candidate[2].components)
     counts = {key: len(messages) for key, messages in rest.channels.items()}
-    asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7))
+    asyncio.run(thread_service._deliver_opening_messages(rest, ticket, bot_id=7, mongo=opening_mongo(ticket)))
     assert {key: len(messages) for key, messages in rest.channels.items()} == counts
     assert len(rest.pins) == 1
 
