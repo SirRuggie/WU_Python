@@ -39,8 +39,36 @@ class IssuesTests(unittest.IsolatedAsyncioTestCase):
             raise RuntimeError('private token: dont-store-this')
         async def rejected(request):
             raise web.HTTPConflict(text='Please check your selection')
+        async def index_broken(request):
+            values = []
+            return values[0]
+        async def tuple_broken(request):
+            values = ()
+            return values[0]
+        async def chained(request):
+            body = await request.text()
+            try:
+                raise ValueError(request.query.get('code'))
+            except ValueError as cause:
+                raise RuntimeError(body) from cause
+        async def contextual(request):
+            body = await request.text()
+            try:
+                raise ValueError(request.query.get('code'))
+            except ValueError:
+                raise RuntimeError(body)
+        class HostileError(Exception):
+            def __str__(self):
+                raise AssertionError('Exception string must not be evaluated')
+        async def hostile(request):
+            raise HostileError(await request.text())
         self.app.router.add_get('/api/cwl/test/{account}', broken)
         self.app.router.add_post('/api/cwl/reject', rejected)
+        self.app.router.add_get('/api/cwl/index/{account}', index_broken)
+        self.app.router.add_get('/api/cwl/tuple/{account}', tuple_broken)
+        self.app.router.add_post('/api/cwl/chained/{account}', chained)
+        self.app.router.add_post('/api/cwl/contextual/{account}', contextual)
+        self.app.router.add_post('/api/cwl/hostile/{account}', hostile)
         self.client = TestClient(TestServer(self.app))
         await self.client.start_server()
         self.owner = self.auth('505227988229554179')
@@ -90,6 +118,52 @@ class IssuesTests(unittest.IsolatedAsyncioTestCase):
         response=await self.client.get('/api/cwl/test/account',headers=self.member)
         self.assertEqual(response.status,500)
         self.assertTrue((await response.json())['issue_reference'])
+
+    async def test_500_warning_has_reference_safe_index_message_and_frame_traceback(self):
+        for route, message, frame in [('index', 'list index out of range', 'index_broken'),
+                                      ('tuple', 'tuple index out of range', 'tuple_broken')]:
+            with self.assertLogs('dashboard.issues', level='WARNING') as captured:
+                response = await self.client.get(f'/api/cwl/{route}/PRIVATE_PATH?code=QUERY_SECRET', headers=self.member)
+            self.assertEqual(response.status, 500)
+            result = await response.json()
+            warnings = '\n'.join(captured.output)
+            traces = [record.getMessage() for record in captured.records if 'Traceback' in record.getMessage()]
+            self.assertEqual(len(traces), 1)
+            self.assertIn(result['issue_reference'], traces[0])
+            self.assertIn(result['issue_reference'], warnings)
+            self.assertIn('IndexError', warnings)
+            self.assertIn(message, warnings)
+            self.assertIn('Traceback', warnings)
+            self.assertIn(frame, warnings)
+            self.assertNotIn('PRIVATE_PATH', warnings)
+            self.assertNotIn('QUERY_SECRET', warnings)
+            self.assertNotIn('return values[0]', warnings)
+            self.assertTrue(all(record.levelname == 'WARNING' for record in captured.records))
+
+    async def test_500_warning_never_formats_secret_messages_chains_context_or_request_data(self):
+        secret = 'unlabelled-private-payload-273'
+        for route, kind in [('chained', 'RuntimeError'), ('contextual', 'RuntimeError'), ('hostile', 'HostileError')]:
+            with self.assertLogs('dashboard.issues', level='WARNING') as captured:
+                response = await self.client.post(f'/api/cwl/{route}/PRIVATE_PATH?code=CHAIN_SECRET',
+                                                 data=secret, headers=self.member)
+            self.assertEqual(response.status, 500)
+            result = await response.json()
+            warnings = '\n'.join(captured.output)
+            traces = [record.getMessage() for record in captured.records if 'Traceback' in record.getMessage()]
+            self.assertEqual(len(traces), 1)
+            self.assertIn(result['issue_reference'], traces[0])
+            self.assertIn(result['issue_reference'], warnings)
+            self.assertIn(kind, warnings)
+            self.assertIn('[redacted exception message]', warnings)
+            self.assertIn('Traceback', warnings)
+            self.assertNotIn(secret, warnings)
+            self.assertNotIn('CHAIN_SECRET', warnings)
+            self.assertNotIn('PRIVATE_PATH', warnings)
+            self.assertNotIn('Exception string must not be evaluated', warnings)
+            self.assertNotIn('raise RuntimeError(body)', warnings)
+            self.assertNotIn('During handling of the above exception', warnings)
+            self.assertNotIn('direct cause of the following exception', warnings)
+            self.assertTrue(all(record.exc_info is None for record in captured.records))
 
     async def test_profiles_only_include_affected_members_and_strip_roles(self):
         uid = '123456789012345678'

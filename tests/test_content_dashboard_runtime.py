@@ -630,7 +630,7 @@ def test_setup_posters_defer_before_storage_and_use_saved_text_without_mentions(
          ("Warriors United Family Particulars", "GOLDEN RULE", "FRIENDLY CHALLENGES", "CLAN GAMES", "Family War Rules", "WAR ELIGIBILITY", "PREP DAY", "BATTLE DAY", "Warriors United Clan War League", "Principles for Every CWL Battle", "ACKNOWLEDGMENT")),
     ],
 )
-def test_setup_posters_fall_back_from_malformed_saved_template(
+def test_setup_posters_reject_malformed_particulars_but_keep_other_fallbacks(
     key, command_type, builder, expected_total, expected_count, headings, monkeypatch
 ):
     async def check():
@@ -678,6 +678,10 @@ def test_setup_posters_fall_back_from_malformed_saved_template(
             mongo=SimpleNamespace(bot_config=Collection()),
         )
         creates = [event[1] for event in events if event[0] == "create"]
+        if key == "family-particulars":
+            assert not creates
+            assert any("ambiguous" in str(event[1]) for event in events if event[0] == "respond")
+            return
         assert len(creates) == 1
         create = creates[0]
         assert create["channel"] == 30

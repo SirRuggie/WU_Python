@@ -48,15 +48,26 @@ def snapshot(components):
     return {'text': texts, 'media': media}
 
 
-async def review(request, key):
+async def review(request, key, *, allow_ambiguous_display=False):
     from .server_management import mongo, discord
     from extensions.commands import content
+    from utils.gauntlet_content import layout_for, AMBIGUOUS_NOTICE
     if key not in content.DOCUMENTS or content.is_template_only(key):
         raise web.HTTPNotFound(text='This message is only used in private ticket panels')
     async with mongo(request) as db:
-        sections, media, revision = await content.template_for(db, content.DOCUMENTS[key], GUILD_ID)
-        from utils.gauntlet_content import layout_for, AMBIGUOUS_NOTICE
-        if layout_for(key, sections) == "ambiguous":
+        try:
+            options = {'allow_ambiguous_display': True} if allow_ambiguous_display else {}
+            sections, media, revision = await content.template_for(db, content.DOCUMENTS[key], GUILD_ID, **options)
+        except ValueError as error:
+            if key != 'family-particulars':
+                raise
+            message = 'The saved message is invalid. Reopen it for staff review.'
+            if (type(error) is ValueError and len(error.args) == 1
+                    and type(error.args[0]) is str and error.args[0] == AMBIGUOUS_NOTICE):
+                message = AMBIGUOUS_NOTICE
+            raise web.HTTPBadRequest(text=message) from None
+        ambiguous = layout_for(key, sections) == "ambiguous"
+        if ambiguous and not allow_ambiguous_display:
             raise web.HTTPBadRequest(text=AMBIGUOUS_NOTICE)
         destination = await content.destination_for(db, GUILD_ID, key)
         target = await content.published_for(db, GUILD_ID, key)
@@ -71,7 +82,7 @@ async def review(request, key):
             derived = {'rendered_snapshot': snapshot(rendered),
                        'rendered_preview': serialize_components(rendered, 'gauntlet--' + key)}
     live = None
-    if target:
+    if target and not ambiguous:
         post = await discord(request, 'GET', f"/channels/{target['channel_id']}/messages/{target['message_id']}")
         live = snapshot(post.get('components', []))
     return dict(document=key, template_revision=revision, template=fingerprint({'sections':sections,'media':media}), destination=destination, target=target, post=live, sections=sections, **derived)
@@ -82,8 +93,23 @@ async def page(request):
     from extensions.commands import content
     await require_manage(request, 'recruit')
     key = request.match_info['document']
-    data = await review(request, key)
-    fields = [{'key':f'section.{i}', 'label':label, 'type':'textarea', 'value':data['sections'][i], 'readonly':True} for i,label in content.editable_blocks(content.DOCUMENTS[key],data['sections'])]
+    data = await review(request, key, allow_ambiguous_display=True)
+    from utils.gauntlet_content import layout_for, logical_sections, AMBIGUOUS_NOTICE
+    if layout_for(key, data['sections']) == 'ambiguous':
+        # Raw display is safe only here. Queue review and the delivery worker
+        # keep rejecting ambiguous layouts before any durable or Discord effect.
+        fields = [{'key':f'section.{i}', 'label':f'Raw saved field {i + 1}',
+                   'type':'textarea', 'value':value, 'readonly':True}
+                  for i, value in enumerate(data['sections'])]
+        return web.json_response({
+            'id':'publish--'+key, 'label':'Publish '+content.DOCUMENTS[key].label,
+            'group':'Welcome messages', 'description':'Review the saved message.',
+            'warning':AMBIGUOUS_NOTICE, 'posting_channel':None, 'existing_channel':None,
+            'destination_editor':None, 'target_url':None, 'revision':fingerprint(data),
+            'fields':fields, 'readonly':True, 'actions':[],
+        })
+    displayed = logical_sections(key, data['sections']) if key in content.BOXES else data['sections']
+    fields = [{'key':f'section.{i}', 'label':label, 'type':'textarea', 'value':displayed[i], 'readonly':True} for i,label in content.editable_blocks(content.DOCUMENTS[key],data['sections'])]
     channel = data['destination'] or (data['target'] or {}).get('channel_id')
     fields.insert(0, {'key':'channel','label':'Posting channel','type':'text','value':str(channel or "Select a posting channel first"),'readonly':True})
     channel_name = None
@@ -98,7 +124,6 @@ async def page(request):
         if str(existing.get('guild_id')) != str(GUILD_ID):
             raise web.HTTPForbidden(text='The existing post is not in this server.')
         existing_channel = '#' + existing.get('name', str(data['target']['channel_id']))
-    from utils.gauntlet_content import layout_for
     writable = layout_for(key, data['sections']) == 'standard'
     actions = []
     for action, label, enabled in [('send','Send new post',writable and not _bound(key) and data['destination']), ('update','Update existing post',data['target'])]:

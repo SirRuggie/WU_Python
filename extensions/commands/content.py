@@ -62,6 +62,7 @@ DOCUMENTS = {
     "wu-faq": Document("wu-faq", "WU FAQ", None),
 }
 from utils.gauntlet_content import BOXES, LENGTHS, LEGACY_LENGTHS, sections_for as box_sections, validate_sections, project_public, merge_public, layout_for, layout_notice, logical_sections, require_writable, save_sections, LAYOUT_VERSION
+from utils.gauntlet_content import AMBIGUOUS_NOTICE
 
 BLOCK_LABELS = {
     "join-family": ("Heading", "Welcome", "What happens next", "Call to action"),
@@ -271,13 +272,23 @@ async def render(document: Document, sections, *, media=None, action_id="preview
     return components
 
 
-async def template_for(mongo, document: Document, guild_id: int):
-    """Read text, image overrides, and revision from the same stored version."""
+async def template_for(mongo, document: Document, guild_id: int, *, allow_ambiguous_display=False):
+    """Read one saved version; unknown Particulars layouts never become defaults.
+
+    Only the read-only Publish page opts into displaying unknown all-string list
+    lengths. Normal editor, queue, setup and worker reads reject those layouts.
+    The existing raw28/34 ambiguity handling remains unchanged.
+    """
     saved = await mongo.bot_config.find_one({"_id": f"content:{document.key}:{guild_id}"})
     if saved and isinstance(saved.get("sections"), list):
         try:
             media = normal_media(document, saved.get("media"))
             sections = list(saved["sections"])
+            if (document.key == "family-particulars" and all(isinstance(value, str) for value in sections)
+                    and len(sections) not in (28, 34)):
+                if allow_ambiguous_display:
+                    return sections, media, int(saved.get("revision", 0))
+                raise ValueError(AMBIGUOUS_NOTICE)
             if document.key in BOXES:
                 sections = box_sections(document.key, sections)
                 # An ambiguous legacy Strike split remains editable, not a
@@ -286,12 +297,19 @@ async def template_for(mongo, document: Document, guild_id: int):
                 await validate_template(document, sections, media=media)
             return sections, media, int(saved.get("revision", 0))
         except ValueError:
+            if document.key == "family-particulars":
+                # Invalid text/media and unsupported lengths must not silently
+                # substitute a publishable built-in template.
+                raise
             if document.key in LEGACY_LENGTHS and LEGACY_LENGTHS[document.key] < len(saved["sections"]) < LENGTHS[document.key]:
                 raise
             if document.key == "family-rules":
                 raise ValueError("The saved Family Rules are incomplete. Correct their heading and body before posting.") from None
-    elif saved and document.key == "family-rules":
-        raise ValueError("The saved Family Rules are incomplete. Correct their heading and body before posting.")
+    elif saved:
+        if document.key == "family-rules":
+            raise ValueError("The saved Family Rules are incomplete. Correct their heading and body before posting.")
+        if document.key == "family-particulars":
+            raise ValueError("The saved info document has invalid text. Reopen it for review.")
     if document.legacy_key:
         legacy = await mongo.bot_config.find_one({"_id": f"{document.legacy_key}:{guild_id}"})
         if legacy and isinstance(legacy.get("sections"), list):
