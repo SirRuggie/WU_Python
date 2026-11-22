@@ -41,7 +41,7 @@ class Records:
         self.queries = []
         self.pipeline = None
 
-    def find(self, query):
+    def find(self, query, projection=None, **kwargs):
         self.queries.append(query)
         return Cursor(self.rows)
 
@@ -63,7 +63,7 @@ class Profiles:
     def __init__(self, rows=None):
         self.rows = rows or []
 
-    def find(self, query):
+    def find(self, query, projection=None, **kwargs):
         return Cursor(self.rows)
 
 
