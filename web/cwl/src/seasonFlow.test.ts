@@ -32,7 +32,7 @@ it("confirms inheritance without guessing a count; first season starts empty", (
   );
 });
 it("asks to show and open a hidden season, in that order with both guards", async () => {
-  expect(signupPlan(season, state, "open").label).toBe("Show and open");
+  expect(signupPlan(season, state, "open").label).toBe("Show and open signups");
   await applySignupPlan(season, state, "open");
   expect(api.mock.calls).toEqual([
     ["/member-season", "PUT", { season_id: 2, revision: 7 }],

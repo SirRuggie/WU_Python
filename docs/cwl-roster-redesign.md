@@ -2113,3 +2113,115 @@ doc-only 4px typo). Success appears once. No schema, policy or request-body chan
 Source implementation is pending review/release; Shaka 1308 accepts the owner's
 phone screenshots as BEFORE and one reduced AFTER pass. Unused roster selection
 fill remains for later cleanup; moderation source is protected in this batch.
+
+## Decisions — Season lifecycle (2026-11-22)
+
+Status: Season lifecycle 274 implementation for review; not released.
+
+**D1 — Seasons page layout.** One main card for the member season (the season in `member_season`), always,
+whatever any menu selects. It shows the lifecycle steps in order: Shown to members → Signups open →
+Signups closed → Published → Locked. Mark done / current / not reached. One gold primary button for the next
+step. No season menu at the top of this page.
+
+**D2 — Open / Close signups.** The main card's next-step button is "Open signups" or "Close signups" when that is
+the next step. If the member season is not shown to members, the button is "Show and open signups". Reuse
+`useSignupAction` / `signupPlan` / `applySignupPlan` and the existing confirm dialog — no new write path, same
+revision checks (`expected_signup_open`, member-season revision). Keep the Build roster sliders icon as a
+second path with the same dialog. Remove the dead `!onClans` condition so the control is no longer hidden.
+
+**D3 — Finish becomes Start.** Rename "Finish <member month>" to "Start <next month>" (e.g. "Start January 2027").
+One line under it: "Members see January 2027. December stays saved." It sits in a "Next month" section. It is the
+gold primary only when the member season's roster is published (all pools that have signups); before that it is a
+secondary button. The confirm dialog keeps the "Open January 2027 signups now" checkbox.
+
+**D4 — Signup-open reminder while the season is closed (backend; Ruggie approved this backend change).**
+Before the campaign's `signup` message delivers, read the member season. If `signup_open` is false or the season
+is not `draft`:
+
+- Do not post the message. Record a durable "held: signups closed" status for that occurrence (visible in the
+  Signup Reminders schedule/history and the reminder status API).
+- Alert staff once per held occurrence. Use an existing staff alert destination for CWL reminders if one exists.
+  If none exists, show the alert on the dashboard only (Seasons card + Signup Reminders) and post a QUESTION
+  entry naming the gap. Do not invent a channel.
+- When staff open signups for that season, deliver the held message once, through the existing claim /
+  receipt path (no duplicate if Discord may already have accepted it; never auto-retry an uncertain send).
+- Never open signups automatically. Never write `signup_open` from the worker.
+- Only the `signup` message is gated. Reminders 1–N and closing messages are unchanged.
+- Seasons main card warns while a held or upcoming signup message exists and signups are closed:
+  "Signups open message at <local time> will wait. Signups are closed." Use the reminder status the dashboard
+  already reads (`manage_reminders` response); extend that response only as needed for this.
+  Hook point to inspect first: `extensions/tasks/cwl_reminder.py` (`_deliver_campaign_message`,
+  `_sequence_delivery_blocked`, claim/receipt helpers), `cwl_web/manage_reminders.py`.
+
+**D5 — Home when signups are closed.** In My accounts, when `memberSignupsOpen(season)` is false: hide the
+checkboxes, "Select accounts not signed up", Clear, and the Main/Lazy buttons. Show one line at the top:
+"Signups are closed." Add "Opens <local date, time>" only when a future signup-open time is known from data the
+page already has (do not add a new fetch for it). Accounts, saved signups and clan assignments stay visible.
+
+**D6 — Lock is automatic.** "Start <next month>" also locks the old member month (existing
+`PATCH /seasons/{id}` `{status: "archived"}`) as the last step of `finishMonth`, after create → show → optional
+open succeed. Remove the separate "Lock <month>" button. Older seasons become a short read-only list under the
+main card (month + Locked / Not locked). Before Start, if the old month's results or bonuses are not finished,
+the dialog lists them, says "Finish these first", and the confirm button is disabled. Use status the frontend
+already receives (e.g. the bonus workspace "waiting" state). **If no existing endpoint reports that status, STOP
+and post BLOCKED — a new endpoint needs Ruggie's approval.** Partial-failure reporting keeps the current
+"Done: … Not done: …" pattern, now including the lock step.
+
+**D7 — Closed card style.** The Sign up page "Signups closed" card uses the shared `.card` (same as other
+dashboard cards) with a gold title. Remove the grey raised surface, muted border and the olive left edge (trace
+which rule draws it, including tour/`data-tour-target` styles). The D5 "Signups are closed" line on Home uses the
+same style. Show any removal of gold in the report (none expected).
+
+**D8 — Sign up account order.** On the Sign up page account list (`visibleAccounts` / `matchingAccounts`, built
+from `unsignedAccounts` in `signup.ts`, used in `App.tsx` ~590), sort by Town Hall high → low, then name
+(case-insensitive), accounts with no Town Hall last. Search and "Select all matching" keep this order. Sort in one
+shared helper; do not change the API order elsewhere.
+
+**D9 — Show more instead of pages.** On the Sign up page account list, remove "Previous accounts" / "Next accounts"
+/ "Page N of M". Show the first 10. One button under the list: "Show 10 more · N remaining"; when fewer than 10
+remain it reads "Show N more"; it goes away when all show. Search, pool change or account refresh reset to the
+first 10. Selections (including ones not yet shown) stay, and "Selections across all pages" becomes
+"Selections across the full list". After a press, focus moves to the first newly shown account. Reuse the pattern in
+`BonusAccountList.tsx` ("Show 20 more · N remaining").
+
+**D10 — Every page opens on the newest season.** Ruggie: "All pages that use seasons should open on newest season".
+Cause: `monthSeasons` and `defaultStaffSeason` (`web/cwl/src/seasonLabels.ts`) sort by `seasonCycle`, which reads only
+`cwl_month` or a `YYYY-MM` label. Production season 5 is labelled "December 2026" with no `cwl_month`, so it sorts
+last and the default picks November. Fix:
+
+- Sort with `seasonMonth` (which also parses "<Month name> YYYY"), newest first, ties by higher id. Seasons with no
+  month go last.
+- `defaultStaffSeason` returns the newest season by that order, skipping `history_only`. Use it on every page that
+  has a Season menu or a default season (Build roster, Seasons older list, Results/bonus, Exports, Announcements,
+  Participation, and any other caller of `defaultStaffSeason` / `monthSeasons`; scout them all).
+- A season the user selects stays selected until reload; a deep link with `?season=` still wins.
+- Tests: "December 2026" (no cwl_month) sorts above "2026-11"-bound November and is the default; history_only skipped;
+  manual selection kept; deep link kept.
+
+Implementation clarifications accepted by Shaka1343: only an explicit null member
+pointer uses the newest non-history, non-archived month. A missing referenced ID
+shows unavailable/Refresh without guessing; no eligible month keeps the existing
+Create flow. The alert destination gap is accepted as dashboard only; no channel
+or configuration is invented. Source tests and isolated fixture captures are
+recorded in the review artifact; no live delivery or physical-device proof is
+implied. Release status is updated only when this work actually ships.
+
+D3 review clarification (Shaka1347): Start is gold when the member season has an
+existing published version greater than zero; otherwise it is secondary. The
+all-populated-pools-published refinement is not implemented because the existing
+read has no per-pool publication coverage. There is no publication GET extension,
+new endpoint, schema or additional publication policy; draft differences do not
+by themselves unpublish the member roster.
+
+Accepted review limits (Shaka1348): Start uses a fresh member-season read before
+locking; the read and archive PATCH are not atomic, so two staff acting in the
+same seconds can still archive the current member season. No backend archive
+policy or endpoint was extended. Unknowable prior lifecycle steps say “Not
+recorded”; known completed, current and future steps retain Done, Current and Not
+reached. An unfinished Start retains only its explicit operation context in this
+tab, scoped to the signed-in staff member, and offers a confirmed Retry Start;
+refresh does not silently advance to another month or automatically retry a write.
+
+D10 changes Season menus and defaults only. Existing date-range exports still
+require a backend-resolved CWL month or ISO month label; the English month-name
+default does not add date-range export availability.

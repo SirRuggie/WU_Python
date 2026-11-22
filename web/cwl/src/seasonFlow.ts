@@ -1,3 +1,4 @@
+import { loadLifecycleReadiness } from "./seasonLifecycle";
 import { api, ApiError, type Season } from "./api";
 import { seasonMonth, seasonMonthLabel } from "./seasonLabels";
 export type SeasonState = {
@@ -22,7 +23,7 @@ export function signupPlan(
       : fix
         ? "Show to members"
         : hidden
-          ? "Show and open"
+          ? "Show and open signups"
           : "Open signups",
     text: close
       ? `Close Main and Lazy signups for ${season.label}? Existing signups will stay saved. The season stays visible to members.`
@@ -91,11 +92,24 @@ export async function finishMonth(
   const create = `create ${name}`;
   const show = `show ${name} to members`;
   const open = `open ${name} signups`;
+  const lock = "lock the previous month";
   const done: string[] = [];
-  let steps = [create, show, ...(openSignups ? [open] : [])];
+  let steps = [create, show, ...(openSignups ? [open] : []), lock];
   const stale = new Error("Changed by someone else. Refresh and try again.");
   try {
     let state = await api<SeasonState>("/seasons");
+    const old = state.seasons.find((season) => season.id === seen.season_id);
+    if (!old)
+      throw new Error(
+        "Member season unavailable. Refresh before starting next month.",
+      );
+    if (old.status !== "archived") {
+      const readiness = await loadLifecycleReadiness(old.id);
+      if (readiness.blockers.length)
+        throw new Error(
+          `Finish these first: ${readiness.blockers.join(", ")}.`,
+        );
+    }
     let next = state.seasons.find((item) => seasonMonth(item) === cycle);
     const shown = state.member_season.season_id;
     if (shown !== seen.season_id && shown !== next?.id) throw stale;
@@ -120,8 +134,21 @@ export async function finishMonth(
       });
     }
     if (openSignups) done.push(open);
+    const finalState = await api<SeasonState>("/seasons");
+    if (finalState.member_season.season_id !== next.id) throw stale;
+    const prior = finalState.seasons.find((season) => season.id === old.id);
+    if (!prior) throw stale;
+    if (prior.status !== "archived") {
+      const readiness = await loadLifecycleReadiness(old.id);
+      if (readiness.blockers.length)
+        throw new Error(
+          `Finish these first: ${readiness.blockers.join(", ")}.`,
+        );
+      await api(`/seasons/${old.id}`, "PATCH", { status: "archived" });
+    }
+    done.push(lock);
   } catch (cause) {
-    if (cause === stale) throw cause;
+    if (cause === stale && done.length === 0) throw cause;
     const reason = cause instanceof Error ? cause.message : "Request failed.";
     const left = steps.filter((step) => !done.includes(step));
     throw new Error(

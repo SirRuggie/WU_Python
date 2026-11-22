@@ -34,6 +34,12 @@ export function reminderStatusLabel(status?: string) {
     case "scheduled":
     case "pending":
       return "Upcoming";
+    case "waiting_state":
+      return "Waiting: season status unavailable";
+    case "waiting_member":
+      return "Waiting: member month";
+    case "held":
+      return "Held: signups closed";
     case "sent":
       return "Sent";
     case "skipped":

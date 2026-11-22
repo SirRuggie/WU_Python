@@ -1,4 +1,10 @@
 import {
+  clearStartOperation,
+  readStartOperation,
+  saveStartOperation,
+  type StartOperation,
+} from "./seasonStartRecovery";
+import {
   monthSeasons,
   nextMonthCycle,
   seasonMonth,
@@ -6,17 +12,22 @@ import {
 } from "./seasonLabels";
 import CwlPageHeader from "./CwlPageHeader";
 import CwlNextLink from "./CwlNextLink";
-import StaffSignupControls from "./StaffSignupControls";
+import useSignupAction from "./useSignupAction";
+import {
+  lifecycleSeason,
+  lifecycleStepStates,
+  loadLifecycleReadiness,
+  type LifecycleReadiness,
+} from "./seasonLifecycle";
+import { signupGateWarning, type CampaignState } from "./reminderCampaign";
 import { useEffect, useRef, useState } from "react";
 import LoadError from "./LoadError";
 import { Plus } from "lucide-react";
 import "./SeasonsPage.css";
 import { api, type Season } from "./api";
-import { Button, Input, StatusPill } from "./rosterUi/primitives";
-import RosterMenu from "./rosterUi/Menu";
+import { Button, Input } from "./rosterUi/primitives";
 import ConfirmDialog from "./ConfirmDialog";
 import CwlPoolRoles from "./CwlPoolRoles";
-import MemberSeasonSettings from "./MemberSeasonSettings";
 import {
   createSeasonConfirmation,
   createdSeasonMessage,
@@ -26,6 +37,7 @@ import {
 import { useDashboardPermission } from "./DashboardPermissions";
 
 type Props = {
+  actorId?: string;
   seasonId: string;
   seasons: Season[];
   memberSeason: SeasonState["member_season"];
@@ -36,6 +48,7 @@ type Props = {
   onDirty?: (value: boolean) => void;
 };
 export default function SeasonsPage({
+  actorId = "",
   seasonId,
   seasons,
   memberSeason,
@@ -46,15 +59,42 @@ export default function SeasonsPage({
   onDirty,
 }: Props) {
   const allowed = useDashboardPermission("cwl_settings");
-  const season = seasons.find((item) => String(item.id) === seasonId);
-  const hiddenOpen =
-    !!season?.signup_open && memberSeason.season_id !== season?.id;
+  const season = lifecycleSeason(seasons, memberSeason.season_id);
   const [label, setLabel] = useState("");
   const [createLabel, setCreateLabel] = useState<string | null>(null);
-  const [finishing, setFinishing] = useState(false);
-  const [openSignups, setOpenSignups] = useState(false);
-  const [locking, setLocking] = useState(false);
-  const [visibility, setVisibility] = useState<"show" | "hide" | null>(null);
+  const [startReview, setStartReview] = useState<StartOperation | null>(null);
+  const [recovery, setRecovery] = useState<StartOperation | null>(() =>
+    actorId ? readStartOperation(actorId) : null,
+  );
+  const [startReadiness, setStartReadiness] =
+    useState<LifecycleReadiness | null>(null);
+  const [startReadError, setStartReadError] = useState("");
+  useEffect(() => {
+    setStartReview(null);
+    if (!allowed) {
+      clearStartOperation(actorId);
+      setRecovery(null);
+    } else setRecovery(actorId ? readStartOperation(actorId) : null);
+  }, [actorId, allowed]);
+  useEffect(() => {
+    let active = true;
+    setStartReadiness(null);
+    setStartReadError("");
+    if (startReview)
+      void loadLifecycleReadiness(startReview.seen.season_id)
+        .then((value) => {
+          if (active) setStartReadiness(value);
+        })
+        .catch(() => {
+          if (active)
+            setStartReadError(
+              "Season status unavailable. Refresh before retrying.",
+            );
+        });
+    return () => {
+      active = false;
+    };
+  }, [startReview?.seen.season_id, startReview?.cycle]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [refreshFailed, setRefreshFailed] = useState(false);
@@ -62,13 +102,16 @@ export default function SeasonsPage({
   const pending = useRef(false);
   const createdId = useRef("");
   const [roleBusy, setRoleBusy] = useState(false);
-  const [signupBusy, setSignupBusy] = useState(false);
   const [roleDirty, setRoleDirty] = useState(false);
-  const [signupDirty, setSignupDirty] = useState(false);
   const current = seasons.find((item) => item.id === memberSeason.season_id);
-  const currentMonth = current ? seasonMonth(current) : "";
   // One target month: the month after the member season, else after the newest.
-  const target = nextMonthCycle(currentMonth ? [current!] : seasons);
+  const target = nextMonthCycle(
+    season
+      ? [season]
+      : seasons.filter(
+          (item) => !item.history_only && item.status !== "archived",
+        ),
+  );
   const targetName = seasonMonthLabel({ label: target });
   const targetSeason = seasons.find((item) => seasonMonth(item) === target);
   const canCreate = !targetSeason;
@@ -76,18 +119,53 @@ export default function SeasonsPage({
     !!current &&
     (!targetSeason ||
       (targetSeason.id !== current.id && targetSeason.status !== "archived"));
-  const canLock =
-    !!season &&
-    !!currentMonth &&
-    season.status !== "archived" &&
-    season.id !== memberSeason.season_id &&
-    !!seasonMonth(season) &&
-    seasonMonth(season) < currentMonth;
-  const working = busy || roleBusy || signupBusy;
+  const signup = useSignupAction(season, onRefresh);
+  const [readEpoch, setReadEpoch] = useState(0);
+  const [readiness, setReadiness] = useState<LifecycleReadiness | null>(null);
+  const [readError, setReadError] = useState("");
+  const [reminders, setReminders] = useState<CampaignState | null>(null);
   useEffect(() => {
-    onDirty?.(roleDirty || signupDirty || !!label.trim());
+    let active = true;
+    setReadiness(null);
+    setReminders(null);
+    setReadError("");
+    if (!season || !allowed) return;
+    void loadLifecycleReadiness(season.id)
+      .then((value) => {
+        if (active) setReadiness(value);
+      })
+      .catch(() => {
+        if (active)
+          setReadError(
+            "Season status unavailable. Refresh before starting next month.",
+          );
+      });
+    void api<CampaignState>(`/seasons/${season.id}/manage-reminders`)
+      .then((value) => {
+        if (active) setReminders(value);
+      })
+      .catch(() => {});
+    return () => {
+      active = false;
+    };
+  }, [
+    season?.id,
+    season?.signup_open,
+    season?.status,
+    memberSeason.revision,
+    allowed,
+    readEpoch,
+  ]);
+  const warning =
+    reminders?.signup_gate?.season_id === season?.id ||
+    reminders?.signup_gate?.status === "unavailable"
+      ? signupGateWarning(reminders)
+      : "";
+  const working = busy || roleBusy || signup.busy;
+  useEffect(() => {
+    onDirty?.(roleDirty || !!label.trim());
     return () => onDirty?.(false);
-  }, [roleDirty, signupDirty, label, onDirty]);
+  }, [roleDirty, label, onDirty]);
   useEffect(() => {
     onBusy(working);
     return () => onBusy(false);
@@ -132,93 +210,40 @@ export default function SeasonsPage({
     }
   }
   async function finish() {
-    if (pending.current || !allowed || !current) return;
+    if (pending.current || !allowed || !startReview) return;
+    const operation = startReview;
+    if (!saveStartOperation(operation)) {
+      setError(
+        "Could not retain the Start request in this tab. No changes made.",
+      );
+      return;
+    }
     pending.current = true;
+    setRecovery(operation);
     setBusy(true);
     setError("");
     setRefreshFailed(false);
-    setFinishing(false);
-    const openNow = openSignups;
-    setOpenSignups(false);
+    setStartReview(null);
     try {
-      await finishMonth(target, openNow, {
-        season_id: memberSeason.season_id,
-        revision: memberSeason.revision,
-      });
+      await finishMonth(operation.cycle, operation.openSignups, operation.seen);
+      clearStartOperation(actorId);
+      setRecovery(null);
       setNotice(
-        `${targetName} is shown to members${openNow ? " and signups are open" : ""}.`,
+        `${seasonMonthLabel({ label: operation.cycle })} is shown to members${operation.openSignups ? " and signups are open" : ""}. The previous month is locked.`,
       );
     } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not finish the month.",
-      );
+      const error =
+        cause instanceof Error ? cause.message : "Could not start the month.";
+      const retained = { ...operation, error };
+      saveStartOperation(retained);
+      setRecovery(retained);
+      setError(error);
     } finally {
       try {
         await onRefresh();
       } catch {
         setError((value) =>
           `${value} The season list could not refresh.`.trim(),
-        );
-        setRefreshFailed(true);
-      }
-      pending.current = false;
-      setBusy(false);
-    }
-  }
-  async function lock() {
-    if (pending.current || !allowed || !canLock || !season) return;
-    pending.current = true;
-    setBusy(true);
-    setError("");
-    setRefreshFailed(false);
-    setLocking(false);
-    try {
-      await api(`/seasons/${season.id}`, "PATCH", { status: "archived" });
-      setNotice(`${seasonMonthLabel(season)} is locked.`);
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not lock season.",
-      );
-    } finally {
-      try {
-        await onRefresh();
-      } catch {
-        setError((value) =>
-          `${value} The season list could not refresh.`.trim(),
-        );
-        setRefreshFailed(true);
-      }
-      pending.current = false;
-      setBusy(false);
-    }
-  }
-  async function setVisible() {
-    if (!visibility || pending.current || !allowed) return;
-    const target = visibility === "show" ? season?.id : null;
-    if (target === undefined) return;
-    pending.current = true;
-    setBusy(true);
-    setError("");
-    setRefreshFailed(false);
-    setVisibility(null);
-    try {
-      await api("/member-season", "PUT", {
-        season_id: target,
-        revision: memberSeason.revision,
-      });
-      setNotice(
-        target ? "Member season updated." : "CWL season hidden from members.",
-      );
-    } catch (cause) {
-      setError(
-        cause instanceof Error ? cause.message : "Could not change visibility.",
-      );
-    } finally {
-      try {
-        await onRefresh();
-      } catch {
-        setError((current) =>
-          `${current} The season list could not refresh.`.trim(),
         );
         setRefreshFailed(true);
       }
@@ -227,13 +252,14 @@ export default function SeasonsPage({
     }
   }
   async function retryRefresh() {
-    if (pending.current) return;
+    if (pending.current || signup.busy || roleBusy) return;
     pending.current = true;
     setBusy(true);
     setError("");
     setRefreshFailed(false);
     try {
       await onRefresh();
+      setReadEpoch((value) => value + 1);
       if (createdId.current) {
         const created = createdId.current;
         createdId.current = "";
@@ -250,21 +276,20 @@ export default function SeasonsPage({
   return (
     <section className="roster-ui seasons-page">
       <CwlPageHeader title={<h1>Seasons</h1>}>
-        <RosterMenu
-          label="Season"
-          value={seasonId}
+        <Button
+          variant="secondary"
           disabled={working}
-          options={monthSeasons(seasons).map((item) => ({
-            value: String(item.id),
-            label: seasonMonthLabel(item),
-          }))}
-          onValueChange={onSeasonChange}
-        />
+          onClick={() => void retryRefresh()}
+        >
+          Refresh
+        </Button>
       </CwlPageHeader>
       <LoadError
-        message={error}
+        message={error || readError}
         disabled={working}
-        onRetry={refreshFailed ? () => void retryRefresh() : undefined}
+        onRetry={
+          refreshFailed || readError ? () => void retryRefresh() : undefined
+        }
       />
       {notice && (
         <p className="notice success" role="status">
@@ -272,34 +297,96 @@ export default function SeasonsPage({
         </p>
       )}
       <div className="card">
-        <MemberSeasonSettings
-          selected={season}
-          active={seasons.find((item) => item.id === memberSeason.season_id)}
-          busy={working || !allowed}
-          onShow={() => setVisibility("show")}
-          onHide={() => setVisibility("hide")}
-        />
+        <h2>
+          {season
+            ? seasonMonthLabel(season)
+            : memberSeason.season_id !== null
+              ? "Member season unavailable"
+              : "No season"}
+        </h2>
+        {!season && memberSeason.season_id !== null && (
+          <p role="alert">Refresh before changing the member season.</p>
+        )}
         {season && (
-          <div className="staff-row">
-            <StatusPill
-              tone={hiddenOpen || !season.signup_open ? "warning" : "success"}
-            >
-              {season.signup_open ? "Signups open" : "Signups closed"}
-              {hiddenOpen && " · not visible to members"}
-            </StatusPill>
-            {canLock && allowed && (
-              <Button
-                variant="secondary"
-                disabled={working}
-                onClick={() => setLocking(true)}
-              >
-                {`Lock ${seasonMonthLabel(season)}`}
-              </Button>
+          <>
+            <p>
+              {memberSeason.season_id === season.id
+                ? "Shown to members"
+                : "Not shown to members"}
+            </p>
+            <ol className="season-lifecycle" aria-label="Season steps">
+              {lifecycleStepStates(
+                season,
+                memberSeason.season_id === season.id,
+                !!readiness?.published,
+              ).map((step) => (
+                <li
+                  key={step.label}
+                  aria-current={step.state === "Current" ? "step" : undefined}
+                >
+                  {step.label} · {step.state}
+                </li>
+              ))}
+            </ol>
+            {warning && (
+              <p className="notice warning" role="status">
+                {warning}
+              </p>
             )}
-          </div>
+            {allowed &&
+              season.status !== "archived" &&
+              (!readiness?.published ||
+                memberSeason.season_id !== season.id) && (
+                <Button
+                  variant="primary"
+                  disabled={working}
+                  onClick={() =>
+                    void signup.begin(
+                      memberSeason.season_id !== season.id && season.signup_open
+                        ? "fix"
+                        : season.signup_open
+                          ? "close"
+                          : "open",
+                    )
+                  }
+                >
+                  {memberSeason.season_id !== season.id
+                    ? "Show and open signups"
+                    : season.signup_open
+                      ? "Close signups"
+                      : "Open signups"}
+                </Button>
+              )}
+            {signup.visibilityCheck}
+            {signup.error && <p role="alert">{signup.error}</p>}
+            {signup.notice && <p role="status">{signup.notice}</p>}
+          </>
         )}
       </div>
-      {allowed && (
+      {seasons.some(
+        (item) =>
+          item.id !== season?.id &&
+          (!season || seasonMonth(item) < seasonMonth(season)),
+      ) && (
+        <section aria-label="Older seasons">
+          <h2>Older seasons</h2>
+          <ul>
+            {monthSeasons(seasons)
+              .filter(
+                (item) =>
+                  item.id !== season?.id &&
+                  (!season || seasonMonth(item) < seasonMonth(season)),
+              )
+              .map((item) => (
+                <li key={item.id}>
+                  {seasonMonthLabel(item)} ·{" "}
+                  {item.status === "archived" ? "Locked" : "Not locked"}
+                </li>
+              ))}
+          </ul>
+        </section>
+      )}
+      {allowed && (memberSeason.season_id === null || !!current) && (
         <div className="card">
           <h2>Next month</h2>
           <div className="staff-row">
@@ -315,14 +402,27 @@ export default function SeasonsPage({
             )}
             {canFinish && current && (
               <Button
-                variant="primary"
-                disabled={working}
-                onClick={() => setFinishing(true)}
+                variant={readiness?.published ? "primary" : "secondary"}
+                disabled={working || !!recovery}
+                onClick={() =>
+                  setStartReview({
+                    actor: actorId,
+                    cycle: target,
+                    openSignups: false,
+                    seen: {
+                      season_id: current.id,
+                      revision: memberSeason.revision,
+                    },
+                  })
+                }
               >
-                {`Finish ${seasonMonthLabel(current)}`}
+                {`Start ${targetName}`}
               </Button>
             )}
           </div>
+          {current && (
+            <p>{`Members see ${targetName}. ${seasonMonthLabel(current)} stays saved.`}</p>
+          )}
           <details>
             <summary>Other name</summary>
             <form
@@ -372,64 +472,63 @@ export default function SeasonsPage({
           disabled={working || !allowed}
         />
       )}
-      {finishing && current && (
+      {recovery && (
+        <section className="card" aria-label="Unfinished Start">
+          <h2>{`Unfinished Start ${seasonMonthLabel({ label: recovery.cycle })}`}</h2>
+          <p>{recovery.error || "Check the saved steps before retrying."}</p>
+          <Button
+            variant="secondary"
+            disabled={working || !allowed}
+            onClick={() => setStartReview(recovery)}
+          >
+            {`Retry Start ${seasonMonthLabel({ label: recovery.cycle })}`}
+          </Button>
+        </section>
+      )}
+      {startReview && (
         <ConfirmDialog
-          heading={`Finish ${seasonMonthLabel(current)}`}
-          text={`${targetSeason ? "" : `Create ${targetName} with the hosting clans from the previous season. `}Show ${targetName} to members.`}
-          confirmLabel="Finish"
-          onCancel={() => {
-            setFinishing(false);
-            setOpenSignups(false);
-          }}
+          heading={`${recovery ? "Retry Start" : "Start"} ${seasonMonthLabel({ label: startReview.cycle })}`}
+          text={`Show ${seasonMonthLabel({ label: startReview.cycle })} to members, then lock the previous month. Completed steps stay saved.`}
+          confirmLabel={`${recovery ? "Retry Start" : "Start"} ${seasonMonthLabel({ label: startReview.cycle })}`}
+          onCancel={() => setStartReview(null)}
           onConfirm={() => void finish()}
-          disabled={working || !allowed}
+          disabled={
+            working ||
+            !allowed ||
+            !startReadiness ||
+            startReadiness.blockers.length > 0 ||
+            !!startReadError
+          }
         >
+          {(!startReadiness ||
+            startReadError ||
+            startReadiness.blockers.length > 0) && (
+            <div role="alert">
+              <strong>Finish these first</strong>
+              <p>
+                {startReadError ||
+                  (!startReadiness
+                    ? "Checking results and bonuses…"
+                    : startReadiness.blockers.join(", "))}
+              </p>
+            </div>
+          )}
           <label>
             <input
               type="checkbox"
-              checked={openSignups}
-              onChange={(event) => setOpenSignups(event.target.checked)}
-            />{" "}
-            {`Open ${targetName} signups now`}
+              checked={startReview.openSignups}
+              onChange={(event) =>
+                setStartReview({
+                  ...startReview,
+                  openSignups: event.target.checked,
+                })
+              }
+            />
+            {`Open ${seasonMonthLabel({ label: startReview.cycle })} signups now`}
           </label>
         </ConfirmDialog>
       )}
-      {locking && season && (
-        <ConfirmDialog
-          heading={`Lock ${seasonMonthLabel(season)}`}
-          text="It becomes read-only. Results, bonuses and roster edits are blocked."
-          confirmLabel="Lock season"
-          danger
-          onCancel={() => setLocking(false)}
-          onConfirm={() => void lock()}
-          disabled={working || !allowed}
-        />
-      )}
-      {visibility && (
-        <ConfirmDialog
-          heading="Season visibility"
-          text={
-            visibility === "show"
-              ? `Show ${season?.label} to members?`
-              : "Hide the current season from members? Signups and assignments stay saved."
-          }
-          confirmLabel={
-            visibility === "show" ? "Show to members" : "Hide season"
-          }
-          onCancel={() => setVisibility(null)}
-          onConfirm={() => void setVisible()}
-          disabled={working || !allowed}
-        />
-      )}
-      {season && allowed && !onClans && (
-        <StaffSignupControls
-          season={season}
-          onChanged={async () => onRefresh()}
-          onBusy={setSignupBusy}
-          onDirty={setSignupDirty}
-          disabled={busy || roleBusy}
-        />
-      )}
+      {signup.dialog}
       <CwlPoolRoles onBusy={setRoleBusy} onDirty={setRoleDirty} />
       <CwlNextLink
         label="Build roster"

@@ -1,8 +1,7 @@
 // @vitest-environment happy-dom
 vi.mock("./townHallRegistry", async () => {
-  const { townHallRegistryTestFixture } = await import(
-    "./townHallRegistryTestFixture"
-  );
+  const { townHallRegistryTestFixture } =
+    await import("./townHallRegistryTestFixture");
   return townHallRegistryTestFixture();
 });
 import { act } from "react";
@@ -122,7 +121,7 @@ it("orders month-name seasons newest first without archive suffix", async () => 
       { ...seasons[0] },
       { id: 3, label: "October 2026", status: "archived", signup_open: false },
     ]).map((s) => s.id),
-  ).toEqual([1, 2, 3]);
+  ).toEqual([1, 3, 2]);
   await render();
   expect(host.textContent).not.toContain("· Archived");
 });

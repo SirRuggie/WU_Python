@@ -60,6 +60,22 @@ def test_monthly_rule_rejects_both_date_choices():
         cwl_campaign.validate_campaign(campaign)
 
 
+class MemoryCursor:
+    def __init__(self, documents):
+        self.documents = documents
+
+    def sort(self, key, direction):
+        self.documents.sort(key=lambda row: row[key], reverse=direction < 0)
+        return self
+
+    def limit(self, count):
+        self.documents = self.documents[:count]
+        return self
+
+    async def to_list(self, length=None):
+        return deepcopy(self.documents[:length] if length is not None else self.documents)
+
+
 class MemoryCollection:
     """Small Mongo-compatible store for campaign integration boundaries."""
 
@@ -88,6 +104,11 @@ class MemoryCollection:
             actual = cls._path(document, key, missing)
             if isinstance(expected, dict) and "$exists" in expected:
                 if (actual is not missing) != bool(expected["$exists"]):
+                    return False
+                if "$ne" in expected and actual == expected["$ne"]:
+                    return False
+            elif isinstance(expected, dict) and "$gt" in expected:
+                if actual is missing or actual <= expected["$gt"]:
                     return False
             elif isinstance(expected, dict) and "$lte" in expected:
                 if actual is missing or actual > expected["$lte"]:
@@ -156,7 +177,7 @@ class MemoryCollection:
                 {key: value for key, value in row.items() if key in included}
                 for row in documents
             ]
-        return SimpleNamespace(to_list=AsyncMock(return_value=documents))
+        return MemoryCursor(documents)
 
     async def update_one(self, query, update, upsert=False):
         document = None
@@ -642,6 +663,14 @@ def test_manual_legacy_announcement_does_not_activate_dashboard_scheduler(monkey
         )
         scheduler.add_job(lambda: None, id=cwl_reminder.cwl_base_job_id)
         cycle = pendulum.now("America/New_York").format("YYYY-MM")
+        # This existing transport/scheduler test explicitly supplies a known-open
+        # WU member month. Gate/closed/unavailable behavior uses real encoded SQL
+        # snapshots in test_season_lifecycle274, not a global always-open stub.
+        from utils import cwl_dashboard_state
+        monkeypatch.setattr(cwl_dashboard_state, "read_member_signup_state", AsyncMock(return_value={
+            "season_id": 1, "revision": 1, "cycle": cycle,
+            "signup_open": True, "status": "draft",
+        }))
         loaded = await cwl_campaign.load_campaign(mongo, guild_id, cycle)
 
         assert await cwl_reminder.send_campaign_message(

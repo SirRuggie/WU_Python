@@ -2,6 +2,9 @@ type Entry = Record<string, unknown>;
 
 const statusNames: Record<string, string> = {
   sent: "Sent",
+  held: "Held: signups closed",
+  waiting_state: "Waiting: season status unavailable",
+  waiting_member: "Waiting: member month",
   failed: "Failed",
   uncertain: "Check Discord",
   deleted_confirmed: "Post deleted",
