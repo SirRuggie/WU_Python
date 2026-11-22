@@ -11,6 +11,30 @@ from utils.dashboard_issues import IssueRepository
 log = logging.getLogger('dashboard.issues')
 
 
+def _warning_exception(reference, error):
+    """Keep useful structural diagnostics without formatting arbitrary values.
+
+    Only exact builtin IndexError constants are safe to retain. Other messages
+    may contain request/provider bodies or credentials, including through a
+    hostile __str__. Frame metadata is logged without source lines, locals,
+    exception cause/context or raw exc_info.
+    """
+    message = '[redacted exception message]'
+    if (type(error) is IndexError and len(error.args) == 1
+            and type(error.args[0]) is str
+            and error.args[0] in {'list index out of range', 'tuple index out of range'}):
+        message = error.args[0]
+    frames = []
+    traceback = error.__traceback__
+    while traceback is not None:
+        code = traceback.tb_frame.f_code
+        filename = code.co_filename.replace('\\', '/').rsplit('/', 1)[-1]
+        frames.append(f'  File "{filename}", line {traceback.tb_lineno}, in {code.co_name}')
+        traceback = traceback.tb_next
+    log.warning('issue=%s exception=%s message=%s\nTraceback (most recent call last):\n%s',
+                reference, type(error).__name__, message, '\n'.join(frames))
+
+
 def action(request):
     # Router templates omit account tags, search text, OAuth codes and query strings.
     resource = request.match_info.route.resource
@@ -49,6 +73,7 @@ async def diagnostics(request, handler):
         raise
     except Exception as exc:
         reference = await record(request, 'server_error', 500, error_type=type(exc).__name__)
+        _warning_exception(reference, exc)
         return web.json_response({'error': "Something went wrong. Tell staff before you send again.",
                                   'issue_reference': reference}, status=500,
                                  headers={'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff'})
