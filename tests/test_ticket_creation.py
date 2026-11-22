@@ -25,6 +25,25 @@ from extensions.commands.tickets import (
 NOW = datetime(2026, 8, 20, 6, 0, tzinfo=timezone.utc)
 
 
+@pytest.fixture(autouse=True)
+def _canonical_opening_proof_for_minimal_creation_fakes(monkeypatch):
+    """These transport unit fakes sometimes omit canonical ticket storage.
+
+    The dedicated 275 suite tests the real store CAS and uncertainty ordering.
+    Keep unrelated pair/permission tests using their existing minimal fakes.
+    """
+    original = store.finish_opening_delivery
+
+    async def finish(mongo, ticket):
+        if hasattr(mongo, "tickets"):
+            return await original(mongo, ticket)
+        if "opening_delivery" in ticket:
+            ticket["opening_delivery"] = {**ticket["opening_delivery"], "state": "complete"}
+        return True
+
+    monkeypatch.setattr(store, "finish_opening_delivery", finish)
+
+
 def test_migration_webhook_pacing_serializes_concurrent_sends(monkeypatch):
     """Public and staff replay sends share one conservative process pacing gate."""
     calls: list[float] = []
@@ -1825,19 +1844,20 @@ def test_post_commit_account_sync_failure_resumes_without_duplicate_pair(monkeyp
         "main_thread_recruiter_role": 40,
     }
 
-    with pytest.raises(account_sync.AccountSyncError):
-        asyncio.run(thread_service.create_live_thread_ticket(
-            bot=bot,
-            mongo=mongo,
-            guild_id=10,
-            user_id=30,
-            username="Applicant",
-            display_name="Applicant",
-            ticket_type="main",
-            config=config,
-            open_slot_claim=_slot_claim(),
-            coc_client=object(),
-        ))
+    first = asyncio.run(thread_service.create_live_thread_ticket(
+        bot=bot,
+        mongo=mongo,
+        guild_id=10,
+        user_id=30,
+        username="Applicant",
+        display_name="Applicant",
+        ticket_type="main",
+        config=config,
+        open_slot_claim=_slot_claim(),
+        coc_client=object(),
+    ))
+    assert first.delivery_pending is False
+    assert creation_state.document["state"] == "complete"
     resumed = asyncio.run(thread_service.create_live_thread_ticket(
         bot=bot,
         mongo=mongo,

@@ -647,6 +647,7 @@ async def insert_one(mongo: MongoClient, doc: dict) -> dict:
 GUARDED_IDENTITY_FIELDS = frozenset({
     "location", "guild_id", "channel_id", "thread_id",
     "player_tag", "player_tags",
+    "opening_delivery",
 })
 
 
@@ -674,6 +675,99 @@ async def update_many(mongo: MongoClient, filt: dict, update: dict):
     return await mongo.tickets.update_many(
         {**dict(filt), **RUNTIME_FILTER}, update
     )
+
+
+def _opening_delivery_binding(ticket):
+    location = ticket.get("location") or {}
+    try:
+        workflow = ticket.get("creation_workflow_id")
+        if not isinstance(workflow, str) or not workflow or not isinstance(ticket.get("_id"), str) or not ticket["_id"]:
+            return None
+        # Modern delivery proof never coerces malformed canonical identities.
+        # Both the BSON Int64 driver type and Hikari Snowflake subclass int.
+        if any(not isinstance(value, int) or isinstance(value, bool) for value in (
+            ticket.get("guild_id"), ticket.get("user_id"),
+            location.get("id"), location.get("staff_space_id"),
+        )):
+            return None
+        return {
+            "ticket_id": str(ticket["_id"]), "workflow_id": workflow,
+            "guild_id": schema.snowflake(ticket.get("guild_id"), field="guild_id"),
+            "user_id": schema.snowflake(ticket.get("user_id"), field="user_id"),
+            "ticket_type": schema.ticket_type(ticket.get("ticket_type")),
+            "candidate_id": schema.snowflake(location.get("id"), field="candidate_id"),
+            "staff_id": schema.snowflake(location.get("staff_space_id"), field="staff_id"),
+        }
+    except (TypeError, ValueError, AttributeError):
+        return None
+
+
+def pending_opening_delivery(ticket):
+    """Bind the non-TTL opening obligation atomically with the new ticket."""
+    binding = _opening_delivery_binding(ticket)
+    if binding is None:
+        raise TicketStoreError("opening delivery is missing its exact ticket binding")
+    return {**binding, "state": "pending"}
+
+
+def _opening_delivery_binding_matches(receipt, binding):
+    """BSON Int64/Snowflake are valid integers; bool and text lookalikes are not."""
+    for key, expected in binding.items():
+        actual = receipt.get(key)
+        if isinstance(expected, int) and not isinstance(expected, bool):
+            if not isinstance(actual, int) or isinstance(actual, bool):
+                return False
+        elif type(actual) is not type(expected):
+            return False
+        if actual != expected:
+            return False
+    return True
+
+
+def opening_delivery_proven(ticket):
+    receipt = ticket.get("opening_delivery")
+    binding = _opening_delivery_binding(ticket)
+    return bool(
+        binding and isinstance(receipt, Mapping)
+        and receipt.get("state") == "complete"
+        and isinstance(receipt.get("completed_at"), datetime)
+        and _opening_delivery_binding_matches(receipt, binding)
+    )
+
+
+async def finish_opening_delivery(mongo, ticket):
+    """Persist generation-bound completion before short-lived creation TTL starts."""
+    if "opening_delivery" not in ticket:
+        return True  # Pre-275 compatibility; never invent historical proof.
+    if opening_delivery_proven(ticket):
+        return True
+    receipt = ticket.get("opening_delivery")
+    binding = _opening_delivery_binding(ticket)
+    if (
+        not binding or not isinstance(receipt, Mapping)
+        or receipt != {**binding, "state": "pending"}
+        or not _opening_delivery_binding_matches(receipt, binding)
+    ):
+        return False
+    identity = {
+        **RUNTIME_FILTER, "_id": ticket["_id"],
+        "guild_id": binding["guild_id"], "user_id": binding["user_id"],
+        "ticket_type": binding["ticket_type"], "creation_workflow_id": binding["workflow_id"],
+        "location.id": binding["candidate_id"], "location.staff_space_id": binding["staff_id"],
+    }
+    complete = {**binding, "state": "complete", "completed_at": utcnow()}
+    changed = await mongo.tickets.update_one(
+        {**identity, "opening_delivery": dict(receipt)},
+        {"$set": {"opening_delivery": complete}},
+    )
+    if changed.matched_count:
+        ticket["opening_delivery"] = complete
+        return True
+    durable = await mongo.tickets.find_one(identity)
+    if durable and opening_delivery_proven(durable):
+        ticket["opening_delivery"] = durable["opening_delivery"]
+        return True
+    return False
 
 
 @dataclasses.dataclass(frozen=True, slots=True)
@@ -863,7 +957,10 @@ async def transition(
         "channel_id", "thread_id", "category_id", "user_id", "ticket_type",
         "ticket_number", "status", "rev", "audit", "created_at",
     }
-    supplied = {key: value for key, value in dict(extra or {}).items() if key not in protected}
+    supplied = {
+        key: value for key, value in dict(extra or {}).items()
+        if key not in protected and str(key).split(".", 1)[0] != "opening_delivery"
+    }
     resolution_effects_doc = {
         "version": 1,
         # Pending is provably unsent until the worker durably checkpoints sending.

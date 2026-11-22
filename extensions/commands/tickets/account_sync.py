@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from datetime import datetime, timedelta, timezone
 from typing import Any, Awaitable, Callable, Mapping
 
@@ -54,7 +54,10 @@ SOURCE_RECOVERY = "automatic_retry"
 MAX_SOURCE_LENGTH = 80
 MAX_NAME_LENGTH = 100
 MAX_SYNC_RETRIES = 8
-CONTEXT_REFRESH_SOURCES = frozenset({SOURCE_FINAL_APPROVE, SOURCE_RECOVERY, SOURCE_RECRUITER_REFRESH})
+CONTEXT_REFRESH_SOURCES = frozenset({
+    SOURCE_OPEN, SOURCE_OPEN_RETRY, SOURCE_FINAL_APPROVE,
+    SOURCE_RECOVERY, SOURCE_RECRUITER_REFRESH,
+})
 
 
 class AccountSyncError(RuntimeError):
@@ -692,6 +695,78 @@ ACCOUNT_RECOVERY_READ_LIMIT = 50
 ACCOUNT_RECOVERY_COOLDOWN = timedelta(minutes=10)
 
 
+@dataclass
+class _RecoveryScan:
+    loop: Any
+    lock: asyncio.Lock
+    cursor: tuple[datetime | None, Any] | None = None
+    reserved: set = field(default_factory=set)
+
+
+async def _account_recovery_page(mongo, query, amount):
+    """Reserve one bounded fair page without writing receipt-read failures.
+
+    The cursor is process-local and scoped to this client. It is not a claim
+    across clients/processes; existing snapshot CAS still owns account writes.
+    """
+    # Bypass AsyncMongoClient.__getattr__, which otherwise invents a collection.
+    namespace = object.__getattribute__(mongo, "__dict__")
+    loop = asyncio.get_running_loop()
+    key = "_wu_ticket_account_recovery_scan"
+    scan = namespace.get(key)
+    if scan is None:
+        scan = namespace[key] = _RecoveryScan(loop, asyncio.Lock())
+    if not isinstance(scan, _RecoveryScan):
+        raise AccountSyncError("account recovery cursor is unavailable")
+    if scan.loop is not loop:
+        if not scan.loop.is_closed() or scan.lock.locked() or scan.reserved:
+            raise AccountSyncError("account recovery belongs to another event loop")
+        scan.loop, scan.lock = loop, asyncio.Lock()
+    sort = [("linked_accounts.last_attempt_at", 1), ("_id", 1)]
+    async with scan.lock:
+        amount = min(amount, ACCOUNT_RECOVERY_READ_LIMIT - len(scan.reserved))
+        if amount <= 0:
+            return scan, []
+        base_query = dict(query)
+        if scan.reserved:
+            base_query["_id"] = {"$nin": list(scan.reserved)}
+        selected = dict(base_query)
+        if scan.cursor is not None:
+            timestamp, ticket_id = scan.cursor
+            seek = (
+                {"$or": [
+                    {"linked_accounts.last_attempt_at": {"$exists": False}, "_id": {"$gt": ticket_id}},
+                    {"linked_accounts.last_attempt_at": {"$type": "date"}},
+                ]}
+                if timestamp is None else
+                {"$or": [
+                    {"linked_accounts.last_attempt_at": {"$gt": timestamp}},
+                    {"linked_accounts.last_attempt_at": timestamp, "_id": {"$gt": ticket_id}},
+                ]}
+            )
+            selected["$and"] = [seek]
+        rows = (await store.find(mongo, selected, sort=sort, limit=amount))[:amount]
+        if scan.cursor is not None and len(rows) < amount:
+            # Wrap once; never reserve the same ticket twice within this page.
+            seen = [row["_id"] for row in rows]
+            wrapped = await store.find(
+                mongo, {**query, "_id": {"$nin": [*scan.reserved, *seen]}},
+                sort=sort, limit=amount - len(rows),
+            )
+            for row in wrapped:
+                if row["_id"] not in seen and len(rows) < amount:
+                    rows.append(row)
+                    seen.append(row["_id"])
+        if rows:
+            last = rows[-1]
+            stamp = (last.get("linked_accounts") or {}).get("last_attempt_at")
+            scan.cursor = (stamp if isinstance(stamp, datetime) else None, last["_id"])
+        else:
+            scan.cursor = None
+        scan.reserved.update(row["_id"] for row in rows)
+        return scan, rows
+
+
 async def recover_pending_account_syncs(
     mongo: MongoClient,
     coc_client: coc.Client,
@@ -719,7 +794,7 @@ async def recover_pending_account_syncs(
     ]}
     lookup_due = {"$or": [
         {"linked_accounts.retry_required": True},
-        {"status": "open", "linked_accounts.version": {"$exists": False}},
+        {"status": "open", "ticket_type": {"$ne": "staff"}, "linked_accounts.version": {"$exists": False}},
     ]}
     follow_up_due = {"$or": [
         {field: True} for field in store.ACCOUNT_RECOVERY_BOOLEAN_FIELDS
@@ -732,67 +807,72 @@ async def recover_pending_account_syncs(
             {"$and": [follow_up_due, cooldown_elapsed]},
         ],
     }
-    pending = await store.find(
-        mongo, filt,
-        sort=[("linked_accounts.last_attempt_at", 1), ("_id", 1)],
-        limit=amount,
-    )
+    scan, pending = await _account_recovery_page(mongo, filt, amount)
     counts = {"processed": 0, "completed": 0, "failed": 0}
-    for ticket in pending:
-        counts["processed"] += 1
-        try:
-            before = snapshot_from_ticket(ticket)
-            if before.retry_required or not (
-                (ticket.get("linked_accounts") or {}).get("version")
-            ):
-                result = await sync_ticket_accounts(
-                    mongo, coc_client, ticket["_id"], source=SOURCE_RECOVERY
-                )
-            else:
-                result = AccountSyncResult(ticket, before)
-        except Exception:
-            counts["failed"] += 1
-            continue
-        if flag_identity_refresh_required(result.ticket):
+    try:
+        for ticket in pending:
+            if not (ticket.get("linked_accounts") or {}).get("version"):
+                # The creation owner alone interprets its generation-bound receipt.
+                # Import locally because opening also consumes account snapshots.
+                from extensions.commands.tickets import thread_service
+                if not await thread_service.opening_delivery_complete(mongo, ticket):
+                    continue
+            counts["processed"] += 1
             try:
-                durable = await reconcile_flag_identities(
-                    mongo,
-                    result.ticket or {},
-                    source=SOURCE_RECOVERY,
-                )
-                result = AccountSyncResult(
-                    durable,
-                    snapshot_from_ticket(durable),
-                )
-            except asyncio.CancelledError:
-                raise
+                before = snapshot_from_ticket(ticket)
+                if before.retry_required or not (
+                    (ticket.get("linked_accounts") or {}).get("version")
+                ):
+                    result = await sync_ticket_accounts(
+                        mongo, coc_client, ticket["_id"], source=SOURCE_RECOVERY
+                    )
+                else:
+                    result = AccountSyncResult(ticket, before)
             except Exception:
                 counts["failed"] += 1
                 continue
-        context_required = staff_context_refresh_required(result.ticket)
-        if context_required and result.ticket is not None:
-            if after_sync is None:
-                counts["failed"] += 1
-                continue
-            try:
-                queued = await after_sync(result.ticket)
-                if not queued:
-                    raise AccountSyncError(
-                        "staff-context refresh was not durably queued"
+            if flag_identity_refresh_required(result.ticket):
+                try:
+                    durable = await reconcile_flag_identities(
+                        mongo,
+                        result.ticket or {},
+                        source=SOURCE_RECOVERY,
                     )
-                confirmed = await confirm_staff_context_queued(
-                    mongo,
-                    result.ticket["_id"],
-                    account_revision=result.snapshot.revision,
-                )
-                if not confirmed:
-                    raise AccountSyncError(
-                        "staff-context queue confirmation lost an account race"
+                    result = AccountSyncResult(
+                        durable,
+                        snapshot_from_ticket(durable),
                     )
-            except asyncio.CancelledError:
-                raise
-            except Exception:
-                counts["failed"] += 1
-                continue
-        counts["failed" if result.snapshot.retry_required else "completed"] += 1
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    counts["failed"] += 1
+                    continue
+            context_required = staff_context_refresh_required(result.ticket)
+            if context_required and result.ticket is not None:
+                if after_sync is None:
+                    counts["failed"] += 1
+                    continue
+                try:
+                    queued = await after_sync(result.ticket)
+                    if not queued:
+                        raise AccountSyncError(
+                            "staff-context refresh was not durably queued"
+                        )
+                    confirmed = await confirm_staff_context_queued(
+                        mongo,
+                        result.ticket["_id"],
+                        account_revision=result.snapshot.revision,
+                    )
+                    if not confirmed:
+                        raise AccountSyncError(
+                            "staff-context queue confirmation lost an account race"
+                        )
+                except asyncio.CancelledError:
+                    raise
+                except Exception:
+                    counts["failed"] += 1
+                    continue
+            counts["failed" if result.snapshot.retry_required else "completed"] += 1
+    finally:
+        scan.reserved.difference_update(ticket["_id"] for ticket in pending)
     return counts

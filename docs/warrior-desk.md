@@ -111,6 +111,30 @@ The pinned Desk staff message is `<@&role> a member opened a request.` Recruit
 copy stays unchanged; old proven pinned messages are reused. Fresh and resumed
 creation use the common private thread-link reply.
 
+Opening notifications and the thread-link reply complete before the first linked-
+account lookup. The initial staff account card says **Loading accounts** and the
+existing context outbox updates that same card after the lookup. Contact staff
+requests skip the open-time account lookup; explicit staff refresh remains
+available. Recruit and Add account decisions keep their final account checks.
+An account lookup failure or timeout leaves account recovery work without
+quarantining the thread pair or restarting completed opening notifications.
+Cancellation after opening delivery preserves that completion receipt. New tickets atomically include a pending `opening_delivery` JSON receipt.
+Successful opening setup saves its exact ticket/owner/thread-bound completion in
+the canonical ticket before the short-lived creation receipt can expire. This
+proof has no TTL. Missing or malformed new proofs wait for recovery; pre-275
+tickets keep their existing recovery route without a claim of proven delivery.
+Account recovery scans use a bounded process-local seek cursor so pending rows
+cannot indefinitely hide later account or context work. This cursor resets on
+restart and is not a claim across processes. No collection, index or backfill is
+added.
+
+Each committed opening attempt records one `ticket_open` INFO line with measured
+`pair_ms`, `row_ms`, `delivery_ms`, `account_sync_ms`, `dm_ms` and `console_ms`.
+Unperformed stages report zero. Only the ticket id appears as identifying data.
+These timings measure the running stages; synthetic latency tests do not prove
+live Discord delivery speed or push notifications. Release 275 requires Ruggie's
+own release words with Ruggie present.
+
 New account names include `add-account-main` / `add-account-fwa`; Contact staff
 uses `contact-staff`, with a `staff-` prefix for the staff pair. Status prefixes,
 slug rules and Discord's 100-character limit remain. Old account/staff names
