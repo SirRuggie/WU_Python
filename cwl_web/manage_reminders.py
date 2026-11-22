@@ -130,6 +130,8 @@ async def _response(request, mongo, loaded, *, preview=False, protected=()):
             status = "uncertain"
         elif item["id"] in loaded.get("skipped", []):
             status = "skipped"
+        elif (loaded.get("signup_holds", {}).get(cwl_campaign.signup_hold_key(item["id"])) if item["message_id"] == "signup" else None):
+            status = loaded["signup_holds"][cwl_campaign.signup_hold_key(item["id"])]["status"]
         elif receipt.get("status"):
             status = receipt["status"]
         elif loaded["campaign"].get("paused"):
@@ -146,9 +148,23 @@ async def _response(request, mongo, loaded, *, preview=False, protected=()):
     worker = (
         await mongo.bot_config.find_one({"_id": f"cwl:web-worker:{GUILD_ID}"}) or {}
     )
-    season = _store(request).one(
-        "SELECT signup_open FROM seasons WHERE id=?", (_sid(request),)
-    )
+    from utils.cwl_dashboard_state import member_signup_state
+    member = None
+    def read_member(db):
+        nonlocal member
+        member = member_signup_state(db)
+    try:
+        await _store(request).run_tx(read_member)
+    except Exception:
+        member = None
+    upcoming = [item for item in schedule if item["message_id"] == "signup" and item.get("run_at") and (
+        item["status"] == "held" or (item["status"] == "scheduled" and datetime.fromisoformat(item["run_at_utc"]) > datetime.now(timezone.utc)))]
+    gate = {"status": "unavailable"} if member is None or loaded.get("signup_state_unavailable") else {"status": "ready", "season_id": member["season_id"]}
+    if member and member["cycle"] == loaded["cycle"] and (not member["signup_open"] or member["status"] != "draft") and upcoming:
+        first = min(upcoming, key=lambda item: item["run_at"])
+        gate = {"status": "held" if any(item["status"] == "held" for item in upcoming) else "waiting", "season_id": member["season_id"], "run_at": first["run_at"], "staff_alert": "dashboard only"}
+    if member and any(item["status"] == "waiting_member" for item in schedule):
+        gate = {"status": "waiting_member", "season_id": member["season_id"]}
     return {
         "cycle": loaded["cycle"],
         "generation": campaign_generation(loaded),
@@ -158,7 +174,8 @@ async def _response(request, mongo, loaded, *, preview=False, protected=()):
         "deadline": loaded["deadline"],
         "schedule": schedule,
         "history": history,
-        "signup_open": bool(season["signup_open"]),
+        "signup_open": bool(member and member["signup_open"] and member["status"] == "draft"),
+        "signup_gate": gate,
         "schedule_synced": worker.get("schedule_ready") is True
         and bool(worker.get("worker_epoch"))
         and worker.get("worker_epoch") == worker.get("schedule_epoch")

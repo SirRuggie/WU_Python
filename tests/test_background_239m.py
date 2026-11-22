@@ -322,14 +322,29 @@ def test_actual_repair_backoff_keeps_health_unhealthy_until_acknowledged(monkeyp
         durable._schedule_repair_attempts.clear()
         class Cursor:
             def __init__(self,rows):self.rows=rows
-            async def to_list(self,length=None):return [dict(row) for row in self.rows]
+            def sort(self, key, direction):
+                self.rows = sorted(self.rows, key=lambda row: row[key], reverse=direction < 0)
+                return self
+            def limit(self, length):
+                self.rows = self.rows[:length]
+                return self
+            async def to_list(self,length=None):
+                return [dict(row) for row in (self.rows if length is None else self.rows[:length])]
         class Collection:
             def __init__(self):
                 self.rows=[{'_id':'active-cycle','revision':1,'updated_at':'one',
                             'recurring_updated_at':'','cycle':'2026-11'}]
-                self.worker={};self.updates=[];self.find_calls=0;self.find_one_calls=0
-            def find(self,*args,**kwargs):
-                self.find_calls+=1;return Cursor(self.rows)
+                self.worker={};self.updates=[];self.find_calls=0;self.find_one_calls=0;self.hold_scan_calls=0
+            def find(self, query=None, *args, **kwargs):
+                if query and "signup_holds" in query:
+                    # This fixture has no retained signup waits. Keep the new
+                    # bounded cursor faithful without bypassing reconciliation.
+                    assert query["kind"] == "cwl_campaign_cycle"
+                    assert query["guild_id"] == bridge.cwl_campaign.LEGACY_WU_GUILD_ID
+                    self.hold_scan_calls += 1
+                    return Cursor([])
+                self.find_calls += 1
+                return Cursor(self.rows)
             async def find_one(self,*args,**kwargs):
                 self.find_one_calls+=1;return dict(self.worker)
             async def update_one(self,query,update,**kwargs):
@@ -394,6 +409,7 @@ def test_actual_repair_backoff_keeps_health_unhealthy_until_acknowledged(monkeyp
             assert queue.await_count==post.poll.await_count==6
             # Health observation adds no preview/provider read or persistent write.
             assert collection.find_calls==collection.find_one_calls==6
+            assert collection.hold_scan_calls==6
             assert sum('no success for three intervals' in r.message for r in caplog.records)==1
             assert sum('Background job recovered' in r.message for r in caplog.records)==1
             # A reverted desired fingerprint matches the acknowledged installed
@@ -409,6 +425,7 @@ def test_actual_repair_backoff_keeps_health_unhealthy_until_acknowledged(monkeyp
             assert not durable.schedule_repair_pending(bridge.cwl_campaign.LEGACY_WU_GUILD_ID,epoch)
             assert queue.await_count==post.poll.await_count==8
             assert collection.find_calls==collection.find_one_calls==8
+            assert collection.hold_scan_calls==8
         finally:
             durable._schedule_repair_attempts.clear()
     asyncio.run(run())

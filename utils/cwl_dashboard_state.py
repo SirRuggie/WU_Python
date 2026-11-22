@@ -655,3 +655,67 @@ class MongoDashboardState:
         finally:
             if hasattr(self, "client"):
                 self.client.close()
+
+
+def member_signup_state(db):
+    """Read only the authoritative member pointer and signup state from SQL.
+
+    Results settings take precedence over a campaign binding, then the existing
+    month label. No configuration, lease or SQL row is changed.
+    """
+    import re
+
+    pointer = db.execute("SELECT season_id,revision FROM member_season WHERE id=1").fetchone()
+    if not pointer or type(pointer[1]) is not int or pointer[1] < 0 or type(pointer[0]) is not int:
+        raise DashboardDurabilityError("Member season unavailable.")
+    row = db.execute("SELECT id,label,signup_open,status,history_only FROM seasons WHERE id=?", (pointer[0],)).fetchone()
+    if not row or type(row[2]) is not int or row[2] not in (0, 1) or row[3] not in ("draft", "archived") or row[4] != 0:
+        raise DashboardDurabilityError("Member season unavailable.")
+    settings = db.execute("SELECT cycle FROM participation_sync_settings WHERE season_id=?", (row[0],)).fetchone()
+    binding = db.execute("SELECT cycle FROM manage_campaign_bindings WHERE season_id=?", (row[0],)).fetchone()
+    cycle = settings[0] if settings else binding[0] if binding else None
+    from_label = cycle is None or cycle == ""
+    if from_label:
+        cycle = row[1]
+    if not isinstance(cycle, str):
+        raise DashboardDurabilityError("Member season month unavailable.")
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", cycle):
+        # Match the existing display-label fallback, preserving an explicit
+        # NULL Results setting over a binding. Invalid explicit cycles fail closed.
+        if not from_label:
+            raise DashboardDurabilityError("Member season month unavailable.")
+        try:
+            cycle = datetime.strptime(cycle, "%B %Y").strftime("%Y-%m")
+        except ValueError:
+            raise DashboardDurabilityError("Member season month unavailable.") from None
+    return {"season_id": row[0], "revision": pointer[1], "cycle": cycle,
+            "signup_open": bool(row[2]), "status": row[3]}
+
+
+async def read_member_signup_state(mongo):
+    """Majority/primary snapshot read; never acquire a lease or touch a file.
+
+    Decode cost is paid only for signup delivery checks and hold reconciliation.
+    This is a fresh committed image, not an atomic SQL/Mongo/Discord transaction.
+    """
+    import asyncio
+
+    collection = mongo.cwl_dashboard_state.with_options(
+        read_concern=ReadConcern("majority"), read_preference=ReadPreference.PRIMARY,
+    )
+    document = await collection.find_one({"_id": "warriors-united-dashboard"})
+    if (not document or type(document.get("revision")) is not int
+            or document["revision"] < 0 or not document.get("owner")
+            or not isinstance(document.get("lease_until"), datetime)
+            or (document["lease_until"].replace(tzinfo=timezone.utc) if document["lease_until"].tzinfo is None else document["lease_until"].astimezone(timezone.utc)) <= utcnow()
+            or not isinstance(document.get("payload"), bytes)
+            or len(document["payload"]) > MAX_COMPRESSED):
+        raise DashboardDurabilityError("Member season state unavailable.")
+
+    def read():
+        db = decode(document)
+        try:
+            return {**member_signup_state(db), "snapshot_revision": document["revision"]}
+        finally:
+            db.close()
+    return await asyncio.to_thread(read)

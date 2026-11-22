@@ -128,17 +128,6 @@ const variants: { name: string; render: () => ReactNode }[] = [
       />
     ),
   },
-  {
-    name: "Seasons",
-    render: () => (
-      <SeasonsPage
-        {...common}
-        memberSeason={{ season_id: 1, revision: 1 }}
-        onRefresh={async () => {}}
-        onBusy={noop}
-      />
-    ),
-  },
   { name: "Exports", render: () => <ExportWorkspace {...common} /> },
 ];
 it.each(variants)(
@@ -164,6 +153,35 @@ it.each(variants)(
     ).toBe(true);
   },
 );
+it("Seasons stays anchored to the member month with no picker and newest-first older labels", async () => {
+  await mount(
+    <SeasonsPage
+      {...common}
+      seasonId="2"
+      memberSeason={{ season_id: 1, revision: 1 }}
+      onRefresh={async () => {}}
+      onBusy={noop}
+    />,
+  );
+  expect(
+    host.querySelector('select[name="season"],select[data-picker="Season"]'),
+  ).toBeNull();
+  expect(host.querySelector(".card h2")?.textContent).toBe("November 2026");
+  expect(
+    [...host.querySelectorAll('[aria-label="Older seasons"] li')].map(
+      (row) => row.textContent,
+    ),
+  ).toEqual([
+    "October 2026 · Locked",
+    "September 2026 · Locked",
+    "August 2026 · Locked",
+  ]);
+  expect(location.pathname + location.search).toBe("/cwl/results?season=1");
+  expect(change).not.toHaveBeenCalled();
+  expect(
+    api.mock.calls.every((call) => call[1] === undefined || call[1] === "GET"),
+  ).toBe(true);
+});
 it("formats the roster's accessible selected label", async () => {
   await mount(
     <RosterHeader

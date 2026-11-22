@@ -18,6 +18,22 @@ Artwork supports PNG, JPG, GIF, and WEBP up to 10 MB. Existing Upload replacemen
 
 The screen shows running/paused/problem status, the next send, and the latest delivery result. Choose Main CWL, Lazy CWL, or Both; edit signup opening, closing, and reminder timing. Valid submissions save automatically. Running schedules update upcoming messages; paused schedules remain paused. Use Start Reminders or Pause Reminders separately. New setups do not start simply because a form was submitted.
 
+The signup-open message waits while the member season's signups are closed. Staff are
+alerted. It sends once signups open. Signups never open automatically.
+
+Staff alert channel for reminder holds: not configured; dashboard only.
+
+This gate is limited to the existing WU dashboard guild. The worker reads the
+majority-committed recovery head into memory without opening the dashboard SQL
+file, acquiring its writer lease, or changing signup state. Closed/not-draft
+occurrences stay durably held; an unavailable state is a separate durable wait.
+Opening the same member month releases eligible held copy through its existing
+claim and receipt path. Changed dates, disabled or replaced copy, skipped events
+and changed member months do not replay obsolete holds. A permanent pre-POST
+reservation prevents automatic retries after cancellation or uncertain delivery.
+A fresh state read immediately precedes that reservation; SQL/Mongo/Discord are
+not one transaction, so a later staff change can still race the Discord POST.
+
 Choose evenly spaced reminders or an hourly gap. The final reminder is included in the pattern, with an editable lead time before signups close. Minimum spacing remains available. The setup repeats monthly until manually changed and never resets at month rollover. Specific-date inputs also carry forward as monthly rules. Monthly days 29–31 clamp to the last day in shorter months.
 
 Times are entered in the displayed campaign timezone; Discord timestamps display in the viewer's local timezone. Invalid timing retains the previous active schedule and reports the problem. Previously sent messages are not resent. Skip this message retains its confirmation. Failed reminders have a contextual retry action.

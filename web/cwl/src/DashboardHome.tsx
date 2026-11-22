@@ -840,6 +840,9 @@ export default function DashboardHome(props: Props) {
           <div className="hub-section-heading">
             <div>
               <h2>My accounts</h2>
+              {season && !memberSignupsOpen(season) && (
+                <p className="signup-closed-line">Signups are closed.</p>
+              )}
               <p>
                 {canSignup
                   ? "Select accounts to sign up. Signed-up accounts show their assigned clan."
@@ -894,26 +897,30 @@ export default function DashboardHome(props: Props) {
           </div>
           {data && (
             <>
-              <div className="hub-selection">
-                <span>
-                  {selected.length} selected · {visible.length} matching
-                  accounts
-                </span>
-                <div>
-                  <button
-                    disabled={!canSignup || !visible.some((row) => !row.signup)}
-                    onClick={selectVisible}
-                  >
-                    Select accounts not signed up
-                  </button>
-                  <button
-                    disabled={!selected.length}
-                    onClick={() => setSelected([])}
-                  >
-                    Clear
-                  </button>
+              {memberSignupsOpen(season) && (
+                <div className="hub-selection">
+                  <span>
+                    {selected.length} selected · {visible.length} matching
+                    accounts
+                  </span>
+                  <div>
+                    <button
+                      disabled={
+                        !canSignup || !visible.some((row) => !row.signup)
+                      }
+                      onClick={selectVisible}
+                    >
+                      Select accounts not signed up
+                    </button>
+                    <button
+                      disabled={!selected.length}
+                      onClick={() => setSelected([])}
+                    >
+                      Clear
+                    </button>
+                  </div>
                 </div>
-              </div>
+              )}
               {!rows.length && refreshing ? (
                 <p role="status">Loading account details…</p>
               ) : !rows.length ? null : !visible.length ? (
@@ -965,25 +972,27 @@ export default function DashboardHome(props: Props) {
                       <div>
                         {members.map((row) => (
                           <article
-                            className={`hub-account ${selected.includes(row.tag) ? "is-selected" : ""}`}
+                            className={`hub-account ${memberSignupsOpen(season) && selected.includes(row.tag) ? "is-selected" : ""}`}
                             key={row.tag}
                           >
                             <label className="hub-account-pick">
-                              <input
-                                type="checkbox"
-                                aria-label={`Select ${row.name}`}
-                                disabled={!canSignup || !!row.signup}
-                                checked={selected.includes(row.tag)}
-                                onChange={(event) =>
-                                  setSelected((current) =>
-                                    event.target.checked
-                                      ? [...new Set([...current, row.tag])]
-                                      : current.filter(
-                                          (tag) => tag !== row.tag,
-                                        ),
-                                  )
-                                }
-                              />
+                              {memberSignupsOpen(season) && (
+                                <input
+                                  type="checkbox"
+                                  aria-label={`Select ${row.name}`}
+                                  disabled={!canSignup || !!row.signup}
+                                  checked={selected.includes(row.tag)}
+                                  onChange={(event) =>
+                                    setSelected((current) =>
+                                      event.target.checked
+                                        ? [...new Set([...current, row.tag])]
+                                        : current.filter(
+                                            (tag) => tag !== row.tag,
+                                          ),
+                                    )
+                                  }
+                                />
+                              )}
                               <TownHallIcon level={row.town_hall} />
                               <span>
                                 <strong>{row.name}</strong>
@@ -1074,7 +1083,7 @@ export default function DashboardHome(props: Props) {
                   </button>
                 </nav>
               )}
-              {selected.length > 0 && (
+              {memberSignupsOpen(season) && selected.length > 0 && (
                 <div className="hub-selected-bar">
                   <div>
                     <strong>

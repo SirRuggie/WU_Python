@@ -2047,59 +2047,6 @@ img.site-logo {
   background: var(--roster-surface-raised);
   border-color: var(--roster-border);
 }
-/* Informational walkthrough: neutral surface and explicit readable text. */
-.shell .signup-guide {
-  padding: var(--wu-space-4) var(--wu-space-4);
-  margin-bottom: var(--wu-space-4);
-  background: var(--wu-surface-raised);
-  border: 1px solid var(--wu-warning);
-  border-left: 5px solid var(--wu-warning-border);
-  border-radius: var(--wu-radius-md);
-  color: var(--wu-text);
-  box-shadow: none;
-  cursor: default;
-}
-.shell .signup-guide :is(h2, p, span, b) {
-  color: var(--wu-text);
-  -webkit-text-fill-color: currentColor;
-  text-wrap: pretty;
-}
-.shell .signup-guide h2 {
-  font-size: var(--wu-text-xl);
-  line-height: 1.2;
-  margin: 0;
-  outline: none;
-  font-weight: var(--wu-weight-bold);
-  text-wrap: balance;
-}
-.shell .signup-guide .eyebrow {
-  font-size: var(--wu-text-xs);
-  font-weight: var(--wu-weight-medium);
-  letter-spacing: normal;
-  margin: 0 0 var(--wu-space-2);
-}
-.shell .signup-guide p {
-  font-size: var(--wu-text-md);
-  margin: var(--wu-space-3) 0 0;
-  line-height: 1.55;
-  text-wrap: pretty;
-}
-.shell .signup-guide h2:focus-visible {
-  outline: 2px solid var(--wu-focus);
-  outline-offset: 2px;
-}
-@media (forced-colors: active) {
-  .shell .signup-guide :is(h2, p, span, b) {
-    color: var(--wu-text);
-    -webkit-text-fill-color: var(--wu-text);
-    text-wrap: pretty;
-  }
-  .shell .signup-guide {
-    background: var(--wu-surface-raised);
-    color: var(--wu-text);
-    border-color: CanvasText;
-  }
-}
 .shell .signup-flow .pool-choice-grid button {
   min-height: 145px;
   padding: var(--wu-space-4);
@@ -2150,19 +2097,6 @@ img.site-logo {
   margin-bottom: var(--wu-space-4);
 }
 @media (max-width: 650px) {
-  .shell .signup-guide {
-    padding: var(--wu-space-4);
-  }
-  .shell .signup-guide h2 {
-    font-size: var(--wu-text-xl);
-    font-weight: var(--wu-weight-bold);
-    line-height: 1.2;
-    text-wrap: balance;
-  }
-  .shell .signup-guide p {
-    font-size: var(--wu-text-md);
-    text-wrap: pretty;
-  }
   .shell .signup-flow .pool-choice-grid button {
     min-height: 125px;
     padding: var(--wu-space-4);
@@ -2223,10 +2157,6 @@ textarea::placeholder {
 .working-status {
   color: var(--wu-text-muted);
   -webkit-text-fill-color: currentColor;
-}
-.shell .signup-guide .eyebrow {
-  color: var(--wu-text-muted);
-  -webkit-text-fill-color: var(--wu-text-muted);
 }
 .completion-card h1:focus-visible {
   outline: 2px solid var(--wu-focus);

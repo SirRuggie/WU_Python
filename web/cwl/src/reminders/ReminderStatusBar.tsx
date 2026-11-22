@@ -1,6 +1,10 @@
 import { api } from "../api";
 import { StatusPill } from "../rosterUi/primitives";
-import type { Campaign, CampaignState } from "../reminderCampaign";
+import {
+  signupGateWarning,
+  type Campaign,
+  type CampaignState,
+} from "../reminderCampaign";
 import { shortReminderTime } from "./reminderFormat";
 import type { Act, Confirmation } from "./reminderWorkspaceHelpers";
 
@@ -40,6 +44,11 @@ export default function ReminderStatusBar({
     .sort((a, b) => Date.parse(a.run_at!) - Date.parse(b.run_at!))[0]?.run_at;
   return (
     <div className="reminder-status">
+      {signupGateWarning(state) && (
+        <p className="notice warning" role="status">
+          {signupGateWarning(state)}
+        </p>
+      )}
       <StatusPill
         tone={
           !state.activated ? "neutral" : draft.paused ? "warning" : "success"

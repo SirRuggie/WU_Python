@@ -1,5 +1,6 @@
 // @vitest-environment happy-dom
 import { act } from "react";
+import type { Season } from "./api";
 import { createRoot, type Root } from "react-dom/client";
 import { beforeAll, beforeEach, afterEach, it, expect, vi } from "vitest";
 const { api } = vi.hoisted(() => ({ api: vi.fn() }));
@@ -38,7 +39,7 @@ vi.mock("./rosterUi/Menu", async (original) => ({
   ),
 }));
 import App from "./App";
-const seasons = [
+const seasons: Season[] = [
   {
     id: 4,
     label: "2026-10",
@@ -312,4 +313,38 @@ it("keeps member season1 instead of the higher-id history months", async () => {
   );
   expect(location.pathname).toBe("/signup");
   expect(location.search).toBe("");
+});
+
+it("D10 December display-only month wins defaults while manual selection and deep links keep priority", async () => {
+  const december = {
+    id: 5,
+    label: "December 2026",
+    status: "draft",
+    signup_open: false,
+  };
+  seasons.push(december);
+  try {
+    await mountStaff("/cwl/reminders/signup");
+    expect(staffPicker().value).toBe("5");
+    expect(staffPicker().selectedOptions[0].textContent).toBe("December 2026");
+    const picker = staffPicker();
+    await act(async () => {
+      picker.value = "1";
+      picker.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await settle();
+    await act(async () => window.dispatchEvent(new Event("focus")));
+    await settle();
+    expect(staffPicker().value).toBe("1");
+    await act(async () => root.unmount());
+    root = createRoot(host);
+    await mountStaff("/cwl/reminders/signup?season=4");
+    expect(staffPicker().value).toBe("4");
+    getOnly();
+  } finally {
+    seasons.splice(
+      seasons.findIndex((row) => row.id === 5),
+      1,
+    );
+  }
 });

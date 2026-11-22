@@ -1,3 +1,4 @@
+import { useLayoutEffect, useRef } from "react";
 import { countLabel } from "./countLabel";
 import { searchInputProps } from "./inputProps";
 import type { Dispatch, ReactNode, RefObject, SetStateAction } from "react";
@@ -47,11 +48,9 @@ type SignupPageProps = {
   ) => void;
   choosePool: (next: Pool) => void;
   completionHeadingRef: RefObject<HTMLHeadingElement | null>;
-  currentSignupPage: number;
   dataError: string;
   draft: Draft;
   existing: Signup[];
-  lastSignupPage: number;
   loadSeasons: () => Promise<void>;
   loadSignup: () => Promise<unknown>;
   loadingData: boolean;
@@ -109,11 +108,9 @@ export default function SignupPage({
   changeView,
   choosePool,
   completionHeadingRef,
-  currentSignupPage,
   dataError,
   draft,
   existing,
-  lastSignupPage,
   loadSeasons,
   loadSignup,
   loadingData,
@@ -158,6 +155,20 @@ export default function SignupPage({
   joinRequired,
   steps,
 }: SignupPageProps) {
+  const focusNewAccount = useRef<number | null>(null);
+  const accountList = useRef<HTMLDivElement | null>(null);
+  useLayoutEffect(() => {
+    if (focusNewAccount.current === null) return;
+    const row =
+      accountList.current?.querySelectorAll<HTMLElement>("article")[
+        focusNewAccount.current
+      ];
+    const input = row?.querySelector<HTMLInputElement>(
+      "input[type=checkbox]:not(:disabled)",
+    );
+    (input || row)?.focus();
+    focusNewAccount.current = null;
+  }, [pageAccounts.length]);
   return (
     <>
       <CwlPageHeader
@@ -327,7 +338,7 @@ export default function SignupPage({
               {signupPanel === "register" && !memberSignupsOpen(season) && (
                 <section
                   data-tour-target="signup-closed"
-                  className="signup-guide"
+                  className="card signup-closed-card"
                   aria-label="Signup walkthrough"
                 >
                   <h2>Signups closed</h2>
@@ -564,7 +575,7 @@ export default function SignupPage({
                               onRefresh={() => void loadSignup()}
                             />
                           </details>
-                          <div className="account-list">
+                          <div className="account-list" ref={accountList}>
                             {pageAccounts.map((account, index) => {
                               const chosen =
                                 Object.hasOwn(draft, account.tag) &&
@@ -578,6 +589,7 @@ export default function SignupPage({
                                     index === 0 ? "signup-account" : undefined
                                   }
                                   className={`account-card ${chosen ? "chosen" : ""}`}
+                                  tabIndex={-1}
                                   key={account.tag}
                                 >
                                   <div className="account-top">
@@ -642,32 +654,20 @@ export default function SignupPage({
                               );
                             })}
                           </div>
-                          {lastSignupPage > 0 && (
-                            <nav
-                              className="hub-pagination"
-                              aria-label="Signup account pages"
+                          {matchingAccounts.length > pageAccounts.length && (
+                            <button
+                              className="bonus-show-more"
+                              type="button"
+                              onClick={() => {
+                                focusNewAccount.current = pageAccounts.length;
+                                setSignupPage(pageAccounts.length + 10);
+                              }}
                             >
-                              <button
-                                disabled={currentSignupPage === 0}
-                                onClick={() =>
-                                  setSignupPage(currentSignupPage - 1)
-                                }
-                              >
-                                Previous accounts
-                              </button>
-                              <span>
-                                Page {currentSignupPage + 1} of{" "}
-                                {lastSignupPage + 1}
-                              </span>
-                              <button
-                                disabled={currentSignupPage === lastSignupPage}
-                                onClick={() =>
-                                  setSignupPage(currentSignupPage + 1)
-                                }
-                              >
-                                Next accounts
-                              </button>
-                            </nav>
+                              {matchingAccounts.length - pageAccounts.length >=
+                              10
+                                ? `Show 10 more · ${matchingAccounts.length - pageAccounts.length} remaining`
+                                : `Show ${matchingAccounts.length - pageAccounts.length} more`}
+                            </button>
                           )}
                           {memberSignupsOpen(season) &&
                             visibleAccounts.length > 0 && (
@@ -678,7 +678,8 @@ export default function SignupPage({
                                     selected
                                   </strong>
                                   <small>
-                                    Selections across all pages · Not saved yet.
+                                    Selections across the full list · Not saved
+                                    yet.
                                   </small>
                                 </div>
                                 <div className="signup-action-buttons">

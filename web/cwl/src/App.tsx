@@ -1,3 +1,5 @@
+import { clearStartOperation } from "./seasonStartRecovery";
+import { sortSignupAccounts } from "./signup";
 import { countLabel } from "./countLabel";
 import RefreshControl, { type RefreshControlProps } from "./RefreshControl";
 import {
@@ -205,10 +207,7 @@ function App() {
     (joinRefused && session?.server_member !== true);
   const [pool, setPool] = useState<Pool | null>(null);
   const [signupSearch, setSignupSearch] = useState("");
-  const [signupPage, setSignupPage] = useState(0);
-  useEffect(() => {
-    setSignupPage(0);
-  }, [signupSearch, pool, seasonId]);
+  const [signupPage, setSignupPage] = useState(10);
   const [signupPanel, setSignupPanel] = useState<"register" | "saved">(
     entryTarget.signupPanel || "register",
   );
@@ -216,6 +215,9 @@ function App() {
     document.title = `${navigationLabel(view, publicationStep, signupPanel)} · Warriors United`;
   }, [view, publicationStep, signupPanel]);
   const [accounts, setAccounts] = useState<Account[]>([]);
+  useEffect(() => {
+    setSignupPage(10);
+  }, [signupSearch, pool, seasonId, accounts]);
   const [accountsLoadedFor, setAccountsLoadedFor] = useState<string | null>(
     null,
   );
@@ -587,7 +589,9 @@ function App() {
     accountsLoadedFor === `${session?.user.id || ""}:${seasonId}`;
   const season = seasons.find((item) => String(item.id) === seasonId);
   const draft = pool ? drafts[pool] : {};
-  const visibleAccounts = unsignedAccounts(accounts, signups);
+  const visibleAccounts = sortSignupAccounts(
+    unsignedAccounts(accounts, signups),
+  );
   const matchingAccounts = visibleAccounts.filter((account) =>
     [
       account.name,
@@ -598,15 +602,7 @@ function App() {
       value?.toLowerCase().includes(signupSearch.trim().toLowerCase()),
     ),
   );
-  const lastSignupPage = Math.max(
-    0,
-    Math.ceil(matchingAccounts.length / 12) - 1,
-  );
-  const currentSignupPage = Math.min(signupPage, lastSignupPage);
-  const pageAccounts = matchingAccounts.slice(
-    currentSignupPage * 12,
-    (currentSignupPage + 1) * 12,
-  );
+  const pageAccounts = matchingAccounts.slice(0, signupPage);
   const selected = pool
     ? selectedEntries(
         visibleAccounts.filter(
@@ -908,6 +904,26 @@ function App() {
     setSearchKind("all");
     setSearchPage(0);
   }, [session?.user.id]);
+  useEffect(() => {
+    if (authState === "signed-out") clearStartOperation();
+    else if (session) {
+      clearStartOperation(undefined, session.user.id);
+      const permissions = session.dashboard_permissions || [];
+      if (
+        !session.can_edit ||
+        (!session.is_owner &&
+          !permissions.includes("cwl") &&
+          !permissions.includes("cwl_settings"))
+      )
+        clearStartOperation(session.user.id);
+    }
+  }, [
+    authState,
+    session?.user.id,
+    session?.can_edit,
+    session?.is_owner,
+    JSON.stringify(session?.dashboard_permissions),
+  ]);
   const previousJourneyUser = useRef<string | null>(null);
   useEffect(() => {
     if (
@@ -1406,7 +1422,7 @@ function App() {
       setReview(false);
       setCompletion(null);
       setSignupSearch("");
-      setSignupPage(0);
+      setSignupPage(10);
     } else {
       try {
         tourRestore.current?.();
@@ -2431,11 +2447,9 @@ function App() {
                   changeView={changeView}
                   choosePool={choosePool}
                   completionHeadingRef={completionHeadingRef}
-                  currentSignupPage={currentSignupPage}
                   dataError={dataError}
                   draft={draft}
                   existing={existing}
-                  lastSignupPage={lastSignupPage}
                   loadSeasons={loadSeasons}
                   loadSignup={loadSignup}
                   loadingData={loadingData}
@@ -2660,6 +2674,7 @@ function App() {
               {view === "staff" && session.can_edit && (
                 <SeasonsPage
                   key={session.user.id}
+                  actorId={session.user.id}
                   seasonId={seasonId}
                   seasons={seasons}
                   memberSeason={memberSeason}

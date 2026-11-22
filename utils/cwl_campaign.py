@@ -993,6 +993,8 @@ async def load_campaign(mongo, guild_id: int, cycle: str | None = None, now=None
         "sent_occurrences": sent_occurrences,
         "uncertain_occurrences": list((row or {}).get("uncertain_occurrences", [])),
         "skipped": skipped,
+        "signup_holds": copy.deepcopy((row or {}).get("signup_holds", {})),
+        "signup_state_unavailable": bool((row or {}).get("signup_state_unavailable")),
         "deadline": signup_deadline(campaign, selected_cycle).isoformat(),
     }
     result["schedule"] = resolve_schedule(campaign, selected_cycle, now=now)
@@ -2306,3 +2308,162 @@ async def history(mongo, guild_id: int, cycle: str | None = None, limit: int = 2
     events = list(row.get("revisions", [])) + list(row.get("actions", [])) + list(row.get("deliveries", []))
     events.sort(key=lambda item: item.get("at", ""), reverse=True)
     return copy.deepcopy(events[:max(1, min(int(limit), HISTORY_LIMIT))])
+
+
+def signup_hold_key(occurrence):
+    parts = str(occurrence).split("|")
+    if len(parts) != 3 or parts[1] != "signup" or parts[2] not in AUDIENCES:
+        raise ValueError("Invalid signup occurrence")
+    return occurrence.replace(".", "_")
+
+
+async def hold_signup(mongo, guild_id, cycle, occurrence, generation, season, run_at, *, unavailable=False, mismatched=False, staff_job=None):
+    """CAS one non-POST wait state; one dashboard closed alert per occurrence.
+
+    Defaults/recurring config is read separately from the cycle CAS. A concurrent
+    new generation can retire this exact obsolete wait, never resend an attempt.
+    """
+    from utils.cwl_web_bridge import campaign_generation
+
+    key = signup_hold_key(occurrence)
+    field = f"signup_holds.{key}"
+    await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle)},
+        {"$setOnInsert": {"kind": "cwl_campaign_cycle", "guild_id": int(guild_id), "cycle": cycle, "revision": 0}}, upsert=True,
+    )
+    fresh = await load_campaign(mongo, guild_id, cycle)
+    if campaign_generation(fresh) != generation or occurrence in fresh.get("skipped", []):
+        return False
+    row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, cycle)}) or {}
+    previous = row.get("signup_holds", {}).get(key)
+    status = "waiting_state" if unavailable else "waiting_member" if mismatched else "held"
+    origin = ({"job_id": staff_job["_id"], "staff_request_id": staff_job["staff_request_id"]}
+              if staff_job and staff_job.get("job_kind") in {"manual", "retry"} else (previous or {}).get("staff_job"))
+    if (previous and previous.get("generation") == generation
+            and previous.get("status") == status and previous.get("staff_job") == origin):
+        return False
+    hold = {"occurrence_id": occurrence, "generation": generation,
+            "season_id": (previous or {}).get("season_id") if unavailable or mismatched else season["season_id"], "cycle": cycle,
+            "run_at": run_at, "staff_job": origin, "status": status,
+            "reason": "Member season state unavailable" if unavailable else "Member season month does not match" if mismatched else "held: signups closed", "at": _utcnow()}
+    update = {"$set": {field: hold}}
+    if not unavailable and not mismatched and occurrence not in row.get("signup_hold_alerted", []):
+        update["$addToSet"] = {"signup_hold_alerted": occurrence}
+        update["$push"] = {"deliveries": {"$each": [
+            {**hold, "message_key": "signup", "variant": occurrence.split("|")[2], "staff_alert": "dashboard only"}
+        ], "$slice": -HISTORY_LIMIT}}
+    if unavailable or mismatched:
+        update["$push"] = {"deliveries": {"$each": [
+            {**hold, "message_key": "signup", "variant": occurrence.split("|")[2]}
+        ], "$slice": -HISTORY_LIMIT}}
+    result = await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle), "revision": fresh["revision"],
+         field: previous if previous is not None else {"$exists": False},
+         "skipped": {"$ne": occurrence}, "sent_occurrences": {"$ne": occurrence},
+         "uncertain_occurrences": {"$ne": occurrence}}, update,
+    )
+    return bool(result.modified_count)
+
+
+async def retire_signup_wait(mongo, guild_id, cycle, hold, revision):
+    """Remove only the observed non-POST wait; receipts and skips stay intact."""
+    oid = hold["occurrence_id"]
+    if hold.get("status") not in {"held", "waiting_state", "waiting_member"}:
+        return False
+    result = await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle), "revision": revision,
+         f"signup_holds.{signup_hold_key(oid)}": hold,
+         "uncertain_occurrences": {"$ne": oid}, "sent_occurrences": {"$ne": oid}},
+        {"$unset": {f"signup_holds.{signup_hold_key(oid)}": ""}},
+    )
+    return bool(result.modified_count)
+
+
+def held_signup_staff_job(loaded, row, generation):
+    """An original, non-posted signup request remains recoverable without expiry."""
+    try:
+        oid = _staff_request_scope(row)
+    except (TypeError, ValueError, KeyError):
+        return False
+    if row.get("guild_id") != LEGACY_WU_GUILD_ID or row.get("message_id") != "signup":
+        return False
+    hold = loaded.get("signup_holds", {}).get(signup_hold_key(oid), {})
+    message = loaded["campaign"].get("messages", {}).get("signup", {})
+    variant = row["variants"][0]
+    return bool(
+        row.get("status") == "scheduled"
+        and row.get("generation") == generation == hold.get("generation")
+        and hold.get("status") in {"held", "waiting_state", "waiting_member"}
+        and hold.get("staff_job") == {
+            "job_id": row["_id"], "staff_request_id": row["staff_request_id"]
+        }
+        and oid not in loaded.get("skipped", [])
+        and oid not in loaded.get("sent_occurrences", [])
+        and oid not in loaded.get("uncertain_occurrences", [])
+        and not loaded["campaign"].get("paused")
+        and message.get("enabled")
+        and message.get("variants", {}).get(variant, {}).get("enabled")
+    )
+
+
+def eligible_signup_hold(loaded, hold, season, generation):
+    """Hold identity survives restart; changed copy/date/member month never replays."""
+    oid = hold.get("occurrence_id")
+    item = next((item for item in loaded.get("schedule", []) if item["id"] == oid), None)
+    return bool(hold.get("status") in {"held", "waiting_state", "waiting_member"} and hold.get("generation") == generation
+                and hold.get("cycle") == loaded["cycle"] == season["cycle"]
+                and (hold.get("season_id") == season["season_id"] or (hold.get("status") in {"waiting_state", "waiting_member"} and hold.get("season_id") is None))
+                and item and item.get("run_at") == hold.get("run_at")
+                and oid not in loaded.get("skipped", [])
+                and oid not in loaded.get("sent_occurrences", [])
+                and oid not in loaded.get("uncertain_occurrences", [])
+                and not loaded["campaign"].get("paused")
+                and loaded["campaign"]["messages"].get("signup", {}).get("enabled"))
+
+
+async def begin_signup_attempt(mongo, guild_id, cycle, occurrence, generation, claim):
+    """Reserve permanently before POST; cancellation/lost response cannot retry."""
+    key = signup_hold_key(occurrence)
+    result = await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle), f"delivery_claims.{key}.at": claim["at"],
+         f"delivery_claims.{key}.generation": generation,
+         "sent_occurrences": {"$ne": occurrence}, "skipped": {"$ne": occurrence},
+         "uncertain_occurrences": {"$ne": occurrence}},
+        {"$addToSet": {"uncertain_occurrences": occurrence}},
+    )
+    return bool(result.modified_count)
+
+
+async def finish_signup_attempt(mongo, guild_id, cycle, occurrence):
+    # Only a durable confirmed receipt allows clearing the permanent reservation.
+    row = await mongo.bot_config.find_one({"_id": cycle_id(guild_id, cycle)}) or {}
+    sent = row.get("sent_occurrences", [])
+    if occurrence not in sent:
+        return
+    await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle), "sent_occurrences": sent},
+        {"$pull": {"uncertain_occurrences": occurrence},
+         "$unset": {f"signup_holds.{signup_hold_key(occurrence)}": ""}},
+    )
+
+
+async def signup_state_unavailable(mongo, guild_id, cycle, unavailable):
+    await mongo.bot_config.update_one(
+        {"_id": cycle_id(guild_id, cycle)},
+        {"$set": {"signup_state_unavailable": bool(unavailable)},
+         "$setOnInsert": {"kind": "cwl_campaign_cycle", "guild_id": int(guild_id), "cycle": cycle, "revision": 0}}, upsert=True,
+    )
+
+
+async def signup_wait_page(mongo, after=None, *, limit=20):
+    """Bounded WU-only retained-cycle scan; runtime cursor makes old rows fair."""
+    if type(limit) is not int or not 1 <= limit <= 20:
+        raise ValueError("Invalid signup wait page bound")
+    query = {"kind": "cwl_campaign_cycle", "guild_id": LEGACY_WU_GUILD_ID}
+    # A stored empty hold map is excluded server-side. At most two known audience
+    # keys are inspected in each returned document, never arbitrary retained keys.
+    query["signup_holds"] = {"$exists": True, "$ne": {}}
+    if after is not None:
+        query["_id"] = {"$gt": after}
+    rows = await mongo.bot_config.find(query).sort("_id", 1).limit(limit).to_list(length=limit)
+    return rows, (rows[-1]["_id"] if len(rows) == limit else None)

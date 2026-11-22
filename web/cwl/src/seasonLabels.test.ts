@@ -54,14 +54,14 @@ it("defaults staff to the newest normal month despite later-created imported his
   expect(defaultStaffSeason(seasons)).toBe("1");
   expect(seasons.map((row) => row.id)).toEqual([4, 3, 2, 1]);
 });
-it("uses newest month/higher-id tie when every season is history-only, and empty stays empty", () => {
+it("returns no default when every season is history-only or the list is empty", () => {
   expect(
     defaultStaffSeason([
       { id: 9, label: "2026-08", history_only: true },
       { id: 1, label: "2026-11", history_only: 1 },
       { id: 2, label: "2026-11", history_only: true },
     ]),
-  ).toBe("2");
+  ).toBe("");
   expect(defaultStaffSeason([])).toBe("");
 });
 it("excludes only true/numeric1 history and prefers an unresolvable normal label to history months", () => {

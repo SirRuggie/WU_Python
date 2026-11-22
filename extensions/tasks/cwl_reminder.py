@@ -906,6 +906,90 @@ def _sequence_spacing_blocked(loaded, message_id, variant, now):
     return False
 
 
+def _wu_signup(guild_id, message_id):
+    return message_id == "signup" and guild_id == cwl_campaign.LEGACY_WU_GUILD_ID
+
+
+async def _signup_delivery_ready(guild_id, cycle, occurrence, generation, loaded, *, season=None, state_unavailable=False, staff_job=None):
+    if guild_id != cwl_campaign.LEGACY_WU_GUILD_ID:
+        return True
+    from utils.cwl_dashboard_state import read_member_signup_state
+
+    item = next((item for item in loaded.get("schedule", []) if item["id"] == occurrence), None)
+    hold = loaded.get("signup_holds", {}).get(cwl_campaign.signup_hold_key(occurrence))
+    try:
+        if state_unavailable:
+            raise ValueError("Member season unavailable")
+        if season is None:
+            season = await read_member_signup_state(mongo_client)
+    except Exception:
+        await cwl_campaign.signup_state_unavailable(mongo_client, guild_id, cycle, True)
+        await cwl_campaign.hold_signup(mongo_client, guild_id, cycle, occurrence, generation, None,
+                                       item.get("run_at") if item else None, unavailable=True, staff_job=staff_job)
+        return False
+    await cwl_campaign.signup_state_unavailable(mongo_client, guild_id, cycle, False)
+    if season["cycle"] != cycle or (hold and hold.get("season_id") is not None and hold["season_id"] != season["season_id"]):
+        await cwl_campaign.hold_signup(mongo_client, guild_id, cycle, occurrence, generation, season,
+                                       item.get("run_at") if item else None, mismatched=True, staff_job=staff_job)
+        return False
+    if hold and not cwl_campaign.eligible_signup_hold(loaded, hold, season, generation):
+        if not await cwl_campaign.retire_signup_wait(mongo_client, guild_id, cycle, hold, loaded["revision"]):
+            return False
+    if season["signup_open"] is not True or season["status"] != "draft":
+        await cwl_campaign.hold_signup(mongo_client, guild_id, cycle, occurrence, generation, season, item.get("run_at") if item else None, staff_job=staff_job)
+        return False
+    return True
+
+
+_signup_wait_cursor = None
+
+
+async def _resume_held_signups():
+    # Existing ten-second queue lane owns reconciliation; no extra scheduler.
+    from utils.cwl_dashboard_state import read_member_signup_state
+
+    global _signup_wait_cursor
+    rows, following = await cwl_campaign.signup_wait_page(mongo_client, _signup_wait_cursor)
+    _signup_wait_cursor = following
+    if not rows:
+        return
+    unavailable = False
+    try:
+        season = await read_member_signup_state(mongo_client)
+    except Exception:
+        season, unavailable = None, True
+    for row in rows:
+        gid, cycle = int(row["guild_id"]), row["cycle"]
+        loaded = await cwl_campaign.load_campaign(mongo_client, gid, cycle)
+        generation = _campaign_generation(loaded)
+        for variant in cwl_campaign.AUDIENCES:
+            oid = cwl_campaign.occurrence_id(cycle, "signup", variant)
+            hold = loaded.get("signup_holds", {}).get(cwl_campaign.signup_hold_key(oid))
+            if not hold or oid in (set(loaded.get("skipped", [])) | set(loaded.get("sent_occurrences", [])) | set(loaded.get("uncertain_occurrences", []))):
+                continue
+            item = next((item for item in loaded.get("schedule", []) if item["id"] == oid), None)
+            message = loaded["campaign"].get("messages", {}).get("signup", {})
+            due = (isinstance(hold.get("staff_job"), dict) and hold.get("generation") == generation) or (item and item.get("run_at") and pendulum.parse(item["run_at"]) <= pendulum.now("UTC"))
+            if (loaded["campaign"].get("paused") or not message.get("enabled")
+                    or not message.get("variants", {}).get(variant, {}).get("enabled") or not due):
+                # A future/disabled generation must not replay an old due date.
+                if hold.get("generation") != generation:
+                    await cwl_campaign.retire_signup_wait(mongo_client, gid, cycle, hold, loaded["revision"])
+                continue
+            origin = hold.get("staff_job")
+            if origin:
+                if origin.get("job_id") != _campaign_job_id(gid, cycle, "signup", variant):
+                    continue
+                if not await cwl_campaign.load_queued_staff_job(
+                    mongo_client, gid, cycle, "signup", variant, generation, origin.get("staff_request_id")
+                ):
+                    continue
+            if await _signup_delivery_ready(gid, cycle, oid, generation, loaded, season=season, state_unavailable=unavailable):
+                # Ordinary sender re-reads generation/member state before claim
+                # and again at POST. No old cached copy crosses this boundary.
+                await send_campaign_message(gid, cycle, "signup", [variant], generation, staff_request_id=(hold.get("staff_job") or {}).get("staff_request_id"))
+
+
 async def _send_catchup_message(guild_id, cycle, message_id, variants, generation, due_at):
     if not variants or len(variants) != 1:
         return False
@@ -936,6 +1020,8 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
     if oid in catchup_policy.handled_occurrences(loaded, state, due=due):
         await cwl_campaign.delete_catchup_job(mongo_client, row)
         _remove_catchup_scheduler_job(row)
+        return False
+    if _wu_signup(guild_id, message_id) and not await _signup_delivery_ready(guild_id, cycle, oid, generation, loaded):
         return False
     reason = catchup_policy.exclusion_reason(loaded, row, variant, _campaign_generation(loaded), pendulum.now(DEFAULT_TIMEZONE))
     if reason is None and _sequence_spacing_blocked(loaded, message_id, variant, pendulum.now(DEFAULT_TIMEZONE)):
@@ -969,6 +1055,9 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
                 mongo_client, guild_id, cycle, oid, claim
             )
             await _finish_catchup_decision(row, due, "skipped", reason)
+            return False
+        if _wu_signup(guild_id, message_id) and not await _signup_delivery_ready(guild_id, cycle, oid, generation, fresh):
+            await cwl_campaign.release_catchup_preflight_claim(mongo_client, guild_id, cycle, oid, claim)
             return False
         if not await cwl_campaign.begin_catchup_attempt(
             mongo_client, guild_id=guild_id, cycle=cycle, occurrence=oid,
@@ -1019,6 +1108,8 @@ async def _deliver_catchup_message(guild_id, cycle, message_id, variants, genera
             )
         return True
     await cwl_campaign.finish_catchup_attempt(mongo_client, guild_id, cycle, oid)
+    if _wu_signup(guild_id, message_id):
+        await cwl_campaign.finish_signup_attempt(mongo_client, guild_id, cycle, oid)
     await _release_campaign_claim(guild_id, cycle, oid)
     await cwl_campaign.delete_catchup_job(mongo_client, row)
     _remove_catchup_scheduler_job(row)
@@ -1136,6 +1227,7 @@ async def _deliver_campaign_message(
     selected = variants or list(cwl_campaign.AUDIENCES)
     failures = []
     sent_any = False
+    deferred_signup_variants = set()
     for variant in selected:
         item = message.get("variants", {}).get(variant)
         if not item or not item.get("enabled", True):
@@ -1159,11 +1251,16 @@ async def _deliver_campaign_message(
             )
             continue
         occurrence = cwl_campaign.occurrence_id(cycle, message_id, variant)
+        if _wu_signup(guild_id, message_id) and not await _signup_delivery_ready(guild_id, cycle, occurrence, current_generation, loaded, staff_job=staff_row):
+            deferred_signup_variants.add(variant)
+            continue
         blocked_detail = {}
         claim_options = {"blocked_detail": blocked_detail} if staff_row else {}
-        if not await _claim_campaign_occurrence(
-            guild_id, cycle, occurrence, current_generation, **claim_options
-        ):
+        claim = await _claim_campaign_occurrence(
+            guild_id, cycle, occurrence, current_generation,
+            **({**claim_options, "return_claim": True} if _wu_signup(guild_id, message_id) else claim_options)
+        )
+        if not claim:
             if staff_row and blocked_detail.get("busy"):
                 await cwl_campaign.record_staff_not_sent(mongo_client, staff_row)
                 job = scheduler.get_job(staff_row["_id"])
@@ -1173,6 +1270,7 @@ async def _deliver_campaign_message(
             continue
         channel_id = int(item["destination_channel_id"])
         discord_message_id = None
+        signup_attempted = False
         try:
             if not await _campaign_channel_belongs_to_guild(
                 channel_id, guild_id
@@ -1194,8 +1292,26 @@ async def _deliver_campaign_message(
             if _sequence_delivery_blocked(
                 loaded, message_id, pendulum.now(DEFAULT_TIMEZONE)
             ):
-                await _release_campaign_claim(guild_id, cycle, occurrence)
+                if _wu_signup(guild_id, message_id):
+                    await cwl_campaign.release_catchup_preflight_claim(mongo_client, guild_id, cycle, occurrence, claim)
+                else:
+                    await _release_campaign_claim(guild_id, cycle, occurrence)
                 continue
+            if _wu_signup(guild_id, message_id):
+                fresh = await cwl_campaign.load_campaign(mongo_client, guild_id, cycle)
+                if (_campaign_generation(fresh) != current_generation
+                        or not await _signup_delivery_ready(guild_id, cycle, occurrence, current_generation, fresh, staff_job=staff_row)):
+                    deferred_signup_variants.add(variant)
+                    await cwl_campaign.release_catchup_preflight_claim(mongo_client, guild_id, cycle, occurrence, claim)
+                    continue
+                if staff_request_id and not await cwl_campaign.load_queued_staff_job(
+                    mongo_client, guild_id, cycle, message_id, variant, current_generation, staff_request_id
+                ):
+                    await cwl_campaign.release_catchup_preflight_claim(mongo_client, guild_id, cycle, occurrence, claim)
+                    continue
+                if not await cwl_campaign.begin_signup_attempt(mongo_client, guild_id, cycle, occurrence, current_generation, claim):
+                    continue
+                signup_attempted = True
             if message_id == "roster":
                 # Mark an attempted roster POST before entering the network.
                 # If Discord's response is lost, neither Manage nor the web
@@ -1213,8 +1329,16 @@ async def _deliver_campaign_message(
                 nonce=nonce,
             )
             discord_message_id = getattr(result, "id", None)
+            if _wu_signup(guild_id, message_id) and (not isinstance(discord_message_id, int) or isinstance(discord_message_id, bool) or discord_message_id <= 0):
+                raise RuntimeError("Signup delivery response unavailable")
             sent_any = True
         except Exception as exc:
+            if _wu_signup(guild_id, message_id) and signup_attempted:
+                await cwl_campaign.record_delivery(mongo_client, guild_id, cycle, {
+                    "occurrence_id": occurrence, "message_key": "signup", "variant": variant,
+                    "status": "uncertain", "reason": "Not sure it sent. Check Discord.", "revision": current_generation,
+                })
+                continue
             if message_id == "roster" and not _is_permanent_delivery_error(
                 exc
             ):
@@ -1242,7 +1366,12 @@ async def _deliver_campaign_message(
                     {"$pull": {"uncertain_occurrences": occurrence}},
                 )
             failures.append((variant, exc))
-            await _release_campaign_claim(guild_id, cycle, occurrence)
+            if _wu_signup(guild_id, message_id):
+                await cwl_campaign.release_catchup_preflight_claim(
+                    mongo_client, guild_id, cycle, occurrence, claim
+                )
+            else:
+                await _release_campaign_claim(guild_id, cycle, occurrence)
             continue
         try:
             await cwl_campaign.record_delivery(
@@ -1319,6 +1448,8 @@ async def _deliver_campaign_message(
                 {"_id": cwl_campaign.cycle_id(guild_id, cycle)},
                 {"$pull": {"uncertain_occurrences": occurrence}},
             )
+        if _wu_signup(guild_id, message_id):
+            await cwl_campaign.finish_signup_attempt(mongo_client, guild_id, cycle, occurrence)
         await _release_campaign_claim(guild_id, cycle, occurrence)
     if failures and manual:
         for variant, exc in failures:
@@ -1356,8 +1487,20 @@ async def _deliver_campaign_message(
         )
         if pending.get("status") == "ledger_pending":
             continue
-        await mongo_client.cwl_pending_reminders.delete_one({"_id": job_id})
-        if scheduler.get_job(job_id):
+        if _wu_signup(guild_id, message_id):
+            # Never erase a deferred original or a replacement staff request.
+            if (variant in deferred_signup_variants
+                    or pending.get("generation") != current_generation
+                    or pending.get("staff_request_id") != staff_request_id):
+                continue
+            query = {"_id": job_id, "generation": current_generation,
+                     "staff_request_id": staff_request_id or {"$exists": False}}
+        else:
+            query = {"_id": job_id}
+        await mongo_client.cwl_pending_reminders.delete_one(query)
+        job = scheduler.get_job(job_id)
+        if job and (not _wu_signup(guild_id, message_id)
+                    or (getattr(job, "kwargs", None) or {}).get("staff_request_id") == staff_request_id):
             scheduler.remove_job(job_id)
     return sent_any
 
@@ -2242,6 +2385,10 @@ async def restore_pending_reminders():
                         {"_id": reminder_id}
                     )
                     continue
+                if cwl_campaign.held_signup_staff_job(loaded, reminder, generation):
+                    # Reconciliation owns this exact durable request. Do not
+                    # expire it or invent a replacement UUID on restart.
+                    continue
                 staff_request_id = None
                 if (
                     message_id != "roster"
@@ -2532,6 +2679,12 @@ async def _poll_web_roster_bridge() -> None:
             # A bad schedule must not block the independent reviewed roster queue.
             # No acknowledgement is written; the next poll retries reconciliation.
             log_failure(logging.getLogger(__name__), "cwl-web-roster-bridge.schedule-sync", exc)
+            complete = False
+
+        try:
+            await _resume_held_signups()
+        except Exception as exc:
+            log_failure(logging.getLogger(__name__), "cwl-signup-hold-reconcile", exc)
             complete = False
 
         async def can_send_roster(row):
