@@ -920,7 +920,7 @@ def build_hub_actions(
                         emoji="📋",
                     ),
                     Button(style=hikari.ButtonStyle.SECONDARY, custom_id="ticket_v2_member_history:hub", label="Member History"),
-                    Button(style=hikari.ButtonStyle.SECONDARY, custom_id="ticket_v2_flags_lookup:hub", label="Flags"),
+                    Button(style=hikari.ButtonStyle.SECONDARY, custom_id="ticket_v2_flags_lookup:hub", label="Check flags"),
                     Button(
                         style=hikari.ButtonStyle.SECONDARY,
                         custom_id="ticket_v2_hub_page:refresh",
@@ -1045,7 +1045,7 @@ async def _hub_payload(mongo: MongoClient) -> list[Container]:
 # Bump whenever the hub's fixed layout (buttons, headings) changes so a
 # running hub redraws once after deploy instead of waiting for the next
 # ticket event.
-HUB_LAYOUT_VERSION = 17
+HUB_LAYOUT_VERSION = 18
 
 
 async def _chart_signature(mongo: MongoClient) -> str:
@@ -7316,19 +7316,105 @@ async def member_history_pick(ctx,action_id:str,mongo:MongoClient=lightbulb.di.I
     await ctx.interaction.edit_initial_response(components=build_history_panel(user_id,history),user_mentions=False,role_mentions=False,mentions_everyone=False)
 
 
-@register_action('ticket_v2_flags_lookup', opens_modal=True, preload_state=False, no_return=True)
-@lightbulb.di.with_di
-async def flags_lookup_open(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
-    if not await perms.is_recruiter(getattr(ctx,'member',None),mongo):
-        await ctx.respond('Only recruiters can view applicant flags.',ephemeral=True);return
-    await ctx.respond_with_modal(title='Find Applicant Flags',custom_id=f'ticket_v2_flags_lookup_submit:{int(ctx.guild_id)}',components=[
-        ModalActionRow().add_text_input('identity','Discord ID or player tag',min_length=3,max_length=20)])
+async def _flags_lookup_session(ctx, mongo, token):
+    """Use the shared fixed-expiry state owner for both private search paths."""
+    data = await get_state(mongo, token)
+    if (
+        not isinstance(data, Mapping)
+        or data.get("type") != "ticket_flags_lookup"
+        or data.get("owner_id") != _int(ctx.user.id)
+        or data.get("guild_id") != _int(ctx.guild_id)
+        or not _int(ctx.guild_id)
+        or not await perms.is_recruiter(getattr(ctx, "member", None), mongo)
+    ):
+        await ctx.respond(
+            "Open your own Check flags panel from Ticket Command.",
+            ephemeral=True, user_mentions=False, role_mentions=False,
+            mentions_everyone=False,
+        )
+        return None
+    return data
 
 
-@register_action('ticket_v2_flags_lookup_submit', is_modal=True, preload_state=False, no_return=True)
+# opens_modal also keeps the dispatcher from acknowledging by editing the
+# shared hub. This handler owns its new private response, like Member History.
+@register_action("ticket_v2_flags_lookup", opens_modal=True, preload_state=False, no_return=True)
 @lightbulb.di.with_di
-async def flags_lookup_submit(ctx,action_id:str,mongo:MongoClient=lightbulb.di.INJECTED,**_):
-    if _int(action_id)!=_int(getattr(ctx,'guild_id',0)):
-        await ctx.respond('Open Flags in the ticket server.',ephemeral=True);return
+async def flags_lookup_open(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    await ctx.defer(ephemeral=True)
+    if not _int(ctx.guild_id) or not await perms.is_recruiter(getattr(ctx, "member", None), mongo):
+        await ctx.interaction.edit_initial_response(
+            components=_notice("Recruiter access required", "Only recruiters can view applicant flags."),
+            user_mentions=False, role_mentions=False, mentions_everyone=False,
+        )
+        return
+    token = uuid.uuid4().hex
+    await insert_state(mongo, {
+        "_id": token, "type": "ticket_flags_lookup",
+        "owner_id": int(ctx.user.id), "guild_id": int(ctx.guild_id),
+    })
+    await ctx.interaction.edit_initial_response(
+        components=[Container(accent_color=ACCENT_BLUE, components=[
+            Text(content="## Check flags\nSelect a member, or search by player tag."),
+            ActionRow(components=[hikari.impl.SelectMenuBuilder(
+                type=hikari.ComponentType.USER_SELECT_MENU,
+                custom_id=f"ticket_v2_flags_pick:{token}",
+                placeholder="Select a member", min_values=1, max_values=1,
+            )]),
+            ActionRow(components=[Button(
+                style=hikari.ButtonStyle.SECONDARY,
+                custom_id=f"ticket_v2_flags_tag_open:{token}",
+                label="Search by player tag",
+            )]),
+        ])],
+        user_mentions=False, role_mentions=False, mentions_everyone=False,
+    )
+
+
+@register_action("ticket_v2_flags_pick", opens_modal=True, preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def flags_lookup_pick(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    await ctx.defer(ephemeral=True)
+    if await _flags_lookup_session(ctx, mongo, action_id) is None:
+        return
     from extensions.commands.tickets import flags
-    await flags.show_flags(ctx,mongo,_modal_value(ctx,'identity'))
+
+    values = getattr(ctx.interaction, "values", ()) or ()
+    if len(values) != 1 or not flags.DISCORD_ID_RE.fullmatch(str(values[0])):
+        await ctx.respond("Select a member from your Check flags panel.", ephemeral=True,
+                          user_mentions=False, role_mentions=False, mentions_everyone=False)
+        return
+    await flags.show_flags(ctx, mongo, str(values[0]), already_deferred=True)
+
+
+@register_action("ticket_v2_flags_tag_open", opens_modal=True, preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def flags_lookup_tag_open(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    if await _flags_lookup_session(ctx, mongo, action_id) is None:
+        return
+    await ctx.respond_with_modal(
+        title="Search by player tag", custom_id=f"ticket_v2_flags_tag_submit:{action_id}",
+        components=[ModalActionRow().add_text_input(
+            "player_tag", "Player tag", placeholder="#ABC123", min_length=1, max_length=32,
+        )],
+    )
+
+
+@register_action("ticket_v2_flags_tag_submit", is_modal=True, preload_state=False, no_return=True)
+@lightbulb.di.with_di
+async def flags_lookup_tag_submit(ctx, action_id: str, mongo: MongoClient = lightbulb.di.INJECTED, **_):
+    await ctx.defer(ephemeral=True)
+    if await _flags_lookup_session(ctx, mongo, action_id) is None:
+        return
+    raw = _modal_value(ctx, "player_tag")
+    try:
+        tag = schema.player_tag(raw) if raw.startswith("#") else None
+    except ValueError:
+        tag = None
+    if tag is None:
+        await ctx.respond("Use a player tag that starts with #.", ephemeral=True,
+                          user_mentions=False, role_mentions=False, mentions_everyone=False)
+        return
+    from extensions.commands.tickets import flags
+
+    await flags.show_flags(ctx, mongo, tag, already_deferred=True)
