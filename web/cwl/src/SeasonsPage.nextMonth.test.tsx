@@ -11,7 +11,7 @@ const button = (label: string, scope: ParentNode = document) =>
   Array.from(scope.querySelectorAll("button")).find(
     (b) => b.textContent === label,
   )!;
-it("keeps existing Create flow explicit and guards a double confirmation", async () => {
+it("keeps Other name custom creation explicit and guards cancel and double confirmation", async () => {
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   const season = {
     id: 1,
@@ -21,7 +21,7 @@ it("keeps existing Create flow explicit and guards a double confirmation", async
   };
   api.mockImplementation(async (_path: string, method?: string) =>
     method
-      ? { id: 2, label: "December 2026", copied_clan_count: 3 }
+      ? { id: 2, label: "Practice roster", copied_clan_count: 3 }
       : { seasons: [season], member_season: { season_id: null, revision: 4 } },
   );
   const host = document.createElement("div");
@@ -44,11 +44,30 @@ it("keeps existing Create flow explicit and guards a double confirmation", async
         </DashboardPermissions.Provider>,
       ),
     );
-    expect(host.textContent).toContain("Other name");
-    await act(async () => button("Create December 2026", host).click());
+    expect(button("Create December 2026", host)).toBeUndefined();
+    const disclosure = host.querySelector("details")!;
+    expect(disclosure.querySelector("summary")?.textContent).toBe("Other name");
+    expect(disclosure.open).toBe(false);
+    await act(async () => disclosure.querySelector("summary")!.click());
+    const input = disclosure.querySelector("input")!;
+    await act(async () => {
+      Object.getOwnPropertyDescriptor(
+        HTMLInputElement.prototype,
+        "value",
+      )!.set!.call(input, "Practice roster");
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    expect(button("Create season", disclosure).disabled).toBe(false);
+    await act(async () => button("Create season", disclosure).click());
     expect(api.mock.calls.filter((c) => c[1])).toEqual([]);
+    await act(async () =>
+      button("Cancel", document.querySelector("dialog")!).click(),
+    );
+    expect(document.querySelector("dialog")).toBeNull();
+    expect(api.mock.calls.filter((c) => c[1])).toEqual([]);
+    await act(async () => button("Create season", disclosure).click());
     const confirm = button(
-      "Create December 2026",
+      "Create Practice roster",
       document.querySelector("dialog")!,
     );
     await act(async () => {
@@ -56,7 +75,7 @@ it("keeps existing Create flow explicit and guards a double confirmation", async
       confirm.click();
     });
     expect(api.mock.calls.filter((c) => c[1])).toEqual([
-      ["/seasons", "POST", { label: "December 2026", signup_open: false }],
+      ["/seasons", "POST", { label: "Practice roster", signup_open: false }],
     ]);
     expect(select).toHaveBeenCalledWith("2");
     expect(refresh).toHaveBeenCalledOnce();

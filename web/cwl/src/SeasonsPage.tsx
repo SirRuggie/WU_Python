@@ -114,7 +114,6 @@ export default function SeasonsPage({
   );
   const targetName = seasonMonthLabel({ label: target });
   const targetSeason = seasons.find((item) => seasonMonth(item) === target);
-  const canCreate = !targetSeason;
   const canFinish =
     !!current &&
     (!targetSeason ||
@@ -390,16 +389,6 @@ export default function SeasonsPage({
         <div className="card">
           <h2>Next month</h2>
           <div className="staff-row">
-            {canCreate && (
-              <Button
-                icon={Plus}
-                variant={canFinish ? "secondary" : "primary"}
-                disabled={working}
-                onClick={() => setCreateLabel(targetName)}
-              >
-                {`Create ${targetName}`}
-              </Button>
-            )}
             {canFinish && current && (
               <Button
                 variant={readiness?.published ? "primary" : "secondary"}
