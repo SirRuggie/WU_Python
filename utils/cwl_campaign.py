@@ -52,7 +52,10 @@ SIGNUP_CHECK_ID = "cwl_member_check:open"
 SIGNUP_CHECK_LINE = "Already signed up? Tap **Check my signups** anytime to see your accounts."
 CURRENT_SHORT_SIGNUP_CHECK_LINE = "Select **Check my signups** to see your accounts."
 CURRENT_SIGNUP_CHECK_LINE = "Are you signed up already? To see your accounts, select **Check my signups**."
-CURRENT_SIGNUP_HELP_LINE = "-# Do you have a problem with the dashboard? Ask staff for help."
+CURRENT_SIGNUP_HELP_LINE = {
+    "main": "-# Need help? Message in <#801950200133976124>.",
+    "lazy": "-# Need help? Message in <#872692009066958879>.",
+}
 _CYCLE_RE = re.compile(r"^\d{4}-(0[1-9]|1[0-2])$")
 _SKIP_OCCURRENCE = object()
 
@@ -132,8 +135,8 @@ def _current_wording(campaign: dict) -> bool:
     return type(version) is int and version == DEFAULT_COPY_VERSION
 
 
-def _signup_help_line(campaign: dict) -> str:
-    return CURRENT_SIGNUP_HELP_LINE if _current_wording(campaign) else SIGNUP_HELP_LINE
+def _signup_help_line(campaign: dict, pool: str) -> str:
+    return CURRENT_SIGNUP_HELP_LINE[pool] if _current_wording(campaign) else SIGNUP_HELP_LINE
 
 
 def normalize_signup_entry(campaign: dict) -> dict:
@@ -180,7 +183,7 @@ def normalize_signup_entry(campaign: dict) -> dict:
                 and not (new_default_copy and short_line in item.get("body", ""))
             ):
                 proposed = item.get("body", "").rstrip() + "\n\n" + check_line
-                overhead = len(" ".join(f"<@&{role}>" for role in item.get("role_ids", []))) + len(item.get("title", "")) + 3 + len(_signup_help_line(result))
+                overhead = len(" ".join(f"<@&{role}>" for role in item.get("role_ids", []))) + len(item.get("title", "")) + 3 + len(_signup_help_line(result, pool))
                 if "{signup_deadline}" in proposed:
                     overhead += 32
                 if len(proposed) + overhead <= 4000:
@@ -613,7 +616,7 @@ def validate_campaign(campaign: dict) -> None:
             mention_text = " ".join(f"<@&{role}>" for role in roles)
             rendered_length = len(mention_text) + len(item["title"]) + 3 + len(item["body"])
             if message_id == "signup" or message_id.startswith("reminder:"):
-                rendered_length += len(_signup_help_line(campaign))
+                rendered_length += len(_signup_help_line(campaign, variant))
             if "{signup_deadline}" in item["body"]:
                 rendered_length += 32
             if rendered_length > 4000:
@@ -692,7 +695,7 @@ async def render_message(config: dict, message_id: str, variant: str, preview: b
         children.append(ActionRow(components=buttons))
     if message_id == "signup" or message_id.startswith("reminder:"):
         children.append(Separator(divider=True))
-        children.append(Text(content=_signup_help_line(campaign)))
+        children.append(Text(content=_signup_help_line(campaign, variant)))
     return [Container(accent_color=int(message.get("accent_color", WU_GOLD)), components=children)]
 
 

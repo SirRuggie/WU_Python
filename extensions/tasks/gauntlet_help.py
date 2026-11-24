@@ -5,16 +5,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import uuid
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 
 import hikari
 import lightbulb
 from hikari.impl import ContainerComponentBuilder as Container, TextDisplayComponentBuilder as Text
 import pymongo
 from pymongo import ReturnDocument
-from pymongo.errors import DuplicateKeyError
 
+from extensions.tasks.sticky_transport import DiscordStickyTransport
 from utils.constants import WU_GOLD
+from utils.sticky_message import StickyMessage, StickyTarget, aware as _aware
 from utils.gauntlet_help import get_settings, record_progress, settings_id, utcnow
 from utils.mongo import MongoClient
 
@@ -35,16 +36,15 @@ BATCH_SIZE = 20
 DELETE_AFTER = timedelta(minutes=10)
 STICKY_AFTER = timedelta(minutes=30)
 CLAIM_LEASE = timedelta(minutes=5)
+STICKY = StickyMessage(StickyTarget(
+    GUILD_ID, HELP_CHANNEL_ID, state_key=settings_id(GUILD_ID),
+    delete_kind="gauntlet_help_delete", delete_prefix=f"gauntlet_help_delete:{GUILD_ID}",
+    require_initial_quiet=False, require_missing_quiet=False, history_before_gates=False,
+), quiet=STICKY_AFTER)
 
 _bot = None
 _mongo = None
 _task = None
-
-
-def _aware(value: datetime | None) -> datetime | None:
-    if isinstance(value, datetime):
-        return value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value
-    return None
 
 
 def _sticky_components():
@@ -106,12 +106,9 @@ async def _reconcile_unknown(bot, mongo, now: datetime) -> None:
     messages = await _recent_bot_messages(bot)
     sticky = next((m for m in messages if "**Recruit Gauntlet help**" in _message_text(m)), None)
     if sticky and (not config.get("sticky_message_id") or config.get("sticky_state") in {"posting", "unknown"}):
-        old_id = int(config.get("sticky_message_id") or 0)
-        await mongo.bot_config.update_one({"_id": settings_id(GUILD_ID)}, {"$set": {
-            "sticky_state": "posted", "sticky_message_id": int(sticky.id),
-            "sticky_posted_at": _aware(getattr(sticky, "created_at", None)) or now,
-            "pending_sticky_delete_id": old_id if old_id != int(sticky.id) else 0,
-        }, "$unset": {"sticky_token": ""}})
+        await STICKY.recover(
+            mongo, int(sticky.id), _aware(getattr(sticky, "created_at", None)) or now,
+        )
     # Every recognizable own reminder receives a deletion receipt, even if
     # its progress row advanced before the REST response was persisted.
     for message in messages:
@@ -155,12 +152,7 @@ async def _latest_human_at(bot, channel_id: int) -> datetime | None:
 
 
 async def note_human_activity(mongo, *, at: datetime | None = None) -> None:
-    await mongo.bot_config.update_one(
-        {"_id": settings_id(GUILD_ID)},
-        {"$max": {"last_human_at": at or utcnow()},
-         "$setOnInsert": {"enabled": True, "guild_id": GUILD_ID}},
-        upsert=True,
-    )
+    await STICKY.note_human(mongo, at or utcnow())
 
 
 @loader.listener(hikari.GuildMessageCreateEvent)
@@ -174,119 +166,26 @@ async def on_help_message(event: hikari.GuildMessageCreateEvent, mongo: MongoCli
     await note_human_activity(mongo, at=_aware(getattr(event.message, "created_at", None)))
 
 
+def _sticky_transport(bot):
+    return DiscordStickyTransport(
+        bot, STICKY.target, _sticky_components, history_reader=_latest_human_at,
+    )
+
+
 async def _sticky(bot, mongo, settings: dict, now: datetime) -> None:
-    if not settings["enabled"]:
-        return
-    row = await mongo.bot_config.find_one({"_id": settings_id(GUILD_ID)}) or {}
-    # Validate channel before beginning any create/delete sequence.
-    channel = await bot.rest.fetch_channel(HELP_CHANNEL_ID)
-    if int(getattr(channel, "id", 0)) != HELP_CHANNEL_ID or int(getattr(channel, "guild_id", 0)) != GUILD_ID:
-        return
-    if "last_human_at" not in row:
-        latest = await _latest_human_at(bot, HELP_CHANNEL_ID)
-        await note_human_activity(mongo, at=latest or now)
-        row["last_human_at"] = latest or now
-
-    previous = row.get("sticky_message_id")
-    last_human = _aware(row.get("last_human_at")) or now
-    if previous:
-        newest = getattr(channel, "last_message_id", None)
-        if newest and int(newest) == int(previous):
-            return
-        missing = False
-        try:
-            await bot.rest.fetch_message(HELP_CHANNEL_ID, int(previous))
-        except hikari.NotFoundError:
-            missing = True
-        except Exception:
-            log.exception("Gauntlet sticky verification failed")
-            return
-        if not missing:
-            if now - last_human < STICKY_AFTER:
-                return
-            # A bot reminder alone does not justify a repost.
-            posted = _aware(row.get("sticky_posted_at"))
-            if posted and last_human <= posted:
-                return
-    latest = await _latest_human_at(bot, HELP_CHANNEL_ID)
-    if latest and latest > last_human:
-        await note_human_activity(mongo, at=latest)
-        if previous and now - latest < STICKY_AFTER:
-            return
-
-    # The create intent is durable. If Discord creates the message but the
-    # response is lost, an automatic retry would duplicate a sticky.
-    token = uuid.uuid4().hex
-    claimed = await mongo.bot_config.update_one(
-        {"_id": settings_id(GUILD_ID), "sticky_state": {"$nin": ["posting", "unknown"]}},
-        {"$set": {"sticky_state": "posting", "sticky_token": token}},
-    )
-    if not claimed.matched_count:
-        return
-    try:
-        message = await bot.rest.create_message(
-            channel=HELP_CHANNEL_ID, components=_sticky_components(),
-            flags=hikari.MessageFlag.IS_COMPONENTS_V2 | hikari.MessageFlag.SUPPRESS_NOTIFICATIONS,
-            user_mentions=False, role_mentions=False, mentions_everyone=False,
-        )
-    except Exception:
-        await mongo.bot_config.update_one(
-            {"_id": settings_id(GUILD_ID), "sticky_token": token},
-            {"$set": {"sticky_state": "unknown"}},
-        )
-        log.exception("Gauntlet sticky create outcome unknown; automatic retry suppressed")
-        return
-    await mongo.bot_config.update_one(
-        {"_id": settings_id(GUILD_ID), "sticky_token": token},
-        {"$set": {"sticky_state": "posted", "sticky_message_id": int(message.id),
-                  "sticky_posted_at": utcnow(),
-                  "pending_sticky_delete_id": int(previous) if previous else 0},
-         "$unset": {"sticky_token": ""}},
-    )
-    await _drain_pending_sticky(mongo, now)
+    await STICKY.refresh(_sticky_transport(bot), mongo, now, enabled=settings["enabled"])
 
 
 async def _drain_pending_sticky(mongo, now: datetime) -> None:
-    row = await mongo.bot_config.find_one({"_id": settings_id(GUILD_ID)}) or {}
-    previous = int(row.get("pending_sticky_delete_id") or 0)
-    if not previous:
-        return
-    await _queue_delete(mongo, previous, now)
-    await mongo.bot_config.update_one(
-        {"_id": settings_id(GUILD_ID), "pending_sticky_delete_id": previous},
-        {"$unset": {"pending_sticky_delete_id": ""}},
-    )
+    await STICKY.drain_pending(mongo, now)
 
 
 async def _queue_delete(mongo, message_id: int, at: datetime) -> None:
-    key = f"gauntlet_help_delete:{GUILD_ID}:{int(message_id)}"
-    await mongo.bot_config.update_one(
-        {"_id": key},
-        {"$setOnInsert": {"kind": "gauntlet_help_delete", "guild_id": GUILD_ID,
-                           "message_id": int(message_id), "delete_at": at,
-                           "attempts": 0}},
-        upsert=True,
-    )
+    await STICKY.queue_delete(mongo, message_id, at)
 
 
 async def _drain_deletes(bot, mongo, now: datetime) -> None:
-    cursor = mongo.bot_config.find({"kind": "gauntlet_help_delete", "guild_id": GUILD_ID,
-                                    "delete_at": {"$lte": now}}).sort("delete_at", 1).limit(BATCH_SIZE)
-    for row in await cursor.to_list(length=BATCH_SIZE):
-        key = row["_id"]
-        try:
-            await bot.rest.delete_message(HELP_CHANNEL_ID, row["message_id"])
-        except hikari.NotFoundError:
-            pass
-        except Exception:
-            attempts = min(int(row.get("attempts", 0)) + 1, 8)
-            await mongo.bot_config.update_one({"_id": key}, {"$set": {
-                "attempts": attempts,
-                "delete_at": now + timedelta(minutes=min(2 ** attempts, 60)),
-            }})
-            log.exception("Gauntlet message deletion delayed: %s", key)
-            continue
-        await mongo.bot_config.delete_one({"_id": key})
+    await STICKY.drain_deletes(_sticky_transport(bot), mongo, now)
 
 
 async def _ticket_exists(mongo, user_id: int, advanced_at: datetime) -> bool:
