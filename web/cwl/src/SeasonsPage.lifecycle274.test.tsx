@@ -126,6 +126,7 @@ it.each([false, true])(
   async (published) => {
     const { host, cleanup } = await mount({ published });
     try {
+      expect(button("Create January 2027", host)).toBeUndefined();
       const start = button("Start January 2027", host);
       expect(start).toBeTruthy();
       expect(start.className.includes("primary")).toBe(published);
