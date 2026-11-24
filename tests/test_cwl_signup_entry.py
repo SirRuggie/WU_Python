@@ -83,11 +83,11 @@ def test_signup_help_footer_covers_both_pools_and_all_reminders_only(new_copy):
     import asyncio
     campaign = cwl_campaign.default_campaign(new_copy=new_copy)
     original = deepcopy(campaign)
-    help_line = cwl_campaign.CURRENT_SIGNUP_HELP_LINE if new_copy else cwl_campaign.SIGNUP_HELP_LINE
     check_line = cwl_campaign.CURRENT_SIGNUP_CHECK_LINE if new_copy else cwl_campaign.SIGNUP_CHECK_LINE
     short_line = cwl_campaign.CURRENT_SHORT_SIGNUP_CHECK_LINE if new_copy else cwl_campaign.SHORT_SIGNUP_CHECK_LINE
     for key, message in campaign['messages'].items():
         for pool in message['variants']:
+            help_line = cwl_campaign.CURRENT_SIGNUP_HELP_LINE[pool] if new_copy else cwl_campaign.SIGNUP_HELP_LINE
             built = asyncio.run(cwl_campaign.render_message(campaign, key, pool, preview=False))[0].build()[0]
             children = built['components']
             signup = key == 'signup' or key.startswith('reminder:')
@@ -106,3 +106,21 @@ def test_signup_help_footer_covers_both_pools_and_all_reminders_only(new_copy):
                     assert str(built).count(short_line) == 1
             assert 'cwl signup' not in str(built)
     assert campaign == original
+
+
+@pytest.mark.parametrize("pool, channel", [
+    ("main", "801950200133976124"),
+    ("lazy", "872692009066958879"),
+])
+def test_current_signup_and_reminder_help_points_to_matching_chat(pool, channel):
+    import asyncio
+    campaign = cwl_campaign.default_campaign(new_copy=True)
+    campaign["messages"]["signup"]["variants"][pool]["body"] = "Saved custom wording"
+    before = deepcopy(campaign)
+    for key in ("signup", "reminder:1", "reminder:2", "reminder:3", "reminder:4", "reminder:5"):
+        built = asyncio.run(cwl_campaign.render_message(campaign, key, pool, preview=False))[0].build()[0]
+        assert built["components"][-1]["content"] == f"-# Need help? Message in <#{channel}>."
+    assert campaign == before
+    normalized = cwl_campaign.normalize_signup_entry(campaign)
+    assert normalized["messages"]["signup"]["variants"][pool]["body"].startswith("Saved custom wording")
+    assert cwl_campaign.SIGNUP_HELP_LINE == "-# Having trouble with the dashboard? Ping staff—we can help."

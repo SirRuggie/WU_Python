@@ -320,6 +320,25 @@ restarts preserve timers and message cleanup. The worker checks roughly once a
 minute. Failed message deletions are retried; uncertain sends are reconciled
 without blindly repeating recruit pings.
 
+### CWL Signup Help stickies
+
+The Main CWL chat (`801950200133976124`) and Lazy CWL chat
+(`872692009066958879`) each have a gold **CWL Signup Help** sticky, on by
+default. It asks members to ask their question here and ping CWL Commander
+(`1574854005417316483`) themselves. The sticky sends silently with all mentions
+disabled; it never pings the role. Nothing is posted in the announcement
+channels. Future signup and reminder announcement help lines point to the
+matching Main or Lazy chat; existing posts and legacy signup copy are unchanged.
+
+Both CWL stickies reuse the Gauntlet durable sticky helper. A buried sticky
+moves only after a human has posted after it and humans have been quiet for
+30 minutes; bot messages alone never cause a repost. Missing CWL stickies also
+wait for 30 minutes of human quiet. The worker checks every 60 seconds, creates
+the replacement before deleting its stored predecessor, and never retries an
+uncertain create. Each chat has separate guild-and-channel state in
+`settings.bot_config`. Gauntlet keeps its existing document, deletion receipts,
+30-minute human-quiet behavior and Recruitment Team role without a migration.
+
 ### Apply and Rite of Passage
 
 Recruit Gauntlet also includes **Apply / Clan Entry** and **Rite of Passage**.
