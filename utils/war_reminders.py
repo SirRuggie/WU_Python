@@ -158,13 +158,11 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
         label = 'War started' if event == 'start' else duration(int(event))+' left'
     started = event == 'start' and delayed_at is None
     icon = '⚔️' if started else '🔔'
-    title = (f"{clean(war['name'])} · War declared vs {clean(war['opponent'])}" if started
-             else f"{clean(war['name'])} · {label}")
+    title = f"{clean(war['name'])} vs {clean(war['opponent'])} · {label}"
     end = int(war['end'].timestamp())
     remaining = sum(war['limit']-m['used'] for m in members)
     count = f"{len(members)} account{'s' if len(members) != 1 else ''}"
-    opponent = '' if started else f"vs {clean(war['opponent'])} · "
-    subline = (f"-# {opponent}Ends <t:{end}:t> (<t:{end}:R>) · "
+    subline = (f"-# Ends <t:{end}:t> (<t:{end}:R>) · "
                f"{remaining} attacks left on {count} · Attacks used / available")
     if test:
         subline += f'\n-# Test reminder · {sample_label} · Simulated attacks'

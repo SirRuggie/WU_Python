@@ -127,8 +127,8 @@ it.each([1, 3])(
     const messages = Array.from({ length: parts }, (_, index) => ({
       content:
         index === 0
-          ? "## ⚔️ Edrag Rush · War declared vs Rival Clan\n-# Ends soon\n\nSample account"
-          : `⚔️ **Edrag Rush · War declared vs Rival Clan · part ${index + 1} of ${parts}**\n\nSample account`,
+          ? "## ⚔️ Edrag Rush vs Rival Clan · War started\n-# Ends soon\n\nSample account"
+          : `⚔️ **Edrag Rush vs Rival Clan · War started · part ${index + 1} of ${parts}**\n\nSample account`,
       footer: index === parts - 1,
     }));
     vi.mocked(api).mockResolvedValue({ messages });
@@ -140,7 +140,7 @@ it.each([1, 3])(
     const previews = [...host.querySelectorAll(".war-preview-message")];
     expect(previews).toHaveLength(parts);
     expect(previews[0].querySelector("h2")?.textContent).toBe(
-      "⚔️ Edrag Rush · War declared vs Rival Clan",
+      "⚔️ Edrag Rush vs Rival Clan · War started",
     );
     expect(host.querySelectorAll("h2")).toHaveLength(1);
     expect(
