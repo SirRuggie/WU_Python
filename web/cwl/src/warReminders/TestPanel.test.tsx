@@ -6,7 +6,6 @@ import { api } from "../api";
 import TestPanel from "./TestPanel";
 import type { ReminderSettings } from "./types";
 vi.mock("../api", () => ({ api: vi.fn() }));
-vi.mock("../DiscordPreview", () => ({ DiscordText: () => null }));
 let host: HTMLDivElement, root: ReturnType<typeof createRoot>;
 const settings: ReminderSettings = {
   enabled: false,
@@ -63,6 +62,7 @@ afterEach(() => {
   act(() => root.unmount());
   host.remove();
   vi.restoreAllMocks();
+  vi.useRealTimers();
 });
 it("requires a named channel confirmation and cancel performs no send", async () => {
   render();
@@ -119,3 +119,40 @@ it("does not offer a test when the selected channel cannot be named", () => {
   render({ channelName: "" });
   expect(button("Send test to selected channel").disabled).toBe(true);
 });
+
+it.each([1, 3])(
+  "renders part-one heading and footer only under the final part of a %i-part preview",
+  async (parts) => {
+    vi.useFakeTimers();
+    const messages = Array.from({ length: parts }, (_, index) => ({
+      content:
+        index === 0
+          ? "## ⚔️ Edrag Rush · War declared vs Rival Clan\n-# Ends soon\n\nSample account"
+          : `⚔️ **Edrag Rush · War declared vs Rival Clan · part ${index + 1} of ${parts}**\n\nSample account`,
+      footer: index === parts - 1,
+    }));
+    vi.mocked(api).mockResolvedValue({ messages });
+    await import("../DiscordPreview");
+    render({ active: true });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(300);
+    });
+    const previews = [...host.querySelectorAll(".war-preview-message")];
+    expect(previews).toHaveLength(parts);
+    expect(previews[0].querySelector("h2")?.textContent).toBe(
+      "⚔️ Edrag Rush · War declared vs Rival Clan",
+    );
+    expect(host.querySelectorAll("h2")).toHaveLength(1);
+    expect(
+      host.querySelectorAll('img[alt="Gold footer · end of reminder set"]'),
+    ).toHaveLength(1);
+    expect(
+      previews[parts - 1].querySelector("img")?.getAttribute("src"),
+    ).toContain("gold-footer.png");
+    expect(
+      previews.slice(0, -1).every((part) => part.querySelector("img") === null),
+    ).toBe(true);
+    expect(api).toHaveBeenCalledTimes(1);
+    expect(vi.mocked(api).mock.calls[0][0]).toMatch(/\/preview$/);
+  },
+);

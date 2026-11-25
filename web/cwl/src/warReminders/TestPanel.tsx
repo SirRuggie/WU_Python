@@ -1,5 +1,6 @@
 import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { api } from "../api";
+import goldFooter from "../assets/gold-footer.png";
 import ConfirmDialog from "../ConfirmDialog";
 import { reminderPreviewText } from "../warReminderPreview";
 import {
@@ -210,11 +211,19 @@ export default function TestPanel({
                   </small>
                 )}
                 <DiscordText text={reminderPreviewText(message.content)} />
+                {message.footer && (
+                  <img
+                    className="discord-preview-image"
+                    src={goldFooter}
+                    alt="Gold footer · end of reminder set"
+                  />
+                )}
               </div>
             ))}
             {mentionMe && (
               <small>
-                Your Discord mention is at the top of your account group. It starts the test notification.
+                Your Discord mention is at the top of your account group. It
+                starts the test notification.
               </small>
             )}
           </div>
