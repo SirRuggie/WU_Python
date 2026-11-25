@@ -4,6 +4,9 @@ from functools import partial
 import json
 import re
 from uuid import UUID
+from pathlib import Path
+
+import aiohttp
 
 from aiohttp import web
 
@@ -141,7 +144,16 @@ async def test_send(request):
         urls = []
         try:
             for payload in payloads:
-                sent = await discord(request, 'POST', f"/channels/{config['channel_id']}/messages", json=payload)
+                message = {key: value for key, value in payload.items() if key != 'footer'}
+                if payload.get('footer'):
+                    message['attachments'] = [{'id': 0, 'filename': 'Gold_Footer.png'}]
+                    form = aiohttp.FormData()
+                    form.add_field('payload_json', json.dumps(message), content_type='application/json')
+                    form.add_field('files[0]', (Path(__file__).resolve().parents[1] / 'assets/Gold_Footer.png').read_bytes(),
+                                   filename='Gold_Footer.png', content_type='image/png')
+                    sent = await discord(request, 'POST', f"/channels/{config['channel_id']}/messages", data=form)
+                else:
+                    sent = await discord(request, 'POST', f"/channels/{config['channel_id']}/messages", json=message)
                 urls.append(f"https://discord.com/channels/{GUILD_ID}/{config['channel_id']}/{sent['id']}")
                 await store.finish_delivery(key, urls=urls)
             await store.finish_delivery(key, status='sent', url=urls[0], urls=urls)

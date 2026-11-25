@@ -26,7 +26,7 @@ export type ReminderData = {
   health?: Health;
 };
 
-export type ReminderMessage = { content: string };
+export type ReminderMessage = { content: string; footer?: boolean };
 
 export const timeLabel = (minutes: number) => {
   if (minutes % 60 === 0) return `${minutes / 60}h`;

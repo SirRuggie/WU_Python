@@ -27,11 +27,18 @@ def setup(monkeypatch):
     return req,coll,discord
 
 
+def sent_payload(call):
+    if 'json' in call.kwargs:
+        return call.kwargs['json']
+    fields = {options['name']: value for options, headers, value in call.kwargs['data']._fields}
+    return json.loads(fields['payload_json'])
+
+
 def test_test_send_mentions_only_actor_and_returns_receipt(setup):
     req,coll,discord=setup
     response=asyncio.run(api.test_send(req))
     assert json.loads(response.text)['url'].endswith('/456')
-    payload=discord.await_args.kwargs['json']
+    payload=sent_payload(discord.await_args)
     assert payload['allowed_mentions']['users']==['123456789012345678']
     assert coll.insert_one.await_args.args[0]['test'] is True
     assert coll.update_one.await_args.args[1]['$set']['status']=='sent'
@@ -131,24 +138,36 @@ def test_form_cannot_supply_a_different_mention_recipient(setup):
     req,coll,discord=setup
     req.json.return_value.update(user_id='999999999999999999',tester='999999999999999999')
     asyncio.run(api.test_send(req))
-    assert discord.await_args.kwargs['json']['allowed_mentions']['users']==['123456789012345678']
+    assert sent_payload(discord.await_args)['allowed_mentions']['users']==['123456789012345678']
 
 
 def test_multipart_test_sends_all_parts_and_keeps_partial_receipts(setup,monkeypatch):
     req,coll,discord=setup
     monkeypatch.setattr(api,'test_messages',AsyncMock(return_value=[
-        {'content':'first','allowed_mentions':{'users':['123456789012345678']}},
-        {'content':'second','allowed_mentions':{'users':[]}},
+        {'content':'first','footer':False,'allowed_mentions':{'users':['123456789012345678']}},
+        {'content':'second','footer':True,'allowed_mentions':{'users':[]},'components':[{'type':1,'components':[]}]},
     ]))
     discord.side_effect=[{'guild_id':str(r.GUILD_ID),'type':0},{'id':'first'},{'id':'second'}]
     result=json.loads(asyncio.run(api.test_send(req)).text)
     assert len(result['urls'])==2 and discord.await_count==3
+    first, final = discord.await_args_list[1:]
+    assert first.kwargs['json'] == {'content':'first','allowed_mentions':{'users':['123456789012345678']}}
+    assert 'json' not in final.kwargs
+    outgoing = sent_payload(final)
+    assert 'footer' not in outgoing
+    assert outgoing['allowed_mentions'] == {'users':[]}
+    assert outgoing['components'] == [{'type':1,'components':[]}]
+    assert outgoing['attachments'] == [{'id':0,'filename':'Gold_Footer.png'}]
+    fields = {options['name']:(options, headers, value) for options, headers, value in final.kwargs['data']._fields}
+    options, headers, value = fields['files[0]']
+    assert options['filename'] == 'Gold_Footer.png' and headers['Content-Type'] == 'image/png'
+    assert value.startswith(b'\x89PNG\r\n\x1a\n')
     assert coll.update_one.await_args.args[1]['$set']['status']=='sent'
 
 
 def test_partial_delivery_failure_records_sent_part_without_automatic_retry(setup,monkeypatch):
     req,coll,discord=setup
-    monkeypatch.setattr(api,'test_messages',AsyncMock(return_value=[{'content':'first'},{'content':'second'}]))
+    monkeypatch.setattr(api,'test_messages',AsyncMock(return_value=[{'content':'first','footer':False},{'content':'second','footer':True}]))
     discord.side_effect=[{'guild_id':str(r.GUILD_ID),'type':0},{'id':'first'},web.HTTPServiceUnavailable()]
     with pytest.raises(web.HTTPServiceUnavailable):asyncio.run(api.test_send(req))
     receipt=coll.update_one.await_args.args[1]['$set']
@@ -167,3 +186,33 @@ def test_sample_cache_is_scoped_to_user_and_clan():
         assert (await cache.get(providers,'1','#CLAN1'))[0]['tag']=='#A'
     asyncio.run(run())
     assert providers.linked_tags.await_count==3
+
+
+def test_footer_open_failure_after_first_part_preserves_partial_uncertainty(setup, monkeypatch):
+    req, coll, discord = setup
+    monkeypatch.setattr(api, 'test_messages', AsyncMock(return_value=[
+        {'content': 'first', 'footer': False}, {'content': 'last', 'footer': True}]))
+    original_read = api.Path.read_bytes
+    def missing_footer(path):
+        if path.name == 'Gold_Footer.png':
+            raise FileNotFoundError('isolated missing footer fixture')
+        return original_read(path)
+    monkeypatch.setattr(api.Path, 'read_bytes', missing_footer)
+    discord.side_effect = [{'guild_id': str(r.GUILD_ID), 'type': 0}, {'id': 'first'}]
+    with pytest.raises(FileNotFoundError):
+        asyncio.run(api.test_send(req))
+    receipt = coll.update_one.await_args.args[1]['$set']
+    assert receipt['status'] == 'uncertain'
+    assert receipt['urls'] == [f'https://discord.com/channels/{r.GUILD_ID}/123456789012345679/first']
+    assert discord.await_count == 2
+
+
+def test_single_part_footer_is_multipart_and_marker_never_reaches_discord(setup):
+    req, coll, discord = setup
+    asyncio.run(api.test_send(req))
+    assert 'data' in discord.await_args.kwargs and 'json' not in discord.await_args.kwargs
+    payload = sent_payload(discord.await_args)
+    assert payload['content'].startswith('## 🔔 ')
+    assert 'footer' not in payload and 'embeds' not in payload and 'flags' not in payload
+    assert payload['allowed_mentions'] == dict(parse=[], users=['123456789012345678'], roles=[], replied_user=False)
+    assert [button['label'] for button in payload['components'][0]['components']] == ['My tasks', 'Wars']

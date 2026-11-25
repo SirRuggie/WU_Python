@@ -19,6 +19,7 @@ SCAN_INTERVAL_SECONDS = 60
 FETCH_CONCURRENCY = 4
 _task = None
 _warned_maintenance_start = None
+_channel_locks: dict[int, asyncio.Lock] = {}
 
 
 def _link_row(spec):
@@ -29,58 +30,62 @@ def _link_row(spec):
 
 
 async def send_occurrence(store, bot, config, war, event, owners, *, maintenance_since=None, prior_war_start=None):
-    clan_tag = config['_id']
-    key = occurrence_key(clan_tag, war['start'], event)
-    fresh = await store.get_settings(clan_tag)
-    if (not fresh or fresh.get('version') != config.get('version')
-            or not fresh['enabled'] or not await store.clan_exists(clan_tag)):
-        return
-    now = datetime.now(timezone.utc)
-    delayed = maintenance_since is not None
-    if delayed:
-        if coc_maintenance.in_maintenance():
+    # Fetches happen in scan_clan; only claim and complete delivery are serialized.
+    lock = _channel_locks.setdefault(int(config['channel_id']), asyncio.Lock())
+    async with lock:
+        clan_tag = config['_id']
+        key = occurrence_key(clan_tag, war['start'], event)
+        fresh = await store.get_settings(clan_tag)
+        if (not fresh or fresh.get('version') != config.get('version')
+                or not fresh['enabled'] or not await store.clan_exists(clan_tag)):
             return
-        state = await store.get_status(clan_tag) or {}
-        if (state.get('error') == 'Maintenance'
-                or state.get('maintenance_since') is None
-                or reminders.utc(state['maintenance_since']) != reminders.utc(maintenance_since)
-                or state.get('war_start') is None
-                or reminders.utc(state['war_start']) != prior_war_start
-                or event not in dict(reminders.catchup_events(
-                    war, config, now, maintenance_since, prior_war_start))):
+        now = datetime.now(timezone.utc)
+        delayed = maintenance_since is not None
+        if delayed:
+            if coc_maintenance.in_maintenance():
+                return
+            state = await store.get_status(clan_tag) or {}
+            if (state.get('error') == 'Maintenance'
+                    or state.get('maintenance_since') is None
+                    or reminders.utc(state['maintenance_since']) != reminders.utc(maintenance_since)
+                    or state.get('war_start') is None
+                    or reminders.utc(state['war_start']) != prior_war_start
+                    or event not in dict(reminders.catchup_events(
+                        war, config, now, maintenance_since, prior_war_start))):
+                return
+        elif event not in reminders.due(war, config, now):
             return
-    elif event not in reminders.due(war, config, now):
-        return
-    payloads = reminders.messages(war, config, event, owners, **({'delayed_at': now} if delayed else {}))
-    claimed = await store.claim_delivery(
-        key, clan_tag=clan_tag, at=now, event=event,
-        channel_id=config['channel_id'], test=False,
-        status='sending' if payloads else 'skipped',
-        detail='' if payloads else 'No players need a reminder.',
-    )
-    if not claimed:
-        return
-    urls = []
-    try:
-        for payload in payloads:
-            sent = await bot.rest.create_message(
-                int(config['channel_id']), content=payload['content'],
-                mentions_everyone=False, role_mentions=False,
-                user_mentions=[int(uid) for uid in payload['allowed_mentions']['users']],
-                components=[_link_row(row) for row in payload.get('components', [])],
-            )
-            urls.append(f"https://discord.com/channels/{reminders.GUILD_ID}/{config['channel_id']}/{sent.id}")
-            # Preserve partial progress even if the process stops between parts.
-            await store.finish_delivery(key, urls=urls)
-        if payloads:
-            await store.finish_delivery(key, status='sent', url=urls[0], urls=urls)
-    except Exception:
-        # Discord might already have accepted the request; do not retry a ping.
-        await store.finish_delivery(
-            key, status='uncertain', urls=urls,
-            detail="The delivery stopped. Check the channel. The bot will not send this reminder again.",
+        payloads = reminders.messages(war, config, event, owners, **({'delayed_at': now} if delayed else {}))
+        claimed = await store.claim_delivery(
+            key, clan_tag=clan_tag, at=now, event=event,
+            channel_id=config['channel_id'], test=False,
+            status='sending' if payloads else 'skipped',
+            detail='' if payloads else 'No players need a reminder.',
         )
-        raise
+        if not claimed:
+            return
+        urls = []
+        try:
+            for payload in payloads:
+                sent = await bot.rest.create_message(
+                    int(config['channel_id']), content=payload['content'],
+                    mentions_everyone=False, role_mentions=False,
+                    user_mentions=[int(uid) for uid in payload['allowed_mentions']['users']],
+                    components=[_link_row(row) for row in payload.get('components', [])],
+                    **({'attachment': hikari.File('assets/Gold_Footer.png')} if payload.get('footer') else {}),
+                )
+                urls.append(f"https://discord.com/channels/{reminders.GUILD_ID}/{config['channel_id']}/{sent.id}")
+                # Preserve partial progress even if the process stops between parts.
+                await store.finish_delivery(key, urls=urls)
+            if payloads:
+                await store.finish_delivery(key, status='sent', url=urls[0], urls=urls)
+        except Exception:
+            # Discord might already have accepted the request; do not retry a ping.
+            await store.finish_delivery(
+                key, status='uncertain', urls=urls,
+                detail="The delivery stopped. Check the channel. The bot will not send this reminder again.",
+            )
+            raise
 
 
 async def _record_maintenance(store, config, now):

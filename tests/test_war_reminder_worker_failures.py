@@ -186,3 +186,135 @@ def test_scan_confirms_only_scanned_settings_and_refreshes_first_new_success(mon
         assert persisted['settings_updated_at'].replace(tzinfo=timezone.utc) == config['updated_at']
         bot.rest.create_message.assert_not_awaited()
     asyncio.run(check())
+
+
+def _multipart_channels(monkeypatch, channels):
+    monkeypatch.setattr(worker, '_channel_locks', {})
+    monkeypatch.setattr(worker, 'WarReminderStore', lambda db: db)
+    monkeypatch.setattr(reminders, 'snapshot', lambda war, tag: war)
+    monkeypatch.setattr(reminders, 'messages', lambda war, *args, **kw: [
+        dict(content=f"{war['name']}{part}", allowed_mentions={'users': []}, footer=part == 3)
+        for part in (1, 2, 3)])
+    now = datetime.now(timezone.utc)
+    pairs = []
+    for name, channel in zip(('A', 'B'), channels):
+        store = Store()
+        store.config.update(_id='#'+name, channel_id=channel)
+        war = reminders.sample({'tag': '#'+name, 'name': name}, '60')
+        war.update(start=now-timedelta(hours=23), end=now+timedelta(hours=1))
+        pairs.append((store, NS(get_current_war=AsyncMock(return_value=war))))
+    return pairs
+
+
+def test_same_channel_concurrent_clan_scans_group_claim_and_all_parts_with_footer(monkeypatch):
+    pairs = _multipart_channels(monkeypatch, ['123456789012345678'] * 2)
+    calls = []
+    async def create(channel, **payload):
+        calls.append((payload['content'], payload))
+        await asyncio.sleep(0)
+        return NS(id=len(calls))
+    bot = NS(rest=NS(fetch_channel=AsyncMock(return_value=NS(guild_id=reminders.GUILD_ID, type=0)), create_message=create))
+    links = NS(linked_owners=AsyncMock(return_value={}))
+    async def run():
+        await asyncio.gather(*(worker.scan_clan(store, client, bot, links, store.config.copy())
+                               for store, client in pairs))
+    asyncio.run(run())
+    assert [content for content, _ in calls] in [list(('A1','A2','A3','B1','B2','B3')), list(('B1','B2','B3','A1','A2','A3'))]
+    for content, payload in calls:
+        assert ('attachment' in payload) is content.endswith('3')
+        if content.endswith('3'):
+            assert isinstance(payload['attachment'], worker.hikari.File)
+            assert payload['attachment'].filename == 'Gold_Footer.png'
+        assert payload['mentions_everyone'] is False and payload['role_mentions'] is False
+    assert all(next(iter(store.receipts.values()))['status'] == 'sent' for store, _ in pairs)
+
+
+@pytest.mark.parametrize('same_channel', [True, False])
+def test_cancelled_send_releases_channel_and_different_channel_never_waits(monkeypatch, same_channel):
+    pairs = _multipart_channels(monkeypatch, ['123456789012345678', '123456789012345678' if same_channel else '123456789012345679'])
+    async def run():
+        entered, blocked = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def create(channel, **payload):
+            calls.append(payload['content'])
+            if payload['content'] == 'A1':
+                entered.set()
+                await blocked.wait()
+            return NS(id=len(calls))
+        bot = NS(rest=NS(fetch_channel=AsyncMock(return_value=NS(guild_id=reminders.GUILD_ID, type=0)), create_message=create))
+        links = NS(linked_owners=AsyncMock(return_value={}))
+        tasks = [asyncio.create_task(worker.scan_clan(store, client, bot, links, store.config.copy()))
+                 for store, client in pairs]
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            await asyncio.sleep(0)
+            if same_channel:
+                assert calls == ['A1'] and not pairs[1][0].receipts
+                tasks[0].cancel()
+                with pytest.raises(asyncio.CancelledError): await tasks[0]
+            await asyncio.wait_for(tasks[1], 1)
+            assert calls[-3:] == ['B1', 'B2', 'B3']
+            assert next(iter(pairs[0][0].receipts.values()))['status'] == 'sending'
+            assert next(iter(pairs[1][0].receipts.values()))['status'] == 'sent'
+        finally:
+            for task in tasks:
+                if not task.done(): task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+        assert not any(lock.locked() for lock in worker._channel_locks.values())
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize('change', ['disable', 'version', 'expiry'])
+def test_waiting_channel_rechecks_settings_and_due_before_claim(monkeypatch, change):
+    pairs = _multipart_channels(monkeypatch, ['123456789012345678'] * 2)
+    async def run():
+        entered, release = asyncio.Event(), asyncio.Event()
+        calls = []
+        async def create(channel, **payload):
+            calls.append(payload['content'])
+            if payload['content'] == 'A1':
+                entered.set(); await release.wait()
+            return NS(id=len(calls))
+        bot = NS(rest=NS(fetch_channel=AsyncMock(return_value=NS(guild_id=reminders.GUILD_ID, type=0)), create_message=create))
+        links = NS(linked_owners=AsyncMock(return_value={}))
+        tasks = [asyncio.create_task(worker.scan_clan(store, client, bot, links, store.config.copy()))
+                 for store, client in pairs]
+        try:
+            await asyncio.wait_for(entered.wait(), 1)
+            await asyncio.sleep(0)
+            if change == 'disable': pairs[1][0].config['enabled'] = False
+            elif change == 'version': pairs[1][0].config['version'] += 1
+            else:
+                original = reminders.due
+                monkeypatch.setattr(reminders, 'due', lambda war, config, now: [] if war['name'] == 'B' else original(war, config, now))
+            release.set()
+            await asyncio.gather(*tasks)
+            assert calls == ['A1', 'A2', 'A3']
+            assert not pairs[1][0].receipts
+        finally:
+            for task in tasks:
+                if not task.done(): task.cancel()
+            await asyncio.gather(*tasks, return_exceptions=True)
+    asyncio.run(run())
+
+
+def test_partial_exception_releases_channel_without_replaying_uncertain_set(monkeypatch):
+    pairs = _multipart_channels(monkeypatch, ['123456789012345678'] * 2)
+    calls = []
+    async def create(channel, **payload):
+        calls.append(payload['content'])
+        await asyncio.sleep(0)
+        if payload['content'] == 'A2': raise TimeoutError('mock accepted status unknown')
+        return NS(id=len(calls))
+    bot = NS(rest=NS(fetch_channel=AsyncMock(return_value=NS(guild_id=reminders.GUILD_ID, type=0)), create_message=create))
+    links = NS(linked_owners=AsyncMock(return_value={}))
+    async def run():
+        await asyncio.gather(*(worker.scan_clan(store, client, bot, links, store.config.copy())
+                               for store, client in pairs))
+        await worker.scan_clan(pairs[0][0], pairs[0][1], bot, links, pairs[0][0].config.copy())
+    asyncio.run(run())
+    assert calls == ['A1', 'A2', 'B1', 'B2', 'B3']
+    first = next(iter(pairs[0][0].receipts.values()))
+    assert first['status'] == 'uncertain' and len(first['urls']) == 1
+    assert next(iter(pairs[1][0].receipts.values()))['status'] == 'sent'
+    assert not any(lock.locked() for lock in worker._channel_locks.values())

@@ -156,18 +156,23 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
                  else 'Less than a minute left') + ' · delayed by Clash maintenance'
     else:
         label = 'War started' if event == 'start' else duration(int(event))+' left'
-    title = f"🔔 **{clean(war['name'])} · {label}**"
+    started = event == 'start' and delayed_at is None
+    icon = '⚔️' if started else '🔔'
+    title = (f"{clean(war['name'])} · War declared vs {clean(war['opponent'])}" if started
+             else f"{clean(war['name'])} · {label}")
     end = int(war['end'].timestamp())
     remaining = sum(war['limit']-m['used'] for m in members)
     count = f"{len(members)} account{'s' if len(members) != 1 else ''}"
-    subline = (f"-# vs {clean(war['opponent'])} · Ends <t:{end}:t> (<t:{end}:R>) · "
+    opponent = '' if started else f"vs {clean(war['opponent'])} · "
+    subline = (f"-# {opponent}Ends <t:{end}:t> (<t:{end}:R>) · "
                f"{remaining} attacks left on {count} · Attacks used / available")
     if test:
         subline += f'\n-# Test reminder · {sample_label} · Simulated attacks'
 
     def head(part, first):
         # Concatenate: clan names may contain braces, so never str.format them.
-        return title+part+'\n'+(subline+'\n' if first else '')+'\n'
+        heading = f'## {icon} {title}{part}' if first else f'{icon} **{title}{part}**'
+        return heading+'\n'+(subline+'\n' if first else '')+'\n'
 
     longest_part = ' · part 99 of 99'
     first_budget = 2000 - discord_length(head(longest_part, True))
@@ -196,7 +201,7 @@ def messages(war, config, event, owners=None, *, test=False, tester=None, sample
     results = []
     for index, (text, users) in enumerate(pages):
         part = f' · part {index+1} of {total}' if total > 1 else ''
-        results.append(dict(content=head(part, index == 0)+text,
+        results.append(dict(content=head(part, index == 0)+text, footer=index == total-1,
                             allowed_mentions=dict(parse=[], users=users, roles=[], replied_user=False),
                             components=[{"type": 1, "components": [
                                 {"type": 2, "style": 5, "label": "My tasks", "url": TASKS_URL},
