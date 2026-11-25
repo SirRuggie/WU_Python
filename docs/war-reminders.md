@@ -6,7 +6,7 @@ The clan directory has name/tag search, type filtering, and a scrollable list in
 
 ## Message and test delivery
 
-A reminder is a standard Discord text message, with no embed or Components V2, so the phone notification shows its title. Part 1 starts with a `## ` heading: clan and remaining time, for example **🔔 Edrag Rush · 12 hours left**. The War Start title names the opponent: **⚔️ Edrag Rush · War declared vs ABCD GAMER**, and its subline omits the opponent. For time reminders, the second line is subtext with the opponent, the end time (local time plus Discord's live relative time), total attacks left, and the legend "Attacks used / available".
+A reminder is a standard Discord text message, with no embed or Components V2, so the phone notification shows its title. Part 1 starts with a `## ` heading: clan vs opponent and remaining time, for example **🔔 Edrag Rush vs ABCD GAMER · 12 hours left**. War Start uses **⚔️ Edrag Rush vs ABCD GAMER · War started**. The subline omits the opponent. It shows the end time (local time plus Discord's live relative time), total attacks left, and the legend "Attacks used / available".
 
 Each Discord owner is mentioned once. An owner with one pending account gets a single line: mention, Town Hall emoji, game name, and attacks used / available. An owner with two or more accounts gets one line, "mention · N accounts", followed by one quoted row per account. Single-account owners come first, then grouped owners, then "Not linked · no ping", each in roster order. Linked rows omit the player tag; unlinked or ambiguously linked rows keep it in inline code so staff can link the account, and never ping. Counts use non-breaking spaces so they stay with their separator on narrow screens.
 

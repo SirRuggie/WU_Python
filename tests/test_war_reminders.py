@@ -135,7 +135,7 @@ def test_five_accounts_group_under_single_owner_and_heading_is_notification_text
     payloads=r.messages(w,config(),'720',{m['tag']:uid for m in w['members']})
     assert len(payloads)==1
     text=payloads[0]['content']
-    assert text.startswith('## 🔔 Edrag Rush · 12 hours left\n-# vs ')
+    assert text.startswith('## 🔔 Edrag Rush vs Rival Clan · 12 hours left\n-# Ends ')
     assert f'<@{uid}> · 5 accounts' in text
     assert text.count(f'<@{uid}>')==1
     for i in range(5):assert text.count(f'Account {i}')==1
@@ -222,8 +222,8 @@ def test_header_has_live_end_time_totals_legend_and_singular_count():
     text=r.messages(w,config(),'60',{'#SAMPLE1':'505227988229554179'})[0]['content']
     end=int(w['end'].timestamp())
     first,second=text.split('\n')[:2]
-    assert first=='## 🔔 Warriors · 1 hour left'
-    assert second==f'-# vs Rival Clan · Ends <t:{end}:t> (<t:{end}:R>) · 2 attacks left on 1 account · Attacks used / available'
+    assert first=='## 🔔 Warriors vs Rival Clan · 1 hour left'
+    assert second==f'-# Ends <t:{end}:t> (<t:{end}:R>) · 2 attacks left on 1 account · Attacks used / available'
     assert 'attacks remaining' not in text
 
 
@@ -234,9 +234,9 @@ def test_long_reminder_repeats_short_header_and_never_repeats_pings():
     pages=r.messages(w,config(),'start',owners)
     assert len(pages)>1
     assert all(r.discord_length(p['content'])<=2000 for p in pages)
-    assert pages[0]['content'].startswith(f'## ⚔️ Edrag Rush · War declared vs Rival Clan · part 1 of {len(pages)}\n-# Ends ')
+    assert pages[0]['content'].startswith(f'## ⚔️ Edrag Rush vs Rival Clan · War started · part 1 of {len(pages)}\n-# Ends ')
     for n,page in enumerate(pages[1:],2):
-        assert page['content'].startswith(f'⚔️ **Edrag Rush · War declared vs Rival Clan · part {n} of {len(pages)}**\n\n')
+        assert page['content'].startswith(f'⚔️ **Edrag Rush vs Rival Clan · War started · part {n} of {len(pages)}**\n\n')
         assert '-# vs ' not in page['content']
     users=[u for p in pages for u in p['allowed_mentions']['users']]
     assert len(users)==len(set(users))==len(set(owners.values()))
@@ -257,7 +257,7 @@ def test_oversized_group_continues_without_second_mention():
 def test_braces_in_clan_name_render_literally():
     w=war(); w['name']='{part} {0}'
     text=r.messages(w,config(),'60',{'#SAMPLE1':'505227988229554179'})[0]['content']
-    assert text.startswith('## 🔔 {part} {0} · 1 hour left')
+    assert text.startswith('## 🔔 {part} {0} vs Rival Clan · 1 hour left')
 
 
 @pytest.mark.parametrize('count,parts', [(3, 1), (25, 2), (50, 3)])
@@ -272,31 +272,31 @@ def test_heading_and_footer_mark_exactly_first_and_last_parts(count, parts, test
     payloads = r.messages(w, config(), '720', owners, test=test)
     if not test:
         assert len(payloads) == parts
-    assert payloads[0]['content'].startswith('## 🔔 Warriors · 12 hours left')
+    assert payloads[0]['content'].startswith('## 🔔 Warriors vs Rival Clan · 12 hours left')
     assert '**' not in payloads[0]['content'].split('\n')[0]
     assert [payload['footer'] for payload in payloads] == [False] * (len(payloads)-1) + [True]
     for index, payload in enumerate(payloads[1:], 2):
-        assert payload['content'].startswith(f'🔔 **Warriors · 12 hours left · part {index} of {len(payloads)}**\n')
+        assert payload['content'].startswith(f'🔔 **Warriors vs Rival Clan · 12 hours left · part {index} of {len(payloads)}**\n')
         assert not payload['content'].startswith('## ')
 
 
-def test_war_start_promotes_clean_opponent_and_omits_it_from_subline():
+def test_war_start_names_clean_matchup_and_omits_it_from_subline():
     w = war()
     w['opponent'] = '@everyone\n<@999999999999999999> **Rival**'
     payload = r.messages(w, config(), 'start')[0]
     title, subline = payload['content'].split('\n')[:2]
-    assert title == f"## ⚔️ Warriors · War declared vs {r.clean(w['opponent'])}"
+    assert title == f"## ⚔️ Warriors vs {r.clean(w['opponent'])} · War started"
     assert subline.startswith('-# Ends ') and 'vs ' not in subline
     assert r.clean(w['opponent']) not in subline
     assert payload['allowed_mentions'] == dict(parse=[], users=[], roles=[], replied_user=False)
 
 
-def test_delayed_start_keeps_actual_time_label_and_bell_and_opponent_subline():
+def test_delayed_start_keeps_matchup_actual_time_label_and_bell_without_opponent_subline():
     w = war()
     payload = r.messages(w, config(), 'start', delayed_at=w['end']-timedelta(minutes=718))[0]
     title, subline = payload['content'].split('\n')[:2]
-    assert title == '## 🔔 Warriors · 11 hours 58 minutes left · delayed by Clash maintenance'
-    assert subline.startswith('-# vs Rival Clan · Ends ')
+    assert title == '## 🔔 Warriors vs Rival Clan · 11 hours 58 minutes left · delayed by Clash maintenance'
+    assert subline.startswith('-# Ends ')
     assert payload['footer'] is True
 
 
@@ -315,4 +315,35 @@ def test_long_escaped_astral_clan_opponent_and_roster_keep_full_utf16_budget(cou
         assert sum(payload['content'].count(r.clean(member['name'])) for payload in payloads) == 1
     users = [user for payload in payloads for user in payload['allowed_mentions']['users']]
     assert len(users) == len(set(users)) == len(set(owners.values()))
+    assert [payload['footer'] for payload in payloads] == [False] * (len(payloads)-1) + [True]
+
+
+@pytest.mark.parametrize('event,delayed', [('start', False), ('720', False), ('start', True), ('720', True)])
+@pytest.mark.parametrize('test', [False, True])
+def test_every_part_title_has_clean_matchup_and_no_generated_declared_or_opponent_subline(event, delayed, test):
+    w = war()
+    w['name'] = 'Clan **{}** @everyone\nHome'
+    w['opponent'] = 'Opponent <@999999999999999999>\nRival'
+    w['members'] = [dict(tag=f'#{i}', name=f'Player number {i}', position=i, th=18, used=0)
+                    for i in range(50)]
+    uid = '123456789012345678'
+    extra = {'delayed_at': w['end'] - timedelta(minutes=718)} if delayed else {}
+    payloads = r.messages(w, config(), event, {m['tag']: uid for m in w['members']},
+                          test=test, tester=uid if test else None, **extra)
+    assert len(payloads) >= 2
+    matchup = f"{r.clean(w['name'])} vs {r.clean(w['opponent'])}"
+    label = ('11 hours 58 minutes left · delayed by Clash maintenance' if delayed
+             else 'War started' if event == 'start' else '12 hours left')
+    icon = '⚔️' if event == 'start' and not delayed else '🔔'
+    for index, payload in enumerate(payloads):
+        title = payload['content'].split('\n')[0]
+        part = f' · part {index+1} of {len(payloads)}'
+        expected = f'## {icon} {matchup} · {label}{part}' if index == 0 else f'{icon} **{matchup} · {label}{part}**'
+        assert title == expected
+        assert 'declared' not in payload['content'].lower()
+        assert r.discord_length(payload['content']) <= 2000
+        for subline in [line for line in payload['content'].split('\n') if line.startswith('-# ')]:
+            assert 'vs ' not in subline and r.clean(w['opponent']) not in subline
+        assert payload['allowed_mentions']['parse'] == [] and payload['allowed_mentions']['roles'] == []
+    assert sum(payload['allowed_mentions']['users'].count(uid) for payload in payloads) == 1
     assert [payload['footer'] for payload in payloads] == [False] * (len(payloads)-1) + [True]
