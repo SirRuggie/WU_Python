@@ -334,7 +334,8 @@ class RaffleDomainTests(unittest.TestCase):
                     'winners': [{'tag': '#P'+str(i), 'player_name': '<@123456789012345678>\n' + '😀'*80, 'attacks': None, 'stars': None} for i in range(50)]}
         pages = announcement_pages(snapshot)
         self.assertGreater(len(pages), 1)
-        self.assertIn('Rule: 4+ attacks OR 3+ attacks and 8+ stars', pages[0])
+        from utils.cwl_lazy_rule import RULE_SHORT
+        self.assertIn(f'Rule: {RULE_SHORT}', pages[0])
         self.assertNotIn('Minimum None attacks', pages[0])
         self.assertIn('Attack data not available', pages[0])
         self.assertTrue(all(len(p.encode('utf-16-le')) // 2 <= 2000 for p in pages))

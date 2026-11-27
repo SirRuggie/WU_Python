@@ -19,6 +19,7 @@ from utils.constants import WU_GOLD
 from utils.emoji import fwa_minimum_level, emojis
 from utils.town_halls import town_hall_emoji
 from utils.town_hall_base_views import base_menu
+from utils.cwl_lazy_rule import RULE_SENTENCE
 
 LAZY_CWL_RULES_URL = "https://docs.google.com/document/d/137zYF4CHwW-hqwZXzDVmQWONkao1X-XckjGs5Myg-h0/edit"
 
@@ -148,7 +149,7 @@ def native_components(variant: str, *, recruit_mention: str, recruiter_mention: 
                                 f"{emojis.gold_arrow_right} **Bonus Medals**\n"
                                 f"{emojis.blank}{emojis.white_arrow_right} Medals are awarded through a lottery system.\n\n"
                                 f"{emojis.gold_arrow_right} **Participation Requirement**\n"
-                                f"{emojis.blank}{emojis.white_arrow_right} Follow the Lazy CWL rules and complete **at least 4+ attacks (60%)**.\n"
+                                f"{emojis.blank}{emojis.white_arrow_right} Follow the Lazy CWL rules and **{RULE_SENTENCE}**\n"
                             )),
                             Media(
                                 items=[

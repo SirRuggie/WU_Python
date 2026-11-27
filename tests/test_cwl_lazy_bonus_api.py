@@ -370,12 +370,13 @@ class LazyBonusApiTests(RaffleTests):
         await self.ready_lazy()
         preview = await self.review_preview()
         self.assertEqual(preview['rules_version'], 4)
-        self.assertIn('4+ attacks OR 3+ attacks and 8+ stars', preview['qualification_rule'])
+        from utils.cwl_lazy_rule import RULE_SHORT
+        self.assertEqual(RULE_SHORT, preview['qualification_rule'])
         response = await self.call('POST', self.base + '/draw', self.owner,
             json={'pool': 'lazy', 'clan_tag': '#C2Y', 'slots': 2, 'fingerprint': preview['fingerprint']})
         self.assertEqual(response.status, 200, await response.text())
         draw = (await response.json())['draws'][0]
-        self.assertIn('Rule: 4+ attacks OR 3+ attacks and 8+ stars', draw['messages'][0])
+        self.assertIn(f'Rule: {RULE_SHORT}', draw['messages'][0])
         response = await self.call('POST', self.base + f"/{draw['id']}/approve", self.owner, json={})
         self.assertEqual(response.status, 200, await response.text())
         row = self.app['store'].one('SELECT reason FROM bonus_confirmations WHERE season_id=? AND cycle=?',

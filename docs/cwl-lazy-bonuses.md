@@ -1,5 +1,11 @@
 # Lazy CWL bonus review
 
+## Rule source
+
+The participation rule lives in `utils/cwl_lazy_rule.py` and
+`web/cwl/src/lazyRule.ts`; `tests/test_lazy_rule_parity.py` keeps them equal.
+Saved snapshots keep their saved rule text.
+
 Lazy qualification is four or more attacks, or three or more attacks with at
 least eight stars. Main retains its configured minimum-attack policy. These are
 staff dashboard decisions; the bot does not award medals inside Clash of Clans.

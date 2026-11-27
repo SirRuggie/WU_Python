@@ -11,6 +11,7 @@ from extensions.cwl_discord_transport import AnnouncementRejected, AnnouncementU
 from utils.cwl_bonus_raffle_store import CLAN_REP_ROLE_ID, LAZY_SEASON_POOL, REP_NOTE_MAX, SEASON_POOL_JOIN, RaffleConflict, RaffleStore
 from utils.cwl_bonus_allowance import AllowanceStore
 from utils.cwl_bonus_raffle import eligibility, lazy_eligibility
+from utils.cwl_lazy_rule import RULE_SHORT
 from .bonuses import _view, _require_draft, _bump, _validate_revision, _cas
 
 
@@ -147,7 +148,7 @@ async def policy(request):
     if set(body) != {'pool', 'minimum', 'revision'} or body['pool'] not in ('main', 'lazy') or type(body['minimum']) is not int or not 0 <= body['minimum'] <= 7:
         _fail(400, "Select a CWL pool and a minimum of 0–7 attacks")
     if body['pool'] == 'lazy':
-        _fail(400, 'Lazy CWL uses 4 attacks, or 3 attacks with 8 stars')
+        _fail(400, f'Lazy CWL uses a fixed rule: {RULE_SHORT}.')
     sid = _sid(request)
     result: object
     def _policy_transaction_1(db):

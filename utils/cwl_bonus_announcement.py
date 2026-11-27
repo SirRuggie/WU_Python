@@ -10,6 +10,7 @@ import re
 
 from utils import cwl_bonus_history_image as history_image
 from utils.cwl_bonus_raffle import safe_text
+from utils.cwl_lazy_rule import RULE_SENTENCE
 
 CWL_EMOJI = '<:CWL:1399013745598009375>'
 WU_GOLD = 0xF2B62A
@@ -26,7 +27,7 @@ TEXT_CHUNK = 1800
 INTRO = ('Each clan gets a set number of bonus medals. Each war win adds 1 more medal. '
          'We plan to lose all wars, so performance does not decide who gets them. '
          'The WU_Wizard bonus lottery selects recipients at random from the eligible players.')
-RULE_ATTACKS = 'Do 4 or more attacks, OR do 3 attacks and get 8 or more stars.'
+RULE_ATTACKS = RULE_SENTENCE
 
 _TAG = re.compile(r'#[0-9A-Z]{3,12}')
 _USER = re.compile(r'[0-9]{15,22}')
