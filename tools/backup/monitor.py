@@ -62,6 +62,14 @@ def issues(now, records, units, remote_enabled):
                 stamp = None
             if stamp is None or stamp > now + 300 or now - stamp > limit:
                 found.append(f'{kind}: {location} backup/check is missing or overdue.')
+    value = records.get('cwl', {}).get('artwork_failing_since')
+    try:
+        failure = datetime.fromisoformat(value)
+        stamp = failure.timestamp() if failure.tzinfo else None
+    except (ValueError, TypeError, OverflowError):
+        stamp = None
+    if stamp is not None and stamp <= now + 300 and now - stamp > 6 * 3600:
+        found.append('cwl: dashboard artwork copy has failed for over 6 hours.')
     return sorted(found)
 
 

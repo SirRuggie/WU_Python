@@ -455,6 +455,11 @@ was invented. The small wrapper is `tools/backup/cwl_backup.py`.
 
 - `cwl-backup.timer`: every 5 minutes; consistent SQLite snapshot, CWL private
   environment, user service definitions, source/build assets, and recovery config.
+  Dashboard artwork (R2 prefixes `content/command-triggers/`, `clans/`, `fwa/bases/`, `content/recruit/`)
+  is copied into the CWL snapshot. R2 errors retry (botocore standard mode, 5 attempts; then 3 outer
+  tries at 0/10/30 s). If the copy still fails, the backup keeps the previous artwork copy, logs one
+  warning and still saves the SQLite snapshot. The monitor alerts only when the artwork copy has failed
+  for over 6 hours. Added after the 2026-11-22 R2 `InternalError` incident.
 - `cwl-mongo-backup.timer`: hourly at minute 02; all visible application databases,
   excluding Mongo internal `admin`, `local`, and `config` databases. Includes
   production `settings` and `database`; the bot stays online.
