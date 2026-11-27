@@ -136,3 +136,19 @@ def test_hourly_mongo_backup_overdue_after_ninety_minute_grace():
     now, records, units = healthy()
     records['mongo']['remote_success'] = datetime.fromtimestamp(now - 90 * 60 - 1, timezone.utc).isoformat()
     assert m.issues(now, records, units, True) == ['mongo: remote backup/check is missing or overdue.']
+
+
+@pytest.mark.parametrize('hours,expected', [(5, False), (6, False), (7, True)])
+def test_artwork_streak_only_alerts_after_six_hours(hours, expected):
+    now, records, units = healthy()
+    records['cwl']['artwork_failing_since'] = datetime.fromtimestamp(now - hours * 3600, timezone.utc).isoformat()
+    assert m.issues(now, records, units, True) == (
+        ['cwl: dashboard artwork copy has failed for over 6 hours.'] if expected else [])
+
+
+@pytest.mark.parametrize('value', [None, '', 'garbage', '2026-01-01T00:00:00', '2099-01-01T00:00:00+00:00'])
+def test_artwork_missing_invalid_naive_future_streak_stays_quiet(value):
+    now, records, units = healthy()
+    if value is not None:
+        records['cwl']['artwork_failing_since'] = value
+    assert m.issues(now, records, units, True) == []

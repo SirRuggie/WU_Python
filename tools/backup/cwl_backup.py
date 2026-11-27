@@ -19,6 +19,9 @@ import time
 from datetime import datetime, timezone
 
 from dotenv import dotenv_values
+from botocore.exceptions import (
+    BotoCoreError, ClientError, ConnectionError, HTTPClientError, IncompleteReadError,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 HOME = Path.home()
@@ -140,17 +143,74 @@ def status(kind, **fields):
     os.replace(tmp, path)
 
 
+
+def protect_artwork(stage):
+    """Keep a verified partial/prior copy when only the artwork provider fails."""
+    import command_images
+
+    for attempt in range(1, 4):
+        if attempt > 1:
+            time.sleep((10, 30)[attempt - 2])
+        try:
+            count = command_images.capture(ROOT, stage)
+        except (ClientError, BotoCoreError, RuntimeError) as error:
+            if getattr(error, '_artwork_manifest_write_failed', False):
+                failure = RuntimeError('Dashboard artwork manifest persistence failed; backup aborted')
+                failure.capture_error = error
+                raise failure from None
+            code = error.response.get('Error', {}).get('Code') if isinstance(error, ClientError) else None
+            # Provider diagnostics are untrusted; only canonical S3 codes reach logs/status.
+            safe_codes = {
+                'InternalError', 'ServiceUnavailable', 'SlowDown', 'RequestTimeout', 'PreconditionFailed',
+                'AccessDenied', 'InvalidAccessKeyId', 'SignatureDoesNotMatch', 'NoSuchBucket', 'NoSuchKey',
+                'InvalidBucketName', 'InvalidArgument', 'InvalidRequest', 'AuthorizationHeaderMalformed',
+                'ExpiredToken', 'InvalidToken', 'RequestTimeTooSkewed', 'OperationAborted', 'EntityTooLarge',
+                'EntityTooSmall', 'NotImplemented', 'MethodNotAllowed', 'NoSuchUpload', 'InvalidPart',
+                'InvalidPartOrder', 'TooManyBuckets',
+            }
+            if code is not None and (not isinstance(code, str) or code not in safe_codes):
+                code = 'UnknownCode'
+            transient = (
+                isinstance(error, (ConnectionError, HTTPClientError, IncompleteReadError))
+                or (isinstance(error, ClientError) and (
+                    code in {'InternalError', 'ServiceUnavailable', 'SlowDown', 'RequestTimeout', 'PreconditionFailed'}
+                    or error.response.get('ResponseMetadata', {}).get('HTTPStatusCode') in {500, 502, 503, 504, 412}
+                ))
+                or (type(error) is RuntimeError and str(error) == 'Dashboard artwork changed during backup')
+            )
+            if transient and attempt < 3:
+                continue
+            # Real local corruption must fail the backup before any skip warning.
+            count = command_images.verify(stage)
+            error_name = type(error).__name__ + (':' + str(code) if code else '')
+            print(f'Dashboard artwork skipped after {attempt} tries ({error_name}); '
+                  f'previous copy kept: {count} images', flush=True)
+            old_path = STATE / 'cwl-status.json'
+            old = json.loads(old_path.read_text()) if old_path.exists() else {}
+            return {
+                'artwork_error': error_name,
+                'artwork_failing_since': old.get('artwork_failing_since') or datetime.now(timezone.utc).isoformat(),
+            }
+        else:
+            print(f'Dashboard artwork protected: {count} images', flush=True)
+            return {
+                'artwork_success': datetime.now(timezone.utc).isoformat(),
+                'artwork_failing_since': None,
+                'artwork_error': None,
+            }
+
+
 def backup(kind):
     if not os.path.ismount('/nvme0n1-disk'):
         raise RuntimeError('Production volume is not mounted')
     stage = STATE / kind
     stage.mkdir(mode=0o700, exist_ok=True)
+    artwork_status = {}
     if kind == 'cwl':
         web_env = ROOT / '.local/cwl-web.env'
         source = Path(dotenv_values(web_env)['CWL_WEB_DB_PATH'])
         counts = snapshot(source, stage / 'cwl.sqlite')
-        from command_images import capture
-        print(f'Dashboard artwork protected: {capture(ROOT,stage)} images',flush=True)
+        artwork_status = protect_artwork(stage)
         manifest = {'created_at': datetime.now(timezone.utc).isoformat(), 'counts': counts,
                     'sha256': hashlib.sha256((stage / 'cwl.sqlite').read_bytes()).hexdigest()}
         (stage / 'manifest.json').write_text(json.dumps(manifest, indent=2) + '\n')
@@ -196,7 +256,7 @@ def backup(kind):
     for pattern in excludes:
         arguments += ['--exclude', pattern]
     restic(*arguments)
-    status(kind, local_success=datetime.now(timezone.utc).isoformat())
+    status(kind, local_success=datetime.now(timezone.utc).isoformat(), **artwork_status)
     if (CONFIG / 'r2-enabled').exists():
         # Copy the already committed snapshot: local/off-site copies are identical.
         remote_env = restic_env(True)
