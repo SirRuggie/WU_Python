@@ -14,6 +14,11 @@ from cwl_web import server_management as shared
 from test_town_halls_bases import v2, LINK
 
 
+@pytest.fixture(autouse=True)
+def empty_role_snapshot(monkeypatch):
+    monkeypatch.setattr(api.registry, 'load_roles', AsyncMock(return_value={'revision':0,'roles':{},'exists':False}))
+
+
 def fixture():
     doc = v2()
     doc['_id'] = str(shared.GUILD_ID)

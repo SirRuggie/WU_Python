@@ -6,12 +6,35 @@ banner slot, a fixed gold footer and a posting channel. Link the existing post
 1449196073405911121, then Update it in place. There is no separate publishing
 command; `/family-links` is retired.
 
-The public Components V2 panel opens private My roles and clan replies. Fixed
+The public Components V2 panel opens private My roles and clan replies. Public
 custom IDs survive restarts. Legacy role menus open My roles without applying
-the old values. Private menu IDs remain fixed. The existing component-state owner binds each reply’s actual ephemeral message ID, guild, member and immutable offered-role sets for 15 minutes; missing or expired state fails closed. Current member roles are preselected; submitting a menu changes
-only roles both displayed in that private message and still in its current list using single-role Discord calls. Cross-list assignments are rejected at save with “This role is already used for a Town Hall.” or “This role is already a server role.” before any write. If legacy stored data still overlaps, Town Hall alone controls that role, including deselection; the Server roles menu hides it. The editor retains the stored server row and shows “Also used for a Town Hall. Remove it from one list.” Nothing is auto-deleted. An ambiguous
-transport failure is not retried. The reply distinguishes confirmed changes
-from an unconfirmed final operation; it never prints provider exceptions.
+the old values. Each private menu route includes an opaque random instance token;
+it contains no member or role data. The existing component-state owner binds that
+instance to its actual ephemeral message, guild, member, menu kind, immutable
+offered roles and held-when-shown baseline for 15 minutes. Missing, malformed or
+expired state fails closed.
+
+Selections express intent against that displayed baseline: add selected minus
+held-when-shown, and remove held-when-shown minus selected, restricted to offered
+roles still in the current list. Fresh authority and target-state checks precede
+each single-role Discord call. Roles already at the intended target are no-ops;
+staff additions and removals never become a new delta baseline. A durable atomic
+per-menu claim prevents duplicate or restarted submissions from replaying writes.
+Prior instance claims remain until expiry. A delayed old submit receives “These
+roles were already saved.” without replacing the current successor panel.
+
+After a certain result, including a known partial failure, the same private reply
+shows the C4 result first and fresh menus with a new instance and current holdings
+as their baseline. An uncertain claim, Discord call or receipt produces “Your
+roles may have changed. Select My roles again to check.” with no successor or
+automatic retry. Provider exception details are never printed.
+
+Cross-list assignments are rejected at save with “This role is already used for
+a Town Hall.” or “This role is already a server role.” before any write. If legacy
+stored data still overlaps, Town Hall alone controls that role, including
+deselection; the Server roles menu hides it. The editor retains the stored server
+row and shows “Also used for a Town Hall. Remove it from one list.” Nothing is
+auto-deleted.
 
 `utils/town_halls.py` owns both the existing schema 1/2 registry and the separate
 routed `town_hall_roles` collection document (schema 1, guild `_id`, revision and role map).

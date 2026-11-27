@@ -106,6 +106,8 @@ def test_zero_permission_dashboard_grant_role_is_excluded_at_http_save(monkeypat
 
 
 def transport(monkeypatch, *, held=(17,18,999), selected=('17','18','19'), fail=None, protected=(), kind='th'):
+    from datetime import timedelta
+    from utils.component_state import utcnow
     from extensions.commands import family_links as panel
     member=SimpleNamespace(role_ids=set(held))
     rows=[dict(role_id=str(level),label=f'TH{level}',short_line='',level=level,emoji='') for level in (19,18,17)]
@@ -114,14 +116,43 @@ def transport(monkeypatch, *, held=(17,18,999), selected=('17','18','19'), fail=
         member.role_ids.add(rid)
     async def remove(_guild,_user,rid,**_kwargs): member.role_ids.discard(rid)
     bot=SimpleNamespace(rest=SimpleNamespace(add_role_to_member=AsyncMock(side_effect=add),remove_role_from_member=AsyncMock(side_effect=remove)))
-    ctx=SimpleNamespace(interaction=SimpleNamespace(guild_id=123,values=selected,message=SimpleNamespace(id=700,flags=hikari.MessageFlag.EPHEMERAL)),user=SimpleNamespace(id=4),respond=AsyncMock(return_value=700),fetch_response=AsyncMock(return_value=SimpleNamespace(id=700,flags=hikari.MessageFlag.EPHEMERAL)))
+    instance='1'*32
+    ctx=SimpleNamespace(interaction=SimpleNamespace(guild_id=123,values=selected,custom_id=f'family_links_select_{kind}:{instance}',message=SimpleNamespace(id=700,flags=hikari.MessageFlag.EPHEMERAL)),user=SimpleNamespace(id=4),respond=AsyncMock(return_value=700),fetch_response=AsyncMock(return_value=SimpleNamespace(id=700,flags=hikari.MessageFlag.EPHEMERAL)))
+    offered={kind:['19','18','17'],('server' if kind=='th' else 'th'):[]}
+    record={'_id':panel.role_session_key(123,4,700,instance),'type':'family_roles','guild_id':123,'user_id':4,'message_id':700,'instance':instance,'active':True,'offered':offered,'held':{key:[value for value in values if int(value) in held] for key,values in offered.items()},'submissions':{},'expires_at':utcnow()+timedelta(minutes=15)}
+    ctx.sessions={record['_id']:record}
+    ctx.session=record
+    async def insert(_mongo,document,**kwargs):
+        saved=deepcopy(document);saved['expires_at']=utcnow()+kwargs['ttl'];ctx.sessions[saved['_id']]=saved
+    async def read(_mongo,key): return deepcopy(ctx.sessions.get(key))
+    missing=object()
+    def nested(document,path):
+        for part in path.split('.'):
+            if not isinstance(document,dict) or part not in document:return missing
+            document=document[part]
+        return document
+    async def update(_mongo,query,change,**_kwargs):
+        current=ctx.sessions.get(query['_id'])
+        if current is None:return SimpleNamespace(matched_count=0)
+        for key,value in query.items():
+            actual=nested(current,key)
+            if isinstance(value,dict):
+                if '$exists' in value and (actual is not missing)!=value['$exists']:return SimpleNamespace(matched_count=0)
+                if '$gt' in value and not actual>value['$gt']:return SimpleNamespace(matched_count=0)
+            elif actual!=value:return SimpleNamespace(matched_count=0)
+        for path,value in change.get('$set',{}).items():
+            target=current;parts=path.split('.')
+            for part in parts[:-1]:target=target.setdefault(part,{})
+            target[parts[-1]]=deepcopy(value)
+        return SimpleNamespace(matched_count=1)
     monkeypatch.setattr(panel,'choices',AsyncMock(side_effect=lambda _mongo,_guild,menu: rows if menu == kind else []))
-    monkeypatch.setattr(panel,'role_session',AsyncMock(return_value={kind:['19','18','17'],('server' if kind=='th' else 'th'):[]}))
     monkeypatch.setattr(panel,'fresh_context',AsyncMock(return_value=(object(),{level:object() for level in (19,18,17)},member)))
     monkeypatch.setattr(panel,'role_is_self_selectable',lambda *_:True)
     monkeypatch.setattr(panel,'dashboard_role_grants',AsyncMock(return_value=set(protected)))
     monkeypatch.setattr(panel,'_locks',{})
-    monkeypatch.setattr(panel,'insert_state',AsyncMock())
+    monkeypatch.setattr(panel,'insert_state',AsyncMock(side_effect=insert))
+    monkeypatch.setattr(panel,'get_state',AsyncMock(side_effect=read))
+    monkeypatch.setattr(panel,'update_state',AsyncMock(side_effect=update))
     return panel,ctx,bot,member
 
 
@@ -138,7 +169,7 @@ def test_preselected_existing_th_roles_survive_and_double_submit_is_noop(monkeyp
     assert member.role_ids == {17,18,19,999}
     assert bot.rest.add_role_to_member.await_count == 1
     bot.rest.remove_role_from_member.assert_not_awaited()
-    assert 'No change.' in response_text(ctx)
+    assert 'These roles were already saved.' in response_text(ctx)
 
 
 def test_deselect_removes_only_current_list_role_and_ignores_stale_ids(monkeypatch):
@@ -162,7 +193,7 @@ def test_uncertain_discord_operation_never_retried_or_secret_printed(monkeypatch
     run(panel.select_roles(ctx,object(),bot,'th'))
     assert bot.rest.add_role_to_member.await_count == 1
     bot.rest.remove_role_from_member.assert_not_awaited()
-    assert 'could not be confirmed' in response_text(ctx)
+    assert response_text(ctx).strip()=='## My roles Your roles may have changed. Select My roles again to check.'
     assert 'provider-private-text' not in response_text(ctx)
 
 
@@ -253,11 +284,11 @@ def test_role_gains_permission_after_open_is_skipped_and_reported(monkeypatch):
 
 def test_context_outage_after_success_preserves_confirmed_change(monkeypatch):
     panel,ctx,bot,member=transport(monkeypatch,held=(999,),selected=('17','19'))
-    monkeypatch.setattr(panel,'fresh_context',AsyncMock(side_effect=[(object(),{17:object(),19:object()},member),(object(),{17:object(),19:object()},member),OSError('private upstream')]))
+    monkeypatch.setattr(panel,'fresh_context',AsyncMock(side_effect=[(object(),{17:object(),19:object()},member),OSError('private upstream'),(object(),{17:object(),19:object()},member)]))
     run(panel.select_roles(ctx,object(),bot,'th'))
     assert member.role_ids=={17,999}
     assert 'Added: TH17.' in response_text(ctx)
-    assert response_text(ctx).endswith('Your other roles did not change. Try again in a minute. ')
+    assert 'Your other roles did not change. Try again in a minute.' in response_text(ctx)
     assert 'private upstream' not in response_text(ctx)
 
 
@@ -373,7 +404,8 @@ def test_legacy_family_post_shape_can_be_linked_without_adopting_old_text_or_foo
 @pytest.mark.parametrize('kind',['th','server'])
 def test_role_newly_added_to_current_list_but_never_displayed_is_not_removed(monkeypatch,kind):
     panel,ctx,bot,member=transport(monkeypatch,held=(17,18,19,999),selected=('17',),kind=kind)
-    monkeypatch.setattr(panel,'role_session',AsyncMock(return_value={kind:['17'],('server' if kind=='th' else 'th'):[]}))
+    ctx.session['offered'][kind]=['17']
+    ctx.session['held'][kind]=['17']
     run(panel.select_roles(ctx,object(),bot,kind))
     assert member.role_ids=={17,18,19,999}
     bot.rest.remove_role_from_member.assert_not_awaited()
@@ -400,8 +432,8 @@ def test_private_session_is_bound_to_member_guild_message_and_expiry(monkeypatch
     from datetime import timedelta
     from utils.component_state import utcnow
     from extensions.commands import family_links as panel
-    ctx=SimpleNamespace(interaction=SimpleNamespace(guild_id=123,message=SimpleNamespace(id=700,flags=hikari.MessageFlag.EPHEMERAL)),user=SimpleNamespace(id=4))
-    row={'type':'family_roles','guild_id':123,'user_id':4,'message_id':700,'offered':{'th':['17'],'server':[]},'expires_at':utcnow()+timedelta(minutes=15)}
+    ctx=SimpleNamespace(interaction=SimpleNamespace(guild_id=123,custom_id='family_links_select_th:'+('1'*32),message=SimpleNamespace(id=700,flags=hikari.MessageFlag.EPHEMERAL)),user=SimpleNamespace(id=4))
+    row={'type':'family_roles','guild_id':123,'user_id':4,'message_id':700,'instance':'1'*32,'active':True,'offered':{'th':['17'],'server':[]},'held':{'th':['17'],'server':[]},'submissions':{},'expires_at':utcnow()+timedelta(minutes=15)}
     if broken=='missing': row=None
     elif broken=='user': row['user_id']=5
     elif broken=='guild': row['guild_id']=124
@@ -412,7 +444,7 @@ def test_private_session_is_bound_to_member_guild_message_and_expiry(monkeypatch
     reader=AsyncMock(return_value=row)
     monkeypatch.setattr(panel,'get_state',reader)
     assert run(panel.role_session(ctx,object())) is None
-    if broken!='public': reader.assert_awaited_once_with(__import__('unittest.mock',fromlist=['ANY']).ANY,'family-roles:123:4:700')
+    if broken!='public': reader.assert_awaited_once_with(__import__('unittest.mock',fromlist=['ANY']).ANY,'family-roles:123:4:700:'+('1'*32))
 
 
 def test_missing_displayed_options_fails_closed_before_discord_reads(monkeypatch):
@@ -482,26 +514,18 @@ def test_actual_private_response_binding_persists_immutable_offered_sets(monkeyp
     run(panel.private_roles(ctx,object(),bot))
     ctx.fetch_response.assert_awaited_once_with(700)
     call=panel.insert_state.call_args
-    assert call.args[1]['_id']=='family-roles:123:4:700'
+    assert call.args[1]['_id']=='family-roles:123:4:700:'+call.args[1]['instance']
     assert call.args[1]['guild_id']==123 and call.args[1]['user_id']==4
     assert call.args[1]['message_id']==700
     assert call.args[1]['offered']=={'th':['19','18','17'],'server':[]}
     assert call.kwargs['ttl']==timedelta(minutes=15)
     for row in ctx.respond.call_args.kwargs['components'][0].components:
         for child in getattr(row,'components',[]):
-            assert getattr(child,'custom_id','').endswith(':')
+            assert getattr(child,'custom_id','').split(':')[1]==call.args[1]['instance']
 
 
 def test_real_session_validation_allows_only_the_matching_private_panel(monkeypatch):
-    from datetime import timedelta
-    from utils.component_state import utcnow
-    from extensions.commands import family_links
-    validate_session=family_links.role_session
     panel,ctx,bot,member=transport(monkeypatch)
-    row={'type':'family_roles','guild_id':123,'user_id':4,'message_id':700,
-         'offered':{'th':['19','18','17'],'server':[]},'expires_at':utcnow()+timedelta(minutes=15)}
-    monkeypatch.setattr(panel,'role_session',validate_session)
-    monkeypatch.setattr(panel,'get_state',AsyncMock(return_value=row))
     run(panel.select_roles(ctx,object(),bot,'th'))
     assert member.role_ids=={17,18,19,999}
     bot.rest.add_role_to_member.assert_awaited_once_with(123,4,19,reason='Roles and clan links')
@@ -606,10 +630,13 @@ def test_legacy_overlap_visible_only_in_th_private_menu_and_deselect_removes(mon
     run(panel.private_roles(ctx,object(),bot))
     offered=panel.insert_state.call_args.args[1]['offered']
     assert offered=={'th':['19'],'server':['20']}
-    monkeypatch.setattr(panel,'role_session',AsyncMock(return_value=offered))
+    current=panel.insert_state.call_args.args[1]
+    ctx.interaction.custom_id='family_links_select_server:'+current['instance']
     run(panel.select_roles(ctx,object(),bot,'server'))
     assert member.role_ids=={19,999}
     bot.rest.remove_role_from_member.assert_not_awaited()
+    current=panel.insert_state.call_args.args[1]
+    ctx.interaction.custom_id='family_links_select_th:'+current['instance']
     run(panel.select_roles(ctx,object(),bot,'th'))
     assert member.role_ids=={999}
     bot.rest.remove_role_from_member.assert_awaited_once_with(123,4,19,reason='Roles and clan links')
@@ -654,3 +681,142 @@ def test_roles_owner_rejects_noninteger_or_unknown_schema(monkeypatch,version):
     monkeypatch.setattr(town_halls,'_roles_collection',lambda _:collection)
     with pytest.raises(ValueError,match='schema version 1'):
         run(town_halls.load_roles(object(),123))
+
+
+@pytest.mark.parametrize('staff_action', ['add', 'remove'])
+def test_1401_unchanged_selection_preserves_staff_changes(monkeypatch, staff_action):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('17',))
+    if staff_action=='add':member.role_ids.add(18)
+    else:member.role_ids.remove(17)
+    expected=set(member.role_ids)
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert member.role_ids==expected
+    bot.rest.add_role_to_member.assert_not_awaited()
+    bot.rest.remove_role_from_member.assert_not_awaited()
+    successor=panel.insert_state.call_args.args[1]
+    assert set(map(int,successor['held']['th']))==expected
+    assert successor['instance']!=ctx.session['instance']
+    assert ctx.respond.call_args.kwargs['edit'] is True
+    assert ctx.respond.call_args.kwargs['components'][0].components[0].content=='No change.'
+
+
+def test_1401_replay_after_staff_add_and_restart_preserves_successor(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('17','19'))
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    member.role_ids.add(18)
+    monkeypatch.setattr(panel,'_locks',{})
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert member.role_ids=={17,18,19}
+    assert bot.rest.add_role_to_member.await_count==1
+    bot.rest.remove_role_from_member.assert_not_awaited()
+    assert panel.insert_state.await_count==1
+    assert panel.ALREADY_SAVED in response_text(ctx)
+    assert 'edit' not in ctx.respond.call_args.kwargs
+
+
+def test_1401_successor_baseline_supports_later_removal(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('17','19'))
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    successor=panel.insert_state.call_args.args[1]
+    assert set(successor['held']['th'])=={'17','19'}
+    ctx.interaction.custom_id='family_links_select_th:'+successor['instance']
+    ctx.interaction.values=('17',)
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert member.role_ids=={17}
+    bot.rest.remove_role_from_member.assert_awaited_once_with(123,4,19,reason='Roles and clan links')
+    assert len(ctx.sessions)==3
+
+
+@pytest.mark.parametrize('boundary', ['claim', 'receipt', 'provider'])
+def test_1401_ambiguous_commit_no_successor_or_retry(monkeypatch,boundary):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('17','19'))
+    original=panel.update_state.side_effect
+    calls=0
+    async def update(*args,**kwargs):
+        nonlocal calls
+        calls+=1
+        result=await original(*args,**kwargs)
+        if calls==({'claim':1,'receipt':2}.get(boundary,-1)):raise OSError('private transport')
+        return result
+    monkeypatch.setattr(panel,'update_state',AsyncMock(side_effect=update))
+    if boundary=='provider':
+        async def add(*args,**kwargs):
+            member.role_ids.add(args[2])
+            raise TimeoutError('private provider')
+        bot.rest.add_role_to_member.side_effect=add
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert panel.UNCERTAIN_ROLES in response_text(ctx)
+    panel.insert_state.assert_not_awaited()
+    before=bot.rest.add_role_to_member.await_count
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert bot.rest.add_role_to_member.await_count==before
+    assert before==(0 if boundary=='claim' else 1)
+    assert 'private' not in response_text(ctx)
+
+
+def test_1401_claim_loser_no_writes(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('19',))
+    monkeypatch.setattr(panel,'update_state',AsyncMock(return_value=SimpleNamespace(matched_count=0)))
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    query=panel.update_state.call_args.args[1]
+    assert {key:query[key] for key in ('guild_id','user_id','message_id','instance')}==dict(guild_id=123,user_id=4,message_id=700,instance='1'*32)
+    assert query['submissions.th']=={'$exists':False}
+    assert '$gt' in query['expires_at'] and query['active'] is True
+    bot.rest.add_role_to_member.assert_not_awaited()
+    bot.rest.remove_role_from_member.assert_not_awaited()
+
+
+def test_1401_staff_add_during_mutation_survives(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('19',))
+    async def add(*args,**kwargs):member.role_ids.update((18,args[2]))
+    bot.rest.add_role_to_member.side_effect=add
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert member.role_ids=={18,19}
+    bot.rest.remove_role_from_member.assert_awaited_once_with(123,4,17,reason='Roles and clan links')
+
+
+def test_1401_missing_baseline_fails_closed(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch)
+    del ctx.session['held']
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    panel.update_state.assert_not_awaited()
+    bot.rest.add_role_to_member.assert_not_awaited()
+    bot.rest.remove_role_from_member.assert_not_awaited()
+
+
+def test_1401_known_partial_failure_has_successor(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(),selected=('17','19'))
+    async def add(*args,**kwargs):
+        if args[2]==19:raise hikari.ForbiddenError(url='',headers={},raw_body=b'',code=50013)
+        member.role_ids.add(args[2])
+    bot.rest.add_role_to_member.side_effect=add
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert member.role_ids=={17}
+    assert panel.insert_state.call_args.args[1]['held']['th']==['17']
+    assert ctx.respond.call_args.kwargs['components'][0].components[0].content=='Added: TH17. Your other roles did not change. Try again in a minute.'
+
+
+def test_1401_already_target_avoids_mutation_even_after_authority_tightens(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(),selected=('19',))
+    member.role_ids.add(19)
+    monkeypatch.setattr(panel,'role_is_self_selectable',lambda *_:False)
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    bot.rest.add_role_to_member.assert_not_awaited()
+    bot.rest.remove_role_from_member.assert_not_awaited()
+    assert ctx.respond.call_args.kwargs['components'][0].components[0].content=='No change.'
+
+
+def test_1401_receipt_failure_before_commit_blocks_replay(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('17','19'))
+    original=panel.update_state.side_effect
+    async def update(mongo,query,change):
+        if 'submissions.th.token' in query:raise OSError('private persistence detail')
+        return await original(mongo,query,change)
+    monkeypatch.setattr(panel,'update_state',AsyncMock(side_effect=update))
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert ctx.session['submissions']['th']['status']=='claimed'
+    assert panel.UNCERTAIN_ROLES in response_text(ctx)
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert bot.rest.add_role_to_member.await_count==1
+    panel.insert_state.assert_not_awaited()
+    assert panel.UNCERTAIN_ROLES in response_text(ctx)
