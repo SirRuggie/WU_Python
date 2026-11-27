@@ -12,6 +12,12 @@ from tests.test_warrior_setup import role
 from tests.test_warrior_speed import fixture
 
 
+@pytest.fixture(autouse=True)
+def current_registry_role_fixture(monkeypatch):
+    monkeypatch.setattr(core, 'role_map', AsyncMock(return_value={'16':60, '17':61}))
+    monkeypatch.setattr(core, 'dashboard_role_grants', AsyncMock(return_value=set()))
+
+
 def test_known_noops_share_one_fresh_guard_without_replacing_roles():
     async def check():
         c, m, b, _ = fixture()

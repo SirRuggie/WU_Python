@@ -86,10 +86,11 @@ def validate_fields(fields: Sequence[str], expected: int, label: str) -> None:
         raise ValueError(f"{label} needs all {expected} text fields. Reopen the editor.")
 
 
-async def load_family_clans(mongo) -> dict[str, list[dict[str, str]]]:
+async def load_family_clans(mongo, *, include_cwl=False, require_nonempty=True) -> dict[str, list[dict[str, str]]]:
     """Fetch a single consistent list for both the displayed lines and counts."""
+    kinds = (*CLAN_TYPES, "CWL") if include_cwl else CLAN_TYPES
     query = {
-        "type": {"$in": list(CLAN_TYPES)},
+        "type": {"$in": list(kinds)},
         "archived": {"$ne": True},
         "removed": {"$ne": True},
     }
@@ -102,13 +103,13 @@ async def load_family_clans(mongo) -> dict[str, list[dict[str, str]]]:
         ) from error
     if not isinstance(rows, list):
         raise InfoContentUnavailable("The clan registry response is incomplete. Check the registry, then Preview again.")
-    groups = {kind: [] for kind in CLAN_TYPES}
+    groups = {kind: [] for kind in kinds}
     tags = set()
     for row in rows:
         if not isinstance(row, Mapping):
             raise InfoContentUnavailable("The clan registry has an invalid entry. Check the registry, then Preview again.")
         kind = row.get("type")
-        if (kind not in CLAN_TYPES or row.get("archived") is True
+        if (kind not in kinds or row.get("archived") is True
                 or row.get("removed") is True):
             continue
         name, tag = row.get("name"), row.get("tag")
@@ -121,10 +122,13 @@ async def load_family_clans(mongo) -> dict[str, list[dict[str, str]]]:
         if tag in tags:
             raise InfoContentUnavailable("The clan registry has a duplicate active clan. Correct it before posting.")
         tags.add(tag)
-        groups[kind].append({"name": name, "tag": tag})
+        entry = {"name": name, "tag": tag}
+        if include_cwl:
+            entry["emoji"] = row.get("emoji", "")
+        groups[kind].append(entry)
     for clans in groups.values():
         clans.sort(key=lambda clan: (clan["name"].casefold(), clan["tag"]))
-    if any(not clans for clans in groups.values()):
+    if require_nonempty and any(not clans for clans in groups.values()):
         raise InfoContentUnavailable(
             "An active clan list is empty. Check all three clan types in the registry before posting."
         )

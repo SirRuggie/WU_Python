@@ -133,6 +133,11 @@ def role_is_safe_for_pool(guild, bot, role) -> bool:
     )
 
 
+def role_is_self_selectable(guild, bot, role) -> bool:
+    """Member-selected roles must be manageable and confer no permissions."""
+    return bool(role_is_manageable(guild, bot, role) and int(role.permissions) == 0)
+
+
 def member_role_ids(role_ids, guild_id):
     """Canonical REST/Hikari role snapshot; @everyone is implicit membership."""
     return sorted(

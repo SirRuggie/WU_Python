@@ -111,6 +111,7 @@ PARENT_ALIASES = MappingProxyType({
     'player_manual_weight_history': 'fwa_data',
     'war_weight_settings': 'fwa_data',
     'town_halls': 'fwa_data',
+    'town_hall_roles': 'fwa_data',
     'recruit_panel_refreshes': 'component_state',
     'recruit_message_deliveries': 'recruit_challenges',
     'ticket_settings_audit': 'ticket_setup',

@@ -121,6 +121,8 @@ async def identity(request, *, cached_read=False):
 
 
 async def allowed(actor, section, db, *, write=False):
+    if section == 'server_roles':
+        section = 'roles'
     if section == 'town_halls':
         return await allowed(actor, 'fwa_weight', db, write=write) or await allowed(actor, 'fwa_bases', db, write=write)
     if actor.get('dashboard'):
@@ -172,6 +174,7 @@ async def catalog(request):
         sections = []
         for key, label, description, group, endpoint in (
             ('roles', 'Member roles', 'Add or remove roles. See who has a role.', 'Server', '/manage/roles'),
+            ('server_roles', 'Server roles', 'Roles members select in Roles and clan links.', 'Server', '/manage/server-roles'),
             ('ticket_settings', 'Ticket settings', "Select ticket channels, staff, and wait times.", 'Recruitment', '/manage/ticket-settings'),
             ('ticket_testing', 'Test tickets', 'Try tickets in a separate test area.', 'Recruitment', '/manage/ticket-testing'),
             ('band_monitor', 'BAND monitor', 'Check the BAND calendar connection and debug mode.', 'War', '/manage/operations/band_monitor'),

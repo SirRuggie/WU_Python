@@ -97,6 +97,26 @@ def _digest(doc):
     return hashlib.sha256(encoded).hexdigest()
 
 
+LEGACY_ROLE_DEFAULTS = {'10': '1003796340578471977',
+ '11': '1003796173993287690',
+ '12': '1003796143630712943',
+ '13': '1003796042317316166',
+ '14': '1003796205630914630',
+ '15': '1029879502484025474',
+ '16': '1186343231303200848',
+ '17': '1315835882435121152',
+ '18': '1439244282392215552',
+ '19': '1567934399234711765',
+ '2': '1148951648484474951',
+ '3': '1006458298842746890',
+ '4': '1006458193418924062',
+ '5': '1006458029597798420',
+ '6': '1006457868037410887',
+ '7': '1006456898616311808',
+ '8': '1003796008121143436',
+ '9': '1003795980052873276'}
+
+
 BASE_MAPS = ("fwa_base_links", "base_information", "base_upgrade_notes", "war_base_images", "active_base_images")
 
 
@@ -203,6 +223,76 @@ async def migrate_bases(mongo, guild_id, *, apply=False):
             "legacy_document_sha256_after": _digest(legacy_after), "legacy_unchanged": True}
 
 
+async def migrate_roles(mongo, guild_id, *, safe_role_ids, apply=False):
+    """Insert/update only the separate roles document; never migrate registry bytes."""
+    async with town_halls.role_configuration_guard(guild_id):
+        current = await town_halls.load(mongo, guild_id)
+        if current is None:
+            raise town_halls.TownHallsMissing(town_halls.MISSING_MESSAGE)
+        old = await mongo.warrior_settings.find_one({'_id': f'warrior_settings:{guild_id}'})
+        before_registry, before_legacy = _digest(current), _digest(old)
+        overrides = (old or {}).get('townhalls', {})
+        if not isinstance(overrides, dict):
+            raise ValueError('Legacy Warrior Town Hall roles are malformed.')
+        target = dict(LEGACY_ROLE_DEFAULTS)
+        for level, identifier in overrides.items():
+            if not isinstance(level, str) or not re.fullmatch(r'[1-9][0-9]?', level):
+                raise ValueError('Legacy Warrior Town Hall level is malformed.')
+            if isinstance(identifier, bool) or not isinstance(identifier, (str, int)):
+                raise ValueError('Legacy Warrior Town Hall role is malformed.')
+            target[level] = str(identifier)
+        town_halls.validate_roles(target, current)
+        stored = await town_halls.load_roles(mongo, guild_id)
+        if any(level in stored['roles'] and stored['roles'][level] != identifier for level, identifier in target.items()):
+            raise ValueError('A Town Hall role conflicts with its saved value. No roles were written.')
+        proposed = dict(stored['roles']) | target
+        town_halls.validate_roles(proposed)
+        from utils import server_roles
+        conflicts = town_halls.cross_role_conflicts(proposed, (await server_roles.load(mongo, guild_id))['roles'])
+        if conflicts:
+            if apply:
+                raise town_halls.TownHallRoleOverlap(conflicts)
+            return {'mode': 'roles', 'status': 'conflict', 'applied': False, 'guild_id': str(guild_id),
+                    'roles_before': stored['roles'], 'roles_proposed': proposed, 'conflicts': conflicts,
+                    'registry_unchanged': True, 'warrior_settings_unchanged': True}
+        if any(identifier not in safe_role_ids for identifier in target.values()):
+            raise ValueError('A Town Hall role is missing or unsafe. No roles were written.')
+        changes = {level: identifier for level, identifier in target.items() if stored['roles'].get(level) != identifier}
+        applied = bool(apply and changes)
+        if applied:
+            saved = await town_halls.save_roles(mongo, guild_id, changes, 0, stored['revision'])
+            actual = await town_halls.load_roles(mongo, guild_id)
+            if actual['roles'] != proposed or actual['revision'] != saved['revision']:
+                raise ValueError('Roles readback changed. No retry or restoration attempted.')
+        if before_registry != _digest(await town_halls.load(mongo, guild_id)) or before_legacy != _digest(await mongo.warrior_settings.find_one({'_id': f'warrior_settings:{guild_id}'})):
+            raise ValueError('Registry or legacy settings changed. No restoration attempted.')
+        return {'mode': 'roles', 'status': 'migrated' if applied else 'dry run' if changes else 'already migrated',
+                'applied': applied, 'guild_id': str(guild_id), 'roles_before': stored['roles'], 'roles_proposed': proposed,
+                'registry_sha256_before': before_registry, 'registry_sha256_after': before_registry,
+                'warrior_settings_sha256_before': before_legacy, 'warrior_settings_sha256_after': before_legacy,
+                'registry_unchanged': True, 'warrior_settings_unchanged': True}
+
+
+async def safe_discord_roles(mongo, guild_id):
+    """Explicit CLI-only Discord read; tests inject fixture IDs instead."""
+    import hikari
+    from types import SimpleNamespace
+    from utils.role_permissions import role_is_self_selectable
+    from utils.dashboard_access import dashboard_role_grants
+    token = os.getenv('DISCORD_TOKEN', '')
+    if not token:
+        raise ValueError('DISCORD_TOKEN is not set; cannot verify role safety.')
+    async with hikari.RESTApp() as app:
+        async with app.acquire(token, token_type=hikari.TokenType.BOT) as rest:
+            me = await rest.fetch_my_user()
+            guild, roles, member = await asyncio.gather(rest.fetch_guild(guild_id), rest.fetch_roles(guild_id), rest.fetch_member(guild_id, me.id))
+    by_id = {int(role.id): role for role in roles}
+    adapted = SimpleNamespace(id=guild.id, owner_id=guild.owner_id, get_role=lambda identifier: by_id.get(int(identifier)), get_member=lambda identifier: member if int(identifier) == int(me.id) else None)
+    bot = SimpleNamespace(get_me=lambda: me)
+    protected = await dashboard_role_grants(mongo)
+    return {str(role.id) for role in roles if str(role.id) not in protected and role_is_self_selectable(adapted, bot, role)}
+
+
 async def migrate(mongo, guild_id, *, apply=False, bases=False):
     """Perform a fixture-testable dry run or one insert; no automatic retries."""
     if bases:
@@ -252,11 +342,13 @@ async def migrate(mongo, guild_id, *, apply=False, bases=False):
     }
 
 
-async def _run(uri, guild_id, *, apply=False, bases=False):
+async def _run(uri, guild_id, *, apply=False, bases=False, roles=False):
     # Client creation and dotenv loading stay in the CLI, never module import.
     from utils.mongo import MongoClient
     mongo = MongoClient(uri, connect=False)
     try:
+        if roles:
+            return await migrate_roles(mongo, guild_id, safe_role_ids=await safe_discord_roles(mongo, guild_id), apply=apply)
         return await migrate(mongo, guild_id, apply=apply, bases=bases)
     finally:
         await mongo.close()
@@ -267,7 +359,9 @@ def main(argv=None):
     modes = parser.add_mutually_exclusive_group()
     modes.add_argument("--dry-run", action="store_true", help="report the copy without writing (default)")
     modes.add_argument("--apply", action="store_true", help="insert only after explicit release/migration authorization")
-    parser.add_argument("--bases", action="store_true", help="copy legacy bases into the existing registry (schema2)")
+    content_modes = parser.add_mutually_exclusive_group()
+    content_modes.add_argument("--roles", action="store_true", help="copy legacy roles into their separate document")
+    content_modes.add_argument("--bases", action="store_true", help="copy legacy bases into the existing registry (schema2)")
     parser.add_argument("--guild-id", required=True, type=int)
     parser.add_argument("--report", type=Path, help="new JSON report under this checkout's .local directory")
     args = parser.parse_args(argv)
@@ -284,14 +378,14 @@ def main(argv=None):
     report_path = report_path.absolute()
     if not report_path.resolve().is_relative_to(local.resolve()) or report_path.exists():
         parser.error("--report must be a new file under this checkout's .local directory")
-    report = asyncio.run(_run(uri, args.guild_id, apply=args.apply, bases=args.bases))
+    report = asyncio.run(_run(uri, args.guild_id, apply=args.apply, bases=args.bases, roles=args.roles))
     encoded = json.dumps(report, indent=2, ensure_ascii=False) + "\n"
     report_path.parent.mkdir(parents=True, exist_ok=True)
     with report_path.open("x", encoding="utf-8") as stream:
         stream.write(encoded)
     report_path.chmod(0o600)
     print(encoded, end="")
-    return 0
+    return 1 if report.get("conflicts") else 0
 
 
 if __name__ == "__main__":

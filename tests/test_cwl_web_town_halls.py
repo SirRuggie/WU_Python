@@ -18,6 +18,9 @@ def admin_permissions(monkeypatch):
     # Existing244 tests exercise the admin contract;245 role combinations have
     # separate permission regressions and do not inherit this fixture.
     monkeypatch.setattr(api.bases, 'permissions', AsyncMock(return_value=(True, False)))
+    from cwl_web import server_roles
+    monkeypatch.setattr(server_roles, 'role_choices', AsyncMock(return_value=([], {})))
+    monkeypatch.setattr(api.registry, 'load_roles', AsyncMock(return_value={'revision':0, 'roles':{}, 'exists':False}))
 
 
 def run_async(fn):
@@ -51,9 +54,9 @@ def test_grouped_list_and_level_documents():
     assert records[2]['list_group'] == 'fwa'
     assert records[-1]['list_group'] == 'other'
     assert all('group' not in row for row in records)
-    assert [row['key'] for row in api.document(doc,'19')['fields']] == ['emoji','min','max']
+    assert [row['key'] for row in api.document(doc,'19')['fields']] == ['emoji','role','min','max']
     assert all(row['group']=='Town Hall' for row in api.document(doc,'19')['fields'])
-    assert len(api.document(doc,'11')['fields'])==1
+    assert len(api.document(doc,'11')['fields'])==2
     assert api.document(doc,'11')['help']=='Weights and bases are for TH12 and up.'
     assert api.document(doc,'add')['create'] is True
     assert api.document(doc,'add')['fields'][0]['value']==21

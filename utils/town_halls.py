@@ -4,6 +4,8 @@ The migration creates the document. Ordinary saves are revision-checked
 replacements and never create a missing registry or modify legacy weight data.
 """
 
+import asyncio
+from weakref import WeakValueDictionary
 from copy import deepcopy
 from datetime import datetime, timezone
 import logging
@@ -36,8 +38,155 @@ class TownHallsMissing(ValueError):
     """The separately authorized registry migration has not created a row."""
 
 
+class TownHallRoleOverlap(ValueError):
+    """The proposed TH mapping overlaps the separately owned server list."""
+    def __init__(self, conflicts):
+        super().__init__("This role is already a server role.")
+        self.conflicts = deepcopy(conflicts)
+
+
+class _RoleConfigurationGuard:
+    """Serialize related saves within this process, including nested owner calls."""
+    def __init__(self):
+        self.lock = asyncio.Lock()
+        self.task = None
+        self.depth = 0
+
+    async def __aenter__(self):
+        task = asyncio.current_task()
+        if self.task is not task:
+            await self.lock.acquire()
+            self.task = task
+        self.depth += 1
+        return self
+
+    async def __aexit__(self, *_args):
+        self.depth -= 1
+        if not self.depth:
+            self.task = None
+            self.lock.release()
+
+
+_role_configuration_guards = WeakValueDictionary()
+
+
+def role_configuration_guard(guild_id):
+    key = _guild_key(guild_id)
+    guard = _role_configuration_guards.get(key)
+    if guard is None:
+        guard = _RoleConfigurationGuard()
+        _role_configuration_guards[key] = guard
+    return guard
+
+
+def cross_role_conflicts(town_hall_roles, server_entries):
+    by_id = {row['role_id']: row for row in server_entries}
+    return [dict(level=int(level), role_id=identifier,
+                 server_role_label=by_id[identifier]['label'])
+            for level, identifier in sorted(town_hall_roles.items(), key=lambda item: int(item[0]), reverse=True)
+            if identifier in by_id]
+
+
+async def require_separate_roles(mongo, guild_id, roles):
+    from utils.server_roles import load as load_server_roles
+    conflicts = cross_role_conflicts(roles, (await load_server_roles(mongo, guild_id))['roles'])
+    if conflicts:
+        raise TownHallRoleOverlap(conflicts)
+
+
 def _collection(mongo):
     return collection_from(mongo.fwa_data, "town_halls")
+
+
+def _roles_collection(mongo):
+    return collection_from(mongo.fwa_data, "town_hall_roles")
+
+
+def validate_roles(roles, registry=None):
+    """Validate durable mappings; hidden removed levels survive future saves."""
+    if not isinstance(roles, dict) or len(roles) > 25:
+        raise ValueError("Select at most 25 Town Hall roles.")
+    seen = set()
+    for level, role in roles.items():
+        if not isinstance(level, str) or _LEVEL.fullmatch(level) is None:
+            raise ValueError("Use canonical Town Hall level keys.")
+        if registry is not None and level not in registry["levels"]:
+            raise ValueError("This Town Hall is not in the registry.")
+        if not isinstance(role, str) or _guild_key(role) != role or role in seen:
+            raise ValueError("Select each valid Discord role only once.")
+        seen.add(role)
+    return deepcopy(roles)
+
+
+async def load_roles(mongo, guild_id):
+    row = await _roles_collection(mongo).find_one({"_id": _guild_key(guild_id)})
+    if row is None:
+        return {"schema_version": 1, "revision": 0, "roles": {}, "exists": False}
+    if type(row.get("schema_version")) is not int or row["schema_version"] != 1:
+        raise ValueError("Use Town Hall roles schema version 1.")
+    _integer(row.get("revision"), 0, 2**63 - 1, "Use a valid roles revision.")
+    return {**deepcopy(row), "roles": validate_roles(row.get("roles")), "exists": True}
+
+
+async def role_choices(mongo, guild_id):
+    """One joined public reader for panel and Warrior Desk; never exposes hidden levels."""
+    doc = await load(mongo, guild_id)
+    if doc is None:
+        return []
+    roles = await load_roles(mongo, guild_id)
+    return [{"level": level, "role_id": roles["roles"][str(level)],
+             "emoji": emoji_markup(doc, level)}
+            for level in levels(doc) if str(level) in roles["roles"]]
+
+
+async def role_map(mongo, guild_id):
+    return {str(item["level"]): int(item["role_id"])
+            for item in await role_choices(mongo, guild_id)}
+
+
+async def proposed_role_changes(mongo, guild_id, registry, current, changes):
+    roles = deepcopy(current["roles"])
+    for level, role in changes.items():
+        if level not in registry["levels"]:
+            raise ValueError("This Town Hall is not in the registry.")
+        if role in (None, ""):
+            roles.pop(level, None)
+        else:
+            validate_roles({level: role}, registry)
+            roles[level] = role
+    validate_roles(roles)
+    await require_separate_roles(mongo, guild_id, {level: roles[level] for level, value in changes.items() if value not in (None, "")})
+    return roles
+
+
+async def save_roles(mongo, guild_id, changes, user_id, expected_revision):
+    """CAS only the roles document; registry and legacy settings remain byte-identical."""
+    async with role_configuration_guard(guild_id):
+        _integer(expected_revision, 0, 2**63 - 2, "Use a valid roles revision.")
+        registry = await load(mongo, guild_id)
+        if registry is None:
+            raise TownHallsMissing(MISSING_MESSAGE)
+        if not isinstance(changes, dict) or not changes:
+            raise ValueError("Review the Town Hall roles before saving.")
+        current = await load_roles(mongo, guild_id)
+        if current["revision"] != expected_revision:
+            raise TownHallsConflict(CONFLICT_MESSAGE)
+        roles = await proposed_role_changes(mongo, guild_id, registry, current, changes)
+        fields = {"schema_version": 1, "revision": expected_revision + 1, "roles": roles,
+                  "updated_by": int(user_id), "updated_at": datetime.now(timezone.utc)}
+        collection = _roles_collection(mongo)
+        if not current["exists"]:
+            try:
+                await collection.insert_one({"_id": _guild_key(guild_id), **fields})
+            except DuplicateKeyError:
+                raise TownHallsConflict(CONFLICT_MESSAGE) from None
+        else:
+            saved = await collection.find_one_and_update(
+                {"_id": _guild_key(guild_id), "revision": expected_revision}, {"$set": fields},
+                upsert=False, return_document=ReturnDocument.AFTER)
+            if saved is None:
+                raise TownHallsConflict(CONFLICT_MESSAGE)
+        return {**fields, "exists": True}
 
 
 def _integer(value, low, high, message):

@@ -1,6 +1,11 @@
 import type { PreviewPart } from "./DiscordPreview";
 export type ManagementValue = string | number | boolean | string[] | null;
-export type ManagementOption = { value: string; label: string; type?: number };
+export type ManagementOption = {
+  value: string;
+  label: string;
+  type?: number;
+  color?: number;
+};
 export type ManagementField = {
   key: string;
   label: string;
@@ -14,7 +19,8 @@ export type ManagementField = {
     | "role"
     | "member"
     | "multiselect"
-    | "emoji";
+    | "emoji"
+    | "server_roles";
   value: ManagementValue;
   description?: string;
   group?: string;
@@ -26,6 +32,8 @@ export type ManagementField = {
   max?: number;
   max_length?: number;
   readonly?: boolean;
+  error?: string;
+  role_conflicts?: string[];
   placeholder?: string;
   upload_label?: string;
   upload_endpoint?: string;
@@ -48,6 +56,7 @@ export type ManagementSection = {
   value?: string;
   emoji_url?: string | null;
   bases_meta?: string;
+  role_name?: string;
   readonly?: boolean;
   return_status?: ReturnStatus;
   id: string;
@@ -59,6 +68,13 @@ export type ManagementSection = {
   destination?: string;
 };
 export type ManagementDocument = ManagementSection & {
+  role_revision?: number;
+  partial_result?: {
+    registry_saved: boolean;
+    role_saved: boolean | null;
+    role_outcome: "not_saved" | "unknown";
+    role_error: string;
+  };
   base_management?: boolean;
   partial_save?: boolean;
   section_readonly?: Record<string, boolean>;

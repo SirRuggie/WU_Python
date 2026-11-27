@@ -9,6 +9,12 @@ from extensions.warrior import core, nickname_setup as nick
 from tests.test_warrior_setup import context, mongo
 
 
+@pytest.fixture(autouse=True)
+def current_registry_role_fixture(monkeypatch):
+    monkeypatch.setattr(core, 'role_map', AsyncMock(return_value={'16':60, '17':61}))
+    monkeypatch.setattr(core, 'dashboard_role_grants', AsyncMock(return_value=set()))
+
+
 def fixture():
     c = context()
     m = mongo()

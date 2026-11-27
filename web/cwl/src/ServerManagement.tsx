@@ -436,6 +436,9 @@ export default function ServerManagement({
         review ? "POST" : "PATCH",
         {
           revision: document.revision,
+          ...(document.id === "town_halls"
+            ? { role_revision: document.role_revision }
+            : {}),
           values,
           ...(document.partial_save
             ? {
@@ -465,10 +468,18 @@ export default function ServerManagement({
         requestIds.current.complete(requestKey);
         setDocument({
           ...result,
-          fields: await hydrateFields(result.fields || []),
+          fields: (await hydrateFields(result.fields || [])).map((field) =>
+            result.partial_result && field.key === "role"
+              ? { ...field, error: result.partial_result.role_error }
+              : field,
+          ),
         });
-        setDraft(fieldValues(result.fields || []));
-        setConflict(false);
+        setDraft({
+          ...fieldValues(result.fields || []),
+          ...(result.partial_result ? { role: draft.role } : {}),
+        });
+        if (result.partial_result) setError(result.partial_result.role_error);
+        setConflict(result.partial_result?.role_outcome === "unknown");
         setPreview(result.preview || null);
         if (result.id === "town_halls") {
           const path = result.endpoint || endpoint(selected);
@@ -488,14 +499,35 @@ export default function ServerManagement({
           window.requestAnimationFrame(() => editorHeading.current?.focus());
         }
         setNotice("");
-        if (!queued) setActionResult({ message: "Saved." });
+        if (!queued && !result.partial_result)
+          setActionResult({ message: "Saved." });
       }
     } catch (error) {
+      if (
+        (document.id === "town_halls" &&
+          (message(error).includes("Select an unmanaged role") ||
+            message(error) === "This role is already a server role.")) ||
+        (document.id === "server_roles" &&
+          message(error) === "This role is already used for a Town Hall.")
+      ) {
+        setDocument({
+          ...document,
+          fields: document.fields.map((field) =>
+            (
+              document.id === "server_roles"
+                ? field.key === "roles"
+                : field.key === "role"
+            )
+              ? { ...field, error: message(error) }
+              : field,
+          ),
+        });
+      }
       setConflict(error instanceof ApiError && error.status === 409);
       setError(
         error instanceof ApiError &&
           error.status === 409 &&
-          document.id !== "town_halls"
+          !["town_halls", "server_roles"].includes(document.id)
           ? "Someone changed these settings. Your edits are still here. Keep a copy of your edits before refreshing."
           : message(error),
       );
@@ -824,6 +856,7 @@ export default function ServerManagement({
               key={endpoint(selected)}
               target={endpoint(selected)}
               revision={document.revision}
+              roleRevision={document.role_revision}
               labels={Object.fromEntries(
                 document.fields.map((field) => [
                   field.key,

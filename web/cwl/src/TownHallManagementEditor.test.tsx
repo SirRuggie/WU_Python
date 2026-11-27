@@ -315,3 +315,33 @@ it("shares the in-flight Add prefetch with an opened picker", async () => {
   await act(async () => finish({ emojis: [], errors: {} }));
   expect(api).toHaveBeenCalledTimes(1);
 });
+
+it("places a clearable Discord role below emoji with inline guidance and errors", async () => {
+  const document: ManagementDocument = {
+    ...base,
+    fields: [
+      base.fields[0],
+      {
+        key: "role",
+        label: "Discord role",
+        type: "role",
+        value: "44",
+        group: "Town Hall",
+        options: [{ value: "44", label: "TH19" }],
+        description: "Members get this role when they select this Town Hall.",
+        error:
+          "Select an unmanaged role with no permissions, below the app's highest role.",
+      },
+      ...base.fields.slice(1),
+    ],
+  };
+  await act(async () => root.render(<Sample document={document} />));
+  expect(pickerByLabel(host, "Discord role")).toBeTruthy();
+  expect(host.textContent).toContain(
+    "Members get this role when they select this Town Hall.",
+  );
+  expect(host.querySelector('[role="alert"]')?.textContent).toContain(
+    "Select an unmanaged role",
+  );
+  expect(pickerValue(pickerByLabel(host, "Discord role"))).toContain("TH19");
+});

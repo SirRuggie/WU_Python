@@ -101,7 +101,12 @@ export default function TownHallRecords({
           >
             <span className="town-hall-record-name">
               <RecordIcon record={record} />
-              <span>{record.label}</span>
+              <span>
+                {record.label}
+                <small className="town-hall-role-name">
+                  {record.role_name || "No role"}
+                </small>
+              </span>
             </span>
             {showMeta && (
               <span

@@ -1,5 +1,6 @@
 """Town Hall HTTP adaptation; all registry storage belongs to utils.town_halls."""
 import asyncio
+from contextlib import nullcontext
 from copy import deepcopy
 import json
 import logging
@@ -29,11 +30,13 @@ def field(key, label, value, kind='text', **kwargs):
     return dict(key=key, label=label, value=value, type=kind, **kwargs)
 
 
-def document(doc, item=None, *, readonly=False, can_weight=True, can_bases=False):
+def document(doc, item=None, *, readonly=False, can_weight=True, can_bases=False, role_options=None, role_names=None, roles=None):
     """Shape the registry without exposing stored metadata or Discord markup text."""
     result = dict(id='town_halls', label='Town Halls',
                   description='Emoji, weight range and bases for each Town Hall level.',
                   group='Clan resources', revision=doc['revision'], fields=[], readonly=readonly)
+    roles = roles or {"revision": 0, "roles": {}}
+    result["role_revision"] = roles["revision"]
     levels = registry.levels(doc)
     lowest = doc['lowest_fwa_town_hall']
     records = [dict(id='add', label='Add Town Hall', endpoint=PATH + '/add', list_role='add'),
@@ -44,7 +47,8 @@ def document(doc, item=None, *, readonly=False, can_weight=True, can_bases=False
         meta = (f'{weight["min"] / 1000:g}k – {weight["max"] / 1000:g}k' if weight else 'No weight range')
         records.append(dict(id=str(level), label=f'Town Hall {level}', endpoint=f'{PATH}/{level}',
                             list_role='level', list_group='fwa' if level >= lowest else 'other',
-                            meta=meta, emoji_url=emoji_url(registry.emoji_markup(doc, level))))
+                            meta=meta, role_name=(role_names or {}).get(roles['roles'].get(str(level)), 'Deleted role') if roles['roles'].get(str(level)) else 'No role',
+                            emoji_url=emoji_url(registry.emoji_markup(doc, level))))
     if not can_weight:
         records = [record for record in records if record.get('list_role') != 'add' and record.get('list_group') != 'other']
         records[0]['readonly'] = True
@@ -84,6 +88,7 @@ def document(doc, item=None, *, readonly=False, can_weight=True, can_bases=False
                   lowest_fwa_town_hall=lowest)
     result['fields'] = [field('emoji', 'Town Hall emoji', registry.emoji_markup(doc, level), 'emoji',
                               options_endpoint='/manage/town-halls/emojis', group='Town Hall')]
+    result['fields'].append(field('role', 'Discord role', roles['roles'].get(item, ''), 'role', options=role_options or [], group='Town Hall', description='Members get this role when they select this Town Hall.'))
     if level >= lowest:
         weight = doc['levels'][item].get('weight', {})
         result['fields'] += [field(key, label, weight.get(key), 'number', min=1, max=500000, group='Town Hall')
@@ -110,12 +115,16 @@ async def required(db):
 
 async def read(request):
     actor = await shared.require_manage(request, 'town_halls')
+    from .server_roles import role_choices
     async with shared.mongo(request) as db:
         doc = await required(db)
+        roles = await registry.load_roles(db, shared.GUILD_ID)
         can_weight, can_bases = await bases.permissions(actor, db)
+    # Bases-only users do not need a Discord role-management preflight.
+    role_options, role_names = await role_choices(request, actor) if can_weight else ([], {})
     return web.json_response(document(doc, request.match_info.get('item'),
                                       readonly=not (can_weight or can_bases),
-                                      can_weight=can_weight, can_bases=can_bases))
+                                      can_weight=can_weight, can_bases=can_bases, role_options=role_options, role_names=role_names, roles=roles))
 
 
 class RefreshRequest:
@@ -139,20 +148,24 @@ async def save(request):
     from .app import _json
     from . import change_history
     actor = await shared.require_manage(request, 'town_halls', write=True)
+    from .server_roles import role_choices, ROLE_ERROR
     body = await _json(request)
     item = request.match_info.get('item')
     if not isinstance(body, dict) or type(body.get('revision')) is not int or not isinstance(body.get('values'), dict):
         raise web.HTTPBadRequest(text='Review the Town Hall fields before saving.')
+    role_options, role_names = await role_choices(request, actor) if 'role' in body['values'] else ([], {})
     if body.get('request_id') is not None:
         try:
             UUID(body['request_id'])
         except (ValueError, TypeError, AttributeError):
             raise web.HTTPBadRequest(text='Invalid action identifier. Reload and try again.') from None
     try:
-        async with shared.mongo(request) as db:
+        guard = registry.role_configuration_guard(shared.GUILD_ID) if "role" in body["values"] else nullcontext()
+        async with guard, shared.mongo(request) as db:
             current = await required(db)
+            current_roles = await registry.load_roles(db, shared.GUILD_ID)
             can_weight, can_bases = await bases.permissions(actor, db)
-            before = document(current, item, can_weight=can_weight, can_bases=can_bases)
+            before = document(current, item, can_weight=can_weight, can_bases=can_bases, roles=current_roles)
             values = body['values']
             if can_bases and before.get('partial_save'):
                 for key in values:
@@ -161,11 +174,18 @@ async def save(request):
             allowed = {entry['key'] for entry in before['fields'] if not entry.get('readonly')}
             if not values or not set(values) <= allowed:
                 raise web.HTTPForbidden(text='You cannot change these Town Hall fields.')
-            if not before.get('partial_save') and set(values) != allowed:
+            if not before.get('partial_save') and set(values) not in (allowed, allowed - {'role'}):
                 raise ValueError('Review all fields on this page before saving.')
             base_values = {key[len(bases.PREFIX):]: value for key, value in values.items() if key.startswith(bases.PREFIX)}
             admin_values = {key: value for key, value in values.items() if not key.startswith(bases.PREFIX)}
-            if admin_values and not can_weight or base_values and not can_bases:
+            role_change = {'role': admin_values.pop('role')} if 'role' in admin_values else {}
+            if role_change:
+                if type(body.get('role_revision')) is not int:
+                    raise ValueError('Review the Town Hall role revision before saving.')
+                if role_change['role'] and role_change['role'] not in {entry['value'] for entry in role_options}:
+                    raise ValueError(ROLE_ERROR)
+                await registry.proposed_role_changes(db, shared.GUILD_ID, current, current_roles, {item: role_change['role']})
+            if (admin_values or role_change) and not can_weight or base_values and not can_bases:
                 raise web.HTTPForbidden(text='You cannot change these Town Hall fields.')
             originals = body.get('originals', {})
             if not isinstance(originals, dict) or set(originals) != {bases.PREFIX + key for key in base_values}:
@@ -198,15 +218,44 @@ async def save(request):
                 updated['revision'] = body['revision']
                 saved = await registry.save(db, shared.GUILD_ID, updated, int(actor['user_id']), body['revision'],
                                             **({'base_level': int(item), 'base_values': base_values, 'base_originals': base_originals, **({'base_restore': restore} if restore is not None else {})} if base_values else {}))
-            else:
+            elif base_values:
                 saved = await registry.save_base_fields(db, shared.GUILD_ID, int(item), base_values, base_originals, int(actor['user_id']), **({'restore': restore} if restore is not None else {}))
+            else:
+                saved = current
+            role_error = None
+            role_outcome = 'saved'
+            saved_roles = current_roles
+            if role_change:
+                try:
+                    saved_roles = await registry.save_roles(db, shared.GUILD_ID,
+                        {item: role_change['role']}, actor['user_id'], body['role_revision'])
+                except (registry.TownHallsConflict, ValueError):
+                    if not admin_values and not base_values:
+                        raise
+                    role_outcome = 'not_saved'
+                    role_error = 'Town Hall fields saved. The role did not save. Refresh and review your role edit.'
+                except Exception:
+                    # The second write may have committed before an uncertain transport failure.
+                    # Keep the draft and require a fresh read; never retry automatically.
+                    if not admin_values and not base_values:
+                        raise
+                    role_outcome = 'unknown'
+                    role_error = 'Town Hall fields saved. The role save could not be confirmed. Refresh and review your role edit.'
             target = '/api/cwl' + PATH + '/' + destination
             if base_values or current['lowest_fwa_town_hall'] != saved['lowest_fwa_town_hall']:
                 from .base_bank import invalidate
                 invalidate(request.app)
-            result = document(saved, destination, can_weight=can_weight, can_bases=can_bases)
+            result = document(saved, destination, can_weight=can_weight, can_bases=can_bases, role_options=role_options, role_names=role_names, roles=saved_roles)
+            if role_error:
+                result["partial_result"] = {"registry_saved": True, "role_saved": None if role_outcome == "unknown" else False, "role_outcome": role_outcome, "role_error": role_error}
             warnings = []
             try:
+                if role_change and not role_error:
+                    await change_history.record_committed(
+                        db, target, actor, {'role': current_roles['roles'].get(item, '')},
+                        {'role': saved_roles['roles'].get(item, '')},
+                        event_id=f'dashboard-history:town-hall-roles:{shared.GUILD_ID}:{saved_roles["revision"]}',
+                        action='role')
                 history_before = {} if item == 'add' else change_history.fields(before)
                 history_after = change_history.fields(result)
                 if item == 'add':
@@ -217,6 +266,8 @@ async def save(request):
                     # A concurrent unrelated base/admin edit is not this Save's history.
                     history_before = {key: value for key, value in history_before.items() if key in values}
                     history_after = {key: value for key, value in history_after.items() if key in values}
+                history_before.pop('role', None)
+                history_after.pop('role', None)
                 await change_history.record_committed(
                     db, target, actor, history_before, history_after,
                     event_id=f'dashboard-history:town-halls:{shared.GUILD_ID}:{saved["revision"]}',
@@ -257,6 +308,43 @@ async def member_list(request):
     return web.json_response(values)
 
 
+async def save_role(request):
+    """Independent role revision; composite editor Save uses this same owner."""
+    from .app import _json
+    from .server_roles import require_safe_roles
+    from . import change_history
+    actor = await shared.require_manage(request, 'town_halls', write=True)
+    body = await _json(request)
+    item = request.match_info.get('item')
+    if (not isinstance(body, dict) or type(body.get('revision')) is not int
+            or not isinstance(body.get('values'), dict) or set(body['values']) != {'role'}):
+        raise web.HTTPBadRequest(text='Review the Town Hall role before saving.')
+    value = body['values']['role']
+    options, names = await require_safe_roles(request, actor, [value])
+    try:
+        async with shared.mongo(request) as db:
+            can_weight, _can_bases = await bases.permissions(actor, db)
+            if not can_weight:
+                raise web.HTTPForbidden(text='Only server admins can change Town Hall roles.')
+            before = await registry.load_roles(db, shared.GUILD_ID)
+            saved = await registry.save_roles(db, shared.GUILD_ID, {item: value},
+                                              actor['user_id'], body['revision'])
+            result = {'saved': True, 'role_revision': saved['revision'], 'role': value}
+            try:
+                await change_history.record_committed(db, '/api/cwl' + PATH + '/' + item,
+                    actor, {'role': before['roles'].get(item, '')}, {'role': value},
+                    event_id=f'dashboard-history:town-hall-roles:{shared.GUILD_ID}:{saved["revision"]}',
+                    action='role')
+                result['history_saved'] = True
+            except Exception:
+                result['history_saved'] = False
+    except registry.TownHallsConflict as error:
+        raise web.HTTPConflict(text=str(error)) from None
+    except ValueError as error:
+        raise web.HTTPBadRequest(text=str(error)) from None
+    return web.json_response(result)
+
+
 async def emojis(request):
     await shared.require_manage(request, 'fwa_weight')
 
@@ -293,5 +381,5 @@ async def emojis(request):
     return web.json_response({'emojis': result, 'errors': errors})
 
 
-routes = [web.get(API + '/emojis', emojis), web.post(API + '/{item}/upload/{slot}', bases.upload), web.get('/api/cwl/town-halls', member_list),
+routes = [web.get(API + '/emojis', emojis), web.patch(API + '/{item}/role', save_role), web.post(API + '/{item}/upload/{slot}', bases.upload), web.get('/api/cwl/town-halls', member_list),
           web.get(API, read), web.get(API + '/{item}', read), web.patch(API + '/{item}', save)]

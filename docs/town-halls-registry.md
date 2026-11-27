@@ -167,3 +167,9 @@ Rollback requires the 1184-compatible 244 code: it reads schema2, preserves base
 and stamps non-base revisions on ordinary admin saves. Its base bank still reads
 the unchanged legacy `fwa_config`, so base edits made after 245 release are not
 visible after code rollback. Never restore a database to roll back code.
+
+## TH roles (283)
+
+TH roles are stored separately in `town_hall_roles`, schema 1, under the guild key. `utils/town_halls.py` owns validation, revision CAS and the joined levels/emoji/roles reader. The registry remains schema 1/2 without embedded roles; removed levels hide retained role entries. The level editor saves registry fields first, then the role revision; a partial save retains the role draft and explains which write succeeded. Role edits use Town Halls history action `role`. `migrate_town_halls.py --roles` is dry-run by default and writes only the new role document, preserving registry and Warrior settings byte-for-byte. See [Roles and clan links](roles-and-clan-links.md) for safety and release steps.
+
+1394 removed-level precedence is retained: its saved role is hidden from every menu, even if a legacy Server roles row still uses it. For an active level,1399 gives the Town Hall menu sole control of a stored duplicate. No counterpart row is automatically deleted.
