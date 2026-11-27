@@ -36,6 +36,7 @@ def runtime(monkeypatch):
     monkeypatch.setattr(native, "_campaign_loaded_generations", {})
     monkeypatch.setattr(native, "_campaign_load_targets", {})
     monkeypatch.setattr(native, "_campaign_sync_locks", {})
+    monkeypatch.setattr(native, "_campaign_sync_all_lock", asyncio.Lock())
     monkeypatch.setattr(native, "_campaign_load_scan_complete", False)
     sender = AsyncMock(side_effect=AssertionError("Ack must never send"))
     monkeypatch.setattr(native, "send_campaign_message", sender)
@@ -49,6 +50,7 @@ async def reconcile(sync=None, epoch=EPOCH):
         guild_id=GUILD,
         loaded_generations=lambda: native._loaded_campaign_generations(GUILD),
         runtime_id=epoch,
+        load_in_progress=native._campaign_load_in_progress,
     )
 
 
@@ -101,7 +103,7 @@ def test_callback_without_completed_native_load_cannot_ack(runtime):
     mongo, _, _ = runtime
 
     async def run():
-        with pytest.raises(ValueError, match="No schedule load completed"):
+        with pytest.raises(bridge.ScheduleLoadIncomplete, match="No schedule load completed"):
             await reconcile(AsyncMock())
         assert bridge.worker_id(GUILD) not in mongo.bot_config.documents
 
@@ -208,12 +210,16 @@ def test_repeated_started_same_bot_keeps_loaded_proof_and_new_bot_clears_it(
     async def run():
         await reconcile()
         before = native._loaded_campaign_generations(GUILD)
+        full_load_lock = native._campaign_sync_all_lock
         await native.on_bot_started(SimpleNamespace(app=app), mongo)
         assert native._campaign_runtime_id == EPOCH
         assert native._loaded_campaign_generations(GUILD) == before
+        assert native._campaign_sync_all_lock is full_load_lock
         await native.on_bot_started(SimpleNamespace(app=object()), mongo)
         assert native._campaign_runtime_id != EPOCH
         assert native._loaded_campaign_generations(GUILD) is None
+        assert native._campaign_sync_all_lock is not full_load_lock
+        assert not native._campaign_load_in_progress()
 
     asyncio.run(run())
 

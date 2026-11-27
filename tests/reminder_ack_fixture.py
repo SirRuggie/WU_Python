@@ -41,4 +41,5 @@ async def reconcile_installed(mongo, callback, *, guild_id):
         guild_id=guild_id,
         loaded_generations=lambda: state["generations"],
         runtime_id="adapter-fixture",
+        load_in_progress=lambda: False,
     )
