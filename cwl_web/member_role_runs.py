@@ -8,6 +8,7 @@ from utils.member_profiles import member_id
 from utils.member_profile_runs import ProfileRuns
 from utils.role_permissions import role_is_manageable, member_role_ids
 from utils.manage_web_worker import WORKER_ID
+from utils.user_copy import NOT_READY
 from .server_management import API, GUILD_ID, require_manage, mongo
 from .manage_roles import hierarchy, dashboard_grant_roles
 from .member_timezones import directory
@@ -49,7 +50,7 @@ async def preview(request):
     ):
         return web.json_response(
             {
-                "error": "This role cannot be changed by you or the bot.",
+                "error": "This role is above your role or WU Wizard's role.",
                 "code": "role_refused",
             },
             status=422,
@@ -166,7 +167,7 @@ async def confirm(request):
         heartbeat = await db.bot_config.find_one({"_id": WORKER_ID}) or {}
         if time.time() - heartbeat.get("checked_at", 0) > 60:
             raise web.HTTPServiceUnavailable(
-                text="The bot is not ready. Nothing was queued."
+                text=NOT_READY
             )
         try:
             run = await ProfileRuns(db).confirm(

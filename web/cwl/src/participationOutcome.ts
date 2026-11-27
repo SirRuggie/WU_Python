@@ -1,5 +1,6 @@
 import { formatDateTime, formatTime } from "./format";
 import { countLabel } from "./countLabel";
+import { lazyQualifies } from "./lazyRule";
 import type { Pool } from "./api";
 import type { StatusTone } from "./rosterUi/primitives";
 
@@ -56,7 +57,7 @@ const tones: Record<ParticipationOutcome, StatusTone> = {
 };
 
 /**
- * Lazy: 4+ attacks, or 3+ attacks and 8+ stars. Main: the saved minimum
+ * Lazy: the shared lazyRule threshold. Main: the saved minimum
  * attacks; with no saved minimum there is no outcome. Nothing captured is Not
  * checked (a bonus review reason can cover it); some numbers without complete
  * results are Partial results (a reason cannot cover them). An assigned
@@ -77,9 +78,7 @@ export function participationOutcome(
   if (account.pool === "main")
     return account.attacks >= mainMinimum! ? "meets" : "below";
   if (account.stars === null) return "partial";
-  return account.attacks >= 4 || (account.attacks >= 3 && account.stars >= 8)
-    ? "meets"
-    : "below";
+  return lazyQualifies(account.attacks, account.stars) ? "meets" : "below";
 }
 
 export function outcomeTone(outcome: ParticipationOutcome): StatusTone {

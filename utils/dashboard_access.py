@@ -31,7 +31,7 @@ PERMISSIONS = {
     'text_commands': ('Command triggers', 'Manage trigger replies and Image Gallery.'),
     'recruitment': ('Recruitment messages', 'Manage applications, questions and staff messages.'),
     'tickets': ('Tickets', 'Read conversations and manage ticket settings and testing.'),
-    'member_roles': ('Members & roles', 'Manage ordinary Discord roles within the bot hierarchy.'),
+    'member_roles': ('Members & roles', "Manage ordinary Discord roles below WU Wizard's highest role."),
     'fwa': ('FWA tools', 'Manage FWA messages, bases, points and sync reminders.'),
     'server_tools': ('Connections', 'Manage BAND connection and debug controls.'),
 }

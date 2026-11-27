@@ -2,6 +2,7 @@
 
 import re
 import secrets
+from utils.cwl_lazy_rule import RULE_SHORT, lazy_qualifies
 
 
 LAZY_REVIEW_FLAGS = frozenset({'missed_sync', 'lingering', 'left_family'})
@@ -31,7 +32,7 @@ def _lazy_hard_exclusion(account):
 
 
 def lazy_eligibility(account):
-    """Lazy rule: 4+ attacks, or 3+ attacks and 8+ stars.
+    """Apply the participation rule described by cwl_lazy_rule.RULE_SHORT.
 
     Complete results are required, except that a reason may cover results that were never captured.
     Staff may override thresholds and review exclusions with a reason, but cannot override partial or
@@ -60,7 +61,7 @@ def lazy_eligibility(account):
     not_checked = not account.get('source_complete') and attacks is None and stars is None
     if incomplete:
         flagged.append('Complete participation results are unavailable')
-    elif not (attacks >= 4 or (attacks >= 3 and stars >= 8)):
+    elif not lazy_qualifies(attacks, stars):
         flagged.append('Does not meet the Lazy CWL participation rule')
     if account.get('three_cycle_cooldown'):
         flagged.append(f"Prior winner ({account['prior_winner_label']})" if account.get('prior_winner_label') else 'Prior winner')
@@ -131,7 +132,7 @@ def safe_text(value):
 def announcement_pages(snapshot):
     label = 'Main CWL' if snapshot['pool'] == 'main' else 'Lazy CWL'
     if snapshot['pool'] == 'lazy':
-        rule = snapshot.get('qualification_rule') or '4+ attacks OR 3+ attacks and 8+ stars'
+        rule = snapshot.get('qualification_rule') or RULE_SHORT
         header = f"**{safe_text(snapshot['clan_name'])} · {label} bonus winners**\n{snapshot['cycle']} · Rule: {safe_text(rule)}\n"
     else:
         header = f"**{safe_text(snapshot['clan_name'])} · {label} bonus winners**\n{snapshot['cycle']} · Minimum {snapshot['minimum']} attacks\n"

@@ -10,6 +10,7 @@ import json
 from datetime import datetime, timezone
 
 from utils.cwl_participation_status import ended_group_clans
+from utils.cwl_lazy_rule import RULE_SHORT
 from utils.cwl_bonus_raffle import announcement_pages, draw_accounts, eligibility, lazy_eligibility, LAZY_REVIEW_FLAGS
 
 REP_NOTE_MAX = 40
@@ -610,7 +611,7 @@ class RaffleStore:
                   'clan_name': clan.get('name', clan_tag), 'minimum': minimum if pool == 'main' else None,
                   'rules_version': 4 if pool == 'lazy' else 1,
                   'sit_out_months': next((r['months'] for r in self.sit_out_settings() if r['tag'] == clan_tag), 3) if pool == 'lazy' else None,
-                  'qualification_rule': '4+ attacks OR 3+ attacks and 8+ stars' if pool == 'lazy' else None,
+                  'qualification_rule': RULE_SHORT if pool == 'lazy' else None,
                   'slots': slots, 'available': available, 'confirmed': confirmed,
                   'allowance_source': 'automatic' if automatic else 'staff',
                   'allowance': allowance if automatic else None,

@@ -8,6 +8,7 @@ from aiohttp import web
 from pymongo.errors import DuplicateKeyError
 from utils import fwa_blacklist
 from utils.fwa_points_parser import sanitize_tag
+from utils.user_copy import needs_permissions
 from . import server_management as shared
 from utils.manage_operations_runtime import revision, runtime_snapshot, refresh_base_image_cache, public_band_error
 
@@ -72,7 +73,7 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
                   'boolean' if fresh else 'text'),
         ]
         return document(section, row, fields, readonly=True,
-                        warning=('Use Check status for current bot information. Debug resets when the bot restarts.'
+                        warning=('Use Check status for current information. Debug turns off on restart.'
                                  if fresh else 'Status is outdated or unavailable. Check status before relying on these results.'),
                         actions=[{'id': 'status', 'label': 'Check status'},
                                  {'id': 'debug_on', 'label': 'Enable debug logging', 'advanced': True},
@@ -105,7 +106,7 @@ async def load_document(db, section, item=None, *, source_snapshot=None):
             result=document(section,record,[field('name','Clan',clan.get('name') or item),field('verdict','Latest result',record.get('raw_verdict') or 'No result yet'),field('war','War number',str(record.get('war_number','Unknown'))),field('sync','Sync number',str(record.get('sync_number','Unknown'))),field('points','Point balance',str(record.get('point_balance','Unknown'))),field('updated','Last updated',str(record.get('scraped_at','Unknown')))],readonly=True)
             result['label']=clan.get('name') or item
             return result
-        return document(section,row,[field('enabled','Monitoring enabled',bool(row.get('enabled',monitor.DEFAULT_ENABLED)),'boolean',readonly=True),field('watch_list','Extra clans', '\n'.join(f'{c["tag"]} {c.get("name","")}' for c in row.get('watch_list',[])),'textarea',description='One clan per line: #TAG Clan name. Family FWA clans are included automatically.')],preview=[{'text':'Family FWA clans are included automatically. Extra clans can be edited below.'}],actions=[{'id':'enable','label':'Start monitoring'},{'id':'disable','label':'Pause monitoring'}],warning='Runtime status is supplied by the bot; saved settings alone do not prove it is running.')
+        return document(section,row,[field('enabled','Monitoring enabled',bool(row.get('enabled',monitor.DEFAULT_ENABLED)),'boolean',readonly=True),field('watch_list','Extra clans', '\n'.join(f'{c["tag"]} {c.get("name","")}' for c in row.get('watch_list',[])),'textarea',description='One clan per line: #TAG Clan name. Family FWA clans are included automatically.')],preview=[{'text':'Family FWA clans are included automatically. Extra clans can be edited below.'}],actions=[{'id':'enable','label':'Start monitoring'},{'id':'disable','label':'Pause monitoring'}],warning='Saved settings do not prove monitoring is running. Use Check status.')
     if section=='fwa_sync':
         from extensions.tasks.band_sync_schema import CONFIG_ID, normalize_config
         row=await db.fwa_sync_config.find_one({'_id':CONFIG_ID}) or {}
@@ -135,7 +136,7 @@ async def check_channel_permissions(request, channel):
     for overwrite in overwrites:
         if overwrite.get('type')==1 and str(overwrite['id'])==str(me['id']):permissions=(permissions&~int(overwrite.get('deny',0)))|int(overwrite.get('allow',0))
     needed=(1<<10)|(1<<11)|(1<<14)
-    if permissions&needed!=needed:raise web.HTTPBadRequest(text='The bot needs View Channel, Send Messages, and Embed Links in this channel.')
+    if permissions&needed!=needed:raise web.HTTPBadRequest(text=needs_permissions("View Channel", "Send Messages", "Embed Links", where="in this channel"))
 
 async def read(request):
     section=request.match_info['section']; await shared.require_manage(request,section)

@@ -1,4 +1,5 @@
 import { countLabel } from "./countLabel";
+import { LAZY_RULE_SHORT } from "./lazyRule";
 import { numericInputProps } from "./inputProps";
 import type { ReactNode, RefObject } from "react";
 import BonusAccountList from "./BonusAccountList";
@@ -163,7 +164,7 @@ export default function BonusRulesStep({
       <BonusBlockers lines={here(["count"])} fix={fix} />
       {pool === "lazy" && (
         <p className="bonus-rules-line">
-          Lazy rules · 4+ attacks, or 3 attacks and 8+ stars ·{" "}
+          Lazy rules · {LAZY_RULE_SHORT} ·{" "}
           {sitOutMonths === 0
             ? "No sit-out after a win"
             : `No bonus in the previous ${countLabel(sitOutMonths, "CWL month")}`}

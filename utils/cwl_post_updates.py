@@ -217,7 +217,7 @@ class PostUpdateWorker:
             }
         except (PermissionError, hikari.ForbiddenError):
             result = {
-                "error": "You or the bot no longer have access to update this post."
+                "error": "You or WU Wizard no longer have access to update this post."
             }
         except (PostUpdateConflict, ValueError) as exc:
             message = str(exc)

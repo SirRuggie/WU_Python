@@ -296,12 +296,12 @@ it("shows a status notice once", () => {
   renderDraft();
   hooks.index = 0;
   hooks.effects = [];
-  hooks.values[8] = "Queued. Waiting for the bot.";
+  hooks.values[8] = "Queued. Waiting to start.";
   const html = renderToStaticMarkup(
     <ServerManagement area="applications-settings" />,
   );
   expect(html.split('class="manage-status" role="status"').length - 1).toBe(1);
-  expect(html).toContain("Queued. Waiting for the bot.");
+  expect(html).toContain("Queued. Waiting to start.");
   expect(html).not.toContain('class="manage-notice"');
 });
 

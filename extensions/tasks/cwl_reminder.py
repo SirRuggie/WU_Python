@@ -58,6 +58,13 @@ _campaign_loaded_generations: dict[tuple[int, str], str] = {}
 _campaign_runtime_id = uuid.uuid4().hex
 _campaign_load_scan_complete = False
 _campaign_sync_locks: dict[tuple[int, str], asyncio.Lock] = {}
+_campaign_sync_all_lock = asyncio.Lock()
+
+
+def _campaign_load_in_progress() -> bool:
+    return _campaign_sync_all_lock.locked() or any(
+        lock.locked() for lock in _campaign_sync_locks.values()
+    )
 
 
 def _loaded_campaign_generations(guild_id: int) -> dict[str, str] | None:
@@ -2663,6 +2670,14 @@ async def _poll_web_roster_bridge() -> None:
     if mongo_client is None or bot_instance is None:
         return False
     complete = True
+    schedule_load_pending = False
+
+    def load_in_progress() -> bool:
+        nonlocal schedule_load_pending
+        pending = _campaign_load_in_progress()
+        schedule_load_pending = schedule_load_pending or pending
+        return pending
+
     try:
         try:
             with timed_step(logging.getLogger(__name__), "reconcile_campaign_changes"):
@@ -2674,6 +2689,11 @@ async def _poll_web_roster_bridge() -> None:
                         cwl_campaign.LEGACY_WU_GUILD_ID
                     ),
                     runtime_id=_campaign_runtime_id,
+                    load_in_progress=load_in_progress,
+                )
+            if schedule_load_pending:
+                logging.getLogger(__name__).info(
+                    "cwl-web-roster-bridge: schedule load in progress; acknowledgement deferred"
                 )
         except Exception as exc:
             # A bad schedule must not block the independent reviewed roster queue.
@@ -2754,7 +2774,7 @@ async def _poll_web_roster_bridge() -> None:
         # never auto-reset a possibly posted sending row after an outage.
         log_failure(logging.getLogger(__name__), "cwl-web-roster-bridge.poll", exc)
         return False
-    if (_loaded_campaign_generations(cwl_campaign.LEGACY_WU_GUILD_ID) is None
+    if not schedule_load_pending and (_loaded_campaign_generations(cwl_campaign.LEGACY_WU_GUILD_ID) is None
             or cwl_web_bridge.schedule_repair_pending(
                 cwl_campaign.LEGACY_WU_GUILD_ID, _campaign_runtime_id)):
         complete = False
@@ -3004,42 +3024,43 @@ async def _reconcile_cwl_startup() -> None:
 async def _sync_all_campaigns() -> bool:
     """Install current/next-cycle jobs for every guild using the dashboard."""
     global _campaign_load_scan_complete
-    if not hasattr(mongo_client, "bot_config"):
-        return False
-    with pymongo.timeout(30):
-        rows = await mongo_client.bot_config.find(
-            {"kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]}, "activated": True},
-            {"_id": 1, "kind": 1, "activated": 1, "guild_id": 1, "cycle": 1},
-        ).to_list(length=None)
-    guilds = {
-        int(row["guild_id"])
-        for row in rows
-        if row.get("kind") in {"cwl_campaign_defaults", "cwl_campaign_cycle"}
-        and row.get("activated") is True
-        and row.get("guild_id") is not None
-    }
-    now = pendulum.now(DEFAULT_TIMEZONE)
-    current = now.format("YYYY-MM")
-    following = now.add(months=1).format("YYYY-MM")
-    explicit_cycles = {
-        (int(row["guild_id"]), str(row["cycle"]))
-        for row in rows
-        if row.get("kind") == "cwl_campaign_cycle"
-        and row.get("activated") is True
-        and row.get("guild_id") is not None
-        and row.get("cycle")
-    }
-    for guild_id in set(_campaign_load_targets) - guilds:
-        _campaign_load_targets[guild_id] = set()
-    for guild_id in guilds:
-        targets = {current, following} | {
-            value for owner, value in explicit_cycles if owner == guild_id
+    async with _campaign_sync_all_lock:
+        if not hasattr(mongo_client, "bot_config"):
+            return False
+        with pymongo.timeout(30):
+            rows = await mongo_client.bot_config.find(
+                {"kind": {"$in": ["cwl_campaign_defaults", "cwl_campaign_cycle"]}, "activated": True},
+                {"_id": 1, "kind": 1, "activated": 1, "guild_id": 1, "cycle": 1},
+            ).to_list(length=None)
+        guilds = {
+            int(row["guild_id"])
+            for row in rows
+            if row.get("kind") in {"cwl_campaign_defaults", "cwl_campaign_cycle"}
+            and row.get("activated") is True
+            and row.get("guild_id") is not None
         }
-        _campaign_load_targets[guild_id] = targets
-        for cycle in targets:
-            await sync_campaign_schedule(guild_id, cycle)
-    _campaign_load_scan_complete = True
-    return bool(guilds)
+        now = pendulum.now(DEFAULT_TIMEZONE)
+        current = now.format("YYYY-MM")
+        following = now.add(months=1).format("YYYY-MM")
+        explicit_cycles = {
+            (int(row["guild_id"]), str(row["cycle"]))
+            for row in rows
+            if row.get("kind") == "cwl_campaign_cycle"
+            and row.get("activated") is True
+            and row.get("guild_id") is not None
+            and row.get("cycle")
+        }
+        for guild_id in set(_campaign_load_targets) - guilds:
+            _campaign_load_targets[guild_id] = set()
+        for guild_id in guilds:
+            targets = {current, following} | {
+                value for owner, value in explicit_cycles if owner == guild_id
+            }
+            _campaign_load_targets[guild_id] = targets
+            for cycle in targets:
+                await sync_campaign_schedule(guild_id, cycle)
+        _campaign_load_scan_complete = True
+        return bool(guilds)
 
 
 @loader.listener(hikari.StartedEvent)
@@ -3048,12 +3069,13 @@ async def on_bot_started(
     event: hikari.StartedEvent, mongo: MongoClient = lightbulb.di.INJECTED
 ) -> None:
     """Start non-blocking, self-healing restoration of the saved schedule."""
-    global bot_instance, mongo_client, startup_reconciler, _management_stopping, _campaign_runtime_id, _campaign_load_scan_complete
+    global bot_instance, mongo_client, startup_reconciler, _management_stopping, _campaign_runtime_id, _campaign_load_scan_complete, _campaign_sync_all_lock
     _management_stopping = False
     if bot_instance is not event.app or mongo_client is not mongo:
         _campaign_load_targets.clear()
         _campaign_loaded_generations.clear()
         _campaign_sync_locks.clear()
+        _campaign_sync_all_lock = asyncio.Lock()
         _campaign_load_scan_complete = False
         _campaign_runtime_id = uuid.uuid4().hex
 
@@ -3071,11 +3093,12 @@ async def on_bot_started(
 @loader.listener(hikari.StoppingEvent)
 async def on_bot_stopping(event: hikari.StoppingEvent) -> None:
     """Shutdown scheduler when bot stops"""
-    global startup_reconciler, _management_driver, _management_stopping, _roster_driver, _campaign_load_scan_complete, _post_update_worker
+    global startup_reconciler, _management_driver, _management_stopping, _roster_driver, _campaign_load_scan_complete, _post_update_worker, _campaign_sync_all_lock
     _management_stopping = True
     _campaign_load_targets.clear()
     _campaign_loaded_generations.clear()
     _campaign_sync_locks.clear()
+    _campaign_sync_all_lock = asyncio.Lock()
     _campaign_load_scan_complete = False
     import contextlib
 

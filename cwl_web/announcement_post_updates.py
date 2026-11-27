@@ -118,7 +118,7 @@ async def preview(request):
     async with manage_bridge._mongo(request) as mongo:
         if not await _worker_ready(mongo):
             raise web.HTTPServiceUnavailable(
-                text="The bot post editor is not ready. Try again after it reconnects."
+                text="Post editor is not ready. Try again in a minute."
             )
         try:
             row = await cwl_post_updates.create_review(
@@ -161,7 +161,7 @@ async def update(request):
             and not ready
         ):
             raise web.HTTPServiceUnavailable(
-                text="The bot post editor is not ready. Nothing was queued."
+                text="Post editor is not ready. Nothing was queued."
             )
         try:
             row = await PostUpdateStore(mongo).request_update(

@@ -82,7 +82,7 @@ def test_later_thread_configuration_failure_stays_uncertain_and_is_not_retried(o
         asyncio.run(worker.poll(bot, mongo))
     result = receipt(mongo)
     assert result['status'] == 'uncertain'
-    assert 'could not confirm' in result['message']
+    assert result['message'] == worker.NOT_CONFIRMED
     assert 'ThreadConfigurationError' in caplog.text and detail in caplog.text
     assert mongo.bot_config.find_one_and_update.await_count == 2  # one claim, then empty
     if when != 'after_discord_post': change_history.begin.assert_awaited_once()

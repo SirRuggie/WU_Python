@@ -3,6 +3,7 @@ import asyncio
 import os
 import json
 from contextlib import asynccontextmanager
+from utils.user_copy import NOT_READY, QUEUED, WAITING
 
 import aiohttp
 from aiohttp import web
@@ -173,7 +174,7 @@ async def catalog(request):
             ('roles', 'Member roles', 'Add or remove roles. See who has a role.', 'Server', '/manage/roles'),
             ('ticket_settings', 'Ticket settings', "Select ticket channels, staff, and wait times.", 'Recruitment', '/manage/ticket-settings'),
             ('ticket_testing', 'Test tickets', 'Try tickets in a separate test area.', 'Recruitment', '/manage/ticket-testing'),
-            ('band_monitor', 'BAND monitor', 'Check the bot’s calendar connection and debug mode.', 'War', '/manage/operations/band_monitor'),
+            ('band_monitor', 'BAND monitor', 'Check the BAND calendar connection and debug mode.', 'War', '/manage/operations/band_monitor'),
             ('fwa_points', 'FWA points', 'Manage watched clans and points checks.', 'War', '/manage/operations/fwa_points'),
             ('fwa_sync', 'FWA sync reminders', 'Manage calendar reminders and their channel.', 'War', '/manage/operations/fwa_sync'),
             ('town_halls', 'Town Halls', 'Emoji, weight range and bases for each Town Hall level.', 'Clan resources', '/manage/town-halls'),
@@ -235,7 +236,7 @@ async def queue_action(request, section, action, values, revision):
     async with mongo(request) as db:
         worker = await db.bot_config.find_one({'_id': WORKER_ID}) or {}
         if time.time() - worker.get('checked_at', 0) > 60:
-            raise web.HTTPServiceUnavailable(text="The bot is not ready. Nothing was queued. Try again later.")
+            raise web.HTTPServiceUnavailable(text=NOT_READY)
         try:
             await db.bot_config.insert_one({'_id':key, 'kind':'manage_web_request', **payload, 'status':'pending', 'created_at':time.time(), 'payload_hash':payload_hash})
         except DuplicateKeyError:
@@ -248,7 +249,7 @@ async def queue_action(request, section, action, values, revision):
 
         invalidate(getattr(request, "app", {}))
     return web.json_response({'request_id':key, 'status':saved['status'], 'status_url':'/manage/requests/'+key,
-                             'message':saved.get('message') or 'Queued. Waiting for the bot.'})
+                             'message':saved.get('message') or QUEUED})
 
 
 async def request_status(request):
@@ -262,7 +263,7 @@ async def request_status(request):
     from .member_directory_cache import observe_job
 
     observe_job(getattr(request, "app", {}), row)
-    return web.json_response({'status':row['status'], 'message':row.get('message') or 'Waiting for the bot.', 'result':row.get('result')})
+    return web.json_response({'status':row['status'], 'message':row.get('message') or WAITING, 'result':row.get('result')})
 
 
 routes.append(web.get(API+'/requests/{request_id}', request_status))

@@ -1,6 +1,8 @@
 """Durable web-to-bot handoff for native CWL roster announcements."""
 
 from __future__ import annotations
+import hashlib
+import json
 import pymongo
 
 import re
@@ -22,6 +24,10 @@ _POOLS = frozenset(("main", "lazy"))
 # or durable writes: configuration changes bypass this cooldown immediately.
 _schedule_repair_attempts: dict[int, tuple[str, str, float]] = {}
 SCHEDULE_REPAIR_RETRY_SECONDS = 300
+
+
+class ScheduleLoadIncomplete(ValueError):
+    """A schedule load ended without the required installed-generation proof."""
 
 
 def schedule_repair_pending(guild_id: int, runtime_id: str) -> bool:
@@ -375,6 +381,7 @@ async def reconcile_campaign_changes(
     guild_id: int,
     loaded_generations: Callable[[], dict[str, str] | None],
     runtime_id: str,
+    load_in_progress: Callable[[], bool],
 ) -> bool:
     """Reuse the native scheduler when a web or Discord edit changes a campaign.
 
@@ -382,9 +389,6 @@ async def reconcile_campaign_changes(
     proof acknowledges a load. Missing acknowledgements can be repaired without
     rescheduling. Failed or incomplete loads remain pending on the existing poll.
     """
-    import hashlib
-    import json
-
     if not isinstance(runtime_id, str) or not runtime_id:
         raise ValueError("A process identity is required for schedule acknowledgement")
 
@@ -445,6 +449,8 @@ async def reconcile_campaign_changes(
     generations = installed()
     same_signature = worker.get("schedule_fingerprint") == signature
     same_epoch = worker.get("schedule_epoch") == runtime_id
+    if load_in_progress():
+        return False
     # A stored fingerprint is not proof that this process restored its jobs.
     # Completed startup loads can repair missing/default-only acknowledgements
     # directly. Failed or absent process proof requires one real load first.
@@ -460,8 +466,11 @@ async def reconcile_campaign_changes(
         _schedule_repair_attempts[int(guild_id)] = (runtime_id, signature, now)
         await sync_all()
         generations = installed()
+        if generations is None and load_in_progress():
+            _schedule_repair_attempts.pop(int(guild_id), None)
+            return False
     if generations is None or (rows and not generations):
-        raise ValueError("No schedule load completed; nothing was acknowledged")
+        raise ScheduleLoadIncomplete("No schedule load completed; nothing was acknowledged")
     _schedule_repair_attempts.pop(int(guild_id), None)
     if (
         same_signature

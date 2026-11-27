@@ -1,4 +1,5 @@
 import HelpButton from "./HelpButton";
+import { LAZY_RULE_SHORT } from "./lazyRule";
 
 export default function BonusHelpPanel() {
   return (
@@ -7,8 +8,8 @@ export default function BonusHelpPanel() {
       <p>It comes from the CWL league, plus 1 for each war win.</p>
       <h3>Who qualifies</h3>
       <p>
-        Main: the minimum attacks in the Rules step. Lazy: 4+ attacks, or 3+
-        attacks and 8+ stars. One bonus per account each month.
+        Main: the minimum attacks in the Rules step. Lazy: {LAZY_RULE_SHORT}.
+        One bonus per account each month.
       </p>
       <h3>Infractions (Lazy)</h3>
       <p>

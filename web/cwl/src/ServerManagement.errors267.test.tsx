@@ -62,7 +62,7 @@ beforeEach(() => {
         : {
             status: "pending",
             status_url: "/manage/requests/267",
-            message: "Queued. Waiting for the bot.",
+            message: "Queued. Waiting to start.",
           };
     if (path === "/manage/requests/267")
       return outcome === "queued_done"

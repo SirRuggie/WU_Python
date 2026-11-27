@@ -467,6 +467,7 @@ def test_idle_future_ack_does_not_fetch_catchup_state(runtime, monkeypatch):
                 runtime.mongo, native._sync_all_campaigns, guild_id=GUILD,
                 loaded_generations=lambda: native._loaded_campaign_generations(GUILD),
                 runtime_id=native._campaign_runtime_id,
+                load_in_progress=native._campaign_load_in_progress,
             )
         await reconcile()
         state = AsyncMock(side_effect=AssertionError("Idle reconciliation must not scan catch-up state"))

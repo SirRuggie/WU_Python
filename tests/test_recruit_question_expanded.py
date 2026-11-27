@@ -166,7 +166,8 @@ def test_lazy_cwl_native_default_preserves_baseline_participation_and_fwa_rule()
     rendered = content.render_template(template, user_id=22, recruiter_id=11, action_id='panel-state')
     texts = [node.content for node in content._text_nodes(rendered)]
     participation = next(text for text in texts if '**Participation Requirement**' in text)
-    assert 'Follow the Lazy CWL rules and complete **at least 4+ attacks (60%)**.' in participation
+    from utils.cwl_lazy_rule import RULE_SENTENCE
+    assert f'Follow the Lazy CWL rules and **{RULE_SENTENCE}**' in participation
     assert '**Bonus Medals**' in participation
     important = next(text for text in texts if 'IMPORTANT:' in text)
     assert '*Participating in CWL outside of Warriors United is **__not allowed if__** you are part of our FWA Operation.*' in important

@@ -159,7 +159,7 @@ async def members(request):
             if len(data) == 50:
                 next_page = str(data[-1]['user']['id'])
     except web.HTTPForbidden as exc:
-        raise web.HTTPForbidden(text='Discord blocked member lookup. Ask an owner to check the bot’s server access and Server Members Intent.') from exc
+        raise web.HTTPForbidden(text="Discord blocked member lookup. Ask an owner to check WU Wizard's server access and Server Members Intent.") from exc
     return web.json_response({'options': [member_option(row, role_names) for row in data],
                               'next': next_page, 'truncated': truncated, 'mode': mode})
 
@@ -200,7 +200,7 @@ async def change(request):
     for selected_id in selected:
         candidate = roles.get(int(selected_id))
         if not role_is_manageable(guild, bot, candidate) or not perms.actor_can_manage_role(actor_member, guild, candidate):
-            raise web.HTTPForbidden(text='One of these roles cannot be changed by you or the bot. No roles were changed.')
+            raise web.HTTPForbidden(text="One of these roles is above your role or WU Wizard's role. No roles were changed.")
     changed, skipped = [], []
     for selected_id in selected:
         already = int(selected_id) in target.role_ids
