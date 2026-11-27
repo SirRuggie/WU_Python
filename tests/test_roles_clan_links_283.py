@@ -878,3 +878,33 @@ def test_c5_current_clan_uses_registry_or_type_emoji(monkeypatch,emoji,expected)
     run(panel.current_clan(ctx,object()))
     links=[child for row in ctx.respond.call_args.kwargs['components'][0].components if hasattr(row,'components') for child in row.components if isinstance(child,hikari.impl.LinkButtonBuilder)]
     assert len(links)==1 and str(links[0].emoji)==expected
+
+
+@pytest.mark.parametrize('action',['add','remove'])
+@pytest.mark.parametrize(
+    'label,expected',
+    [('**x** [y](https://evil.invalid)',
+      '\\*\\*x\\*\\* \\[y\\]\\(https\u200b://evil.\u200binvalid\\)'),
+     ('@everyone', '@\u200beveryone'),
+     ('🎮 `ready` ~go~ |tag|', '🎮 \\`ready\\` \\~go\\~ \\|tag\\|'),
+     ('<@&123456789012345678>', '\\<@\u200b&123456789012345678\\>'),
+     ('www.example.com', 'www.\u200bexample.\u200bcom'),
+     ('example.com/path', 'example.\u200bcom/path'),
+     ('discord.gg/example', 'discord.\u200bgg/example')],
+)
+def test_result_labels_are_literal_without_changing_option_labels(monkeypatch,action,label,expected):
+    held=() if action=='add' else (19,)
+    selected=('19',) if action=='add' else ()
+    panel,ctx,bot,member=transport(monkeypatch,held=held,selected=selected,kind='server')
+    row={'role_id':'19','label':label,'short_line':'','emoji':''}
+    monkeypatch.setattr(panel,'choices',AsyncMock(side_effect=lambda _mongo,_guild,kind:[row] if kind=='server' else []))
+    run(panel.select_roles(ctx,object(),bot,'server'))
+    box=ctx.respond.call_args.kwargs['components'][0]
+    result=box.components[0].content
+    assert result==('Added: ' if action=='add' else 'Removed: ')+expected+'.'
+    assert 'https://' not in result and '@everyone' not in result and '<@&' not in result
+    assert 'www.example.com' not in result and 'example.com/path' not in result and 'discord.gg/example' not in result
+    if '**' in label:assert r'\*\*x\*\*' in result and r'\[y\]' in result
+    if '🎮' in label:assert '🎮' in result and r'\`ready\`' in result
+    menus=[child for item in box.components if hasattr(item,'components') for child in item.components if isinstance(child,hikari.impl.TextSelectMenuBuilder)]
+    assert len(menus)==1 and menus[0].options[0].label==label

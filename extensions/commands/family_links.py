@@ -197,6 +197,17 @@ async def role_result(ctx, text, *, edit=False, error=False):
     ])], **({'edit': True} if edit else {'ephemeral': True}), **NO_MENTIONS)
 
 
+def result_label(label):
+    # Select options are plain text; TextDisplay parses Markdown. Escape only
+    # this display boundary, preserving the stored and selectable label.
+    label = re.sub(r'([\\`*_{}\[\]()<>~|])', lambda match: '\\' + match.group(0), label)
+    label = label.replace('@', '@\u200b')
+    # Break domain-shaped runs too; do not depend on client autolink rules.
+    label = re.sub(r'(?<=\w)\.(?=\w)', '.\u200b', label)
+    return re.sub(r'(?i)\b([a-z][a-z0-9+.-]{1,15})://',
+                  lambda match: match.group(1) + '\u200b://', label)
+
+
 async def select_roles(ctx, mongo, bot, kind):
     guild_id, user_id = int(ctx.interaction.guild_id), int(ctx.user.id)
     lock = _locks.setdefault((guild_id, user_id), asyncio.Lock())
@@ -271,9 +282,9 @@ async def select_roles(ctx, mongo, bot, kind):
                 (added if action == 'add' else removed).append(latest[identifier]['label'])
         parts = []
         if added:
-            parts.append('Added: ' + ', '.join(added) + '.')
+            parts.append('Added: ' + ', '.join(map(result_label, added)) + '.')
         if removed:
-            parts.append('Removed: ' + ', '.join(removed) + '.')
+            parts.append('Removed: ' + ', '.join(map(result_label, removed)) + '.')
         if failed:
             parts.append('Your other roles did not change. Try again in a minute.' if parts else 'Your roles did not change. Try again in a minute.')
         elif not parts:

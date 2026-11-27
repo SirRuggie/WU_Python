@@ -31,7 +31,9 @@ as their baseline. An uncertain claim, Discord call or receipt produces “Your
 roles may have changed. Select My roles again to check.” with no successor or
 automatic retry. Provider exception details are never printed. Known failures and uncertain
 results use the existing red error accent; successful and unchanged results stay
-gold.
+gold. Server-role labels are rendered as literal text in result messages: Markdown,
+mentions, URL schemes and domain-shaped runs are neutralized at that Discord
+text boundary. Stored labels and plain select-option labels are unchanged.
 
 Cross-list assignments are rejected at save with “This role is already used for
 a Town Hall.” or “This role is already a server role.” before any write. If legacy
