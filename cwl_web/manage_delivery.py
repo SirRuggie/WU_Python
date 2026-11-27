@@ -6,6 +6,7 @@ from pymongo.errors import DuplicateKeyError
 from aiohttp import web
 from .manage_bridge import GUILD_ID, API
 from .manage_content import fingerprint
+from utils.user_copy import needs_permissions
 
 
 def _bound(key):
@@ -204,7 +205,7 @@ async def publish(bot, mongo, row, ctx):
         permissions = await content.destination_permissions(bot, GUILD_ID, channel)
         needed = hikari.Permissions.VIEW_CHANNEL | hikari.Permissions.SEND_MESSAGES | hikari.Permissions.ATTACH_FILES
         if not permissions & hikari.Permissions.ADMINISTRATOR and permissions & needed != needed:
-            raise ValueError('The bot needs View Channel, Send Messages, and Attach Files permissions.')
+            raise ValueError(needs_permissions("View Channel", "Send Messages", "Attach Files"))
         ready, issue = await content._ready_for_destination(ctx, bot, channel, permissions, key)
         if not ready:
             raise ValueError(issue or 'Onboarding roles or next channels need attention.')

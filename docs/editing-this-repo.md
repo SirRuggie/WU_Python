@@ -1,5 +1,16 @@
 # Standing rule: no in-place byte-level edits
 
+Never write 'the bot' in user-facing text. Use `utils/user_copy.py`;
+`tests/test_user_copy_wording.py` enforces it.
+
+The Python guard covers `cwl_web/` and `utils/` without frontend dependencies.
+Its Vitest companion, `web/cwl/src/userCopyWording.test.ts`, uses the lockfile
+TypeScript compiler to check frontend string, template and JSX text while
+ignoring comments and regular expressions. Full pytest and Vitest together
+enforce the two lanes; both allow only an exact file and exact text exception
+with a documented code-only reason. Discord extension copy is outside this
+guard's scope.
+
 **Never use `sed -i`, `awk`, or `perl -pi` to edit files in this repo. Use the
 editing tools.**
 

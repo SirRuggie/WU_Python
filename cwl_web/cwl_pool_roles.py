@@ -115,7 +115,7 @@ async def save(request):
     if body["role_id"] is not None and body["role_id"] not in {
         r["id"] for r in (options or [])
     }:
-        _fail(400, "Select an available role below the bot.")
+        _fail(400, "Select an available role below WU Wizard's highest role.")
     try:
         paused: object
         result: object

@@ -22,7 +22,7 @@ def public_band_error(value):
     )
     if re.fullmatch(known_code, value):
         return value
-    return "Monitor check failed. Review the bot logs for details."
+    return "Monitor check failed. Staff can find details in the logs."
 
 
 def runtime_snapshot(monitor):

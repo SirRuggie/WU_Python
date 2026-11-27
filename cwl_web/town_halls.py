@@ -236,7 +236,7 @@ async def save(request):
         result['refresh'] = json.loads(queued.text)
     except Exception:
         LOG.warning('Town Halls saved but bot refresh could not be queued.')
-        warnings.append('Town Halls saved. Bot refresh is pending; the bot checks again within five minutes.')
+        warnings.append('Town Halls saved. Discord menus update within five minutes.')
     request.app.pop('town_halls_member_cache', None)
     result['saved'] = True
     if warnings:

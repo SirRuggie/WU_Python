@@ -11,7 +11,7 @@ const primaryKeys = new Set([
 
 // Backend protocol string: compared only, never shown.
 const freshWarning =
-  "Use Check status for current bot information. Debug resets when the bot restarts.";
+  "Use Check status for current information. Debug turns off on restart.";
 
 export function bandStatusWarning(warning: string) {
   return warning === freshWarning

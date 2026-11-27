@@ -194,11 +194,11 @@ async def destination(request):
     try:
         option = await _resolve_option(request, channel_id, actor, effective, staff)
     except (web.HTTPNotFound, web.HTTPForbidden):
-        raise web.HTTPBadRequest(text="That destination is missing or inaccessible to the bot.") from None
+        raise web.HTTPBadRequest(text="WU Wizard cannot see that destination, or it was deleted.") from None
     if not option:
         raise web.HTTPBadRequest(text="Select an accessible text channel, forum, or forum post in this server.")
     if not option["can_post"]:
-        raise web.HTTPBadRequest(text="The bot cannot post here. Check its permissions and whether the forum post is locked.")
+        raise web.HTTPBadRequest(text="WU Wizard cannot post here. Check its permissions and whether the forum post is locked.")
     response = web.json_response(option)
     response.headers["Cache-Control"] = "no-store"
     return response
@@ -264,7 +264,7 @@ async def settings(request):
             except (web.HTTPNotFound, web.HTTPForbidden):
                 pass
         channels_available = True
-        warning = post_warning if int(actor["permissions"]) & ((1 << 7) | 8) else "The bot lacks View Audit Log; confirmed kick events cannot be recorded."
+        warning = post_warning if int(actor["permissions"]) & ((1 << 7) | 8) else "WU Wizard lacks View Audit Log. Kick events cannot be confirmed."
     except web.HTTPException:
         options = None
         channels_available = False
@@ -423,9 +423,9 @@ async def _validate_destination(request, kind, resolved, actor, effective, staff
     try:
         option = await _resolve_option(request, channel_id, actor, effective, staff)
     except (web.HTTPNotFound, web.HTTPForbidden):
-        raise web.HTTPBadRequest(text=f"The {kind} destination is missing or inaccessible to the bot.") from None
+        raise web.HTTPBadRequest(text=f"WU Wizard cannot see the {kind} destination, or it was deleted.") from None
     if not option or not option["can_post"]:
-        raise web.HTTPBadRequest(text=f"The bot cannot post in the {kind} destination.")
+        raise web.HTTPBadRequest(text=f"WU Wizard cannot post in the {kind} destination.")
     if option["type"] != "forum" and tag_id:
         raise web.HTTPBadRequest(text="Forum tags can only be used with forum channels.")
     if option["requires_tag"] and not tag_id:
@@ -435,7 +435,7 @@ async def _validate_destination(request, kind, resolved, actor, effective, staff
         if not tag:
             raise web.HTTPBadRequest(text=f"The {kind} forum tag is no longer available.")
         if tag["moderated"] and not option["can_manage_threads"]:
-            raise web.HTTPBadRequest(text=f"The bot cannot apply the moderated {kind} forum tag.")
+            raise web.HTTPBadRequest(text=f"WU Wizard cannot apply the moderated {kind} forum tag.")
     return option
 
 

@@ -893,7 +893,7 @@ async def bulk_add_replacement_list(request):
             _job_log.exception('Replacement bulk add stopped after partial write')
             return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,
                 'added_count': len(added), 'skipped_count': len(skipped),
-                'error': "Bulk add stopped. Select Retry to finish. The bot skips the choices that are already saved."}, status=503)
+                'error': "Bulk add stopped. Select Retry to finish. Saved choices are skipped."}, status=503)
     return web.json_response({'clan_tag': roster['tag'], 'added': added, 'skipped': skipped,
                               'added_count': len(added), 'skipped_count': len(skipped)})
 

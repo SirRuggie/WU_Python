@@ -39,7 +39,7 @@ def health(config, status, delivery, now):
     # A check from before the settings changed does not verify the new settings.
     if checked is None or not checked_settings(config, status) or (updated and checked < updated):
         if updated and 0 <= (now-updated).total_seconds() <= STALE_SECONDS:
-            return 'pending', 'Awaiting check', 'Waiting for the bot to check these settings.'
+            return 'pending', 'Awaiting check', 'Waiting for the first check of these settings.'
         return 'attention', 'No recent check', 'No check has confirmed the current settings. Check bot availability.'
     age = (now-checked).total_seconds()
     if age > STALE_SECONDS or age < -60:
@@ -47,5 +47,5 @@ def health(config, status, delivery, now):
     if status.get('error') == 'Maintenance':
         return 'maintenance', 'Clash maintenance', 'Reminders continue when it ends.'
     if status.get('error'):
-        return 'attention', 'Check failed', status.get('detail') or 'The bot could not check or deliver reminders.'
-    return 'tracking', 'Monitoring', status.get('detail') or 'The bot is monitoring this clan.'
+        return 'attention', 'Check failed', status.get('detail') or 'Could not check or deliver reminders.'
+    return 'tracking', 'Monitoring', status.get('detail') or 'Monitoring this clan.'

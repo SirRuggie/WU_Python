@@ -5,6 +5,7 @@ import time
 import logging
 from aiohttp import web
 from utils.member_profiles import MemberProfiles
+from utils.user_copy import NOT_READY
 from utils.member_timezones import (
     COUNTRY_CHOICES,
     ZONE_CHOICES,
@@ -486,7 +487,7 @@ async def standardize_confirm(request):
         worker = await db.bot_config.find_one({"_id": WORKER_ID}) or {}
         if time.time() - worker.get("checked_at", 0) > 60:
             raise web.HTTPServiceUnavailable(
-                text="The bot is not ready. Nothing was queued."
+                text=NOT_READY
             )
         try:
             run = await ProfileRuns(db).confirm(

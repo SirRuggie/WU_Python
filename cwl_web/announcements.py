@@ -337,7 +337,7 @@ async def send_announcement(request):
     try:
         message_id = await transport.send(channel_id, content, nonce)
     except AnnouncementRejected:
-        status, failure = "failed", "Discord did not accept the message, or the bot does not have permission."
+        status, failure = "failed", "Discord did not accept the message, or WU Wizard lacks permission."
         message_id = None
     except (AnnouncementUncertain, AnnouncementUnavailable, aiohttp.ClientError, asyncio.TimeoutError):
         status, failure = "uncertain", "Discord result is uncertain; do not resend"

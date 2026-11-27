@@ -13,6 +13,7 @@ from pymongo import ReturnDocument, timeout
 from utils.manage_poll_cache import state_for
 from utils.member_profiles import ProfileOutcomeUncertain
 from utils.ticket_errors import ThreadConfigurationError
+from utils.user_copy import NOT_CONFIRMED, STOPPED_UNCONFIRMED
 
 WORKER_ID = "manage-web-worker:644963518025826315"
 GUILD_ID = 644963518025826315
@@ -277,7 +278,7 @@ async def dispatch(bot, mongo, row, ctx):
         if action == "status":
             return {"message": "BAND status refreshed."}
         return {
-            "message": f"BAND debug is {'on' if monitor.DEBUG_MODE else 'off'}. This resets when the bot restarts."
+            "message": f"BAND debug is {'on' if monitor.DEBUG_MODE else 'off'}. It turns off on restart."
         }
     if section == "ticket_settings":
         from extensions.commands.tickets import settings
@@ -682,7 +683,7 @@ async def _expire_requests(mongo, *, idle=False):
             "$set": {
                 "status": "uncertain",
                 "finished_at": time.time(),
-                "message": "The bot stopped before confirming this action. Check Discord before repeating it.",
+                "message": STOPPED_UNCONFIRMED,
             }
         },
     )
@@ -789,7 +790,7 @@ async def _process_requests(bot, mongo):
             _warn_uncertain(row, error)
             update = {
                 "status": "uncertain",
-                "message": "The bot could not confirm this action. Check Discord before repeating it.",
+                "message": NOT_CONFIRMED,
             }
             if row.get("section") in ("member_profiles", "roles"):
                 retry_after = getattr(error, "retry_after", None)

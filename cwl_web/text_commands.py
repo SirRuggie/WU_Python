@@ -222,7 +222,7 @@ async def role_options(request):
 
 async def check_role(request,actor,role_id):
     if not any(role['id']==role_id for role in await available_roles(request,actor)):
-        raise ValueError("Select a non-staff role below the bot’s highest role.")
+        raise ValueError("Select a non-staff role below WU Wizard's highest role.")
 
 
 async def role_activity(request):

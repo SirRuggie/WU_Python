@@ -7,6 +7,7 @@ from . import server_management as shared
 from .manage_content import fingerprint
 from utils import lazy_cwl_store as store, return_bulk, return_reminder_settings as destinations
 from utils.manage_web_worker import WORKER_ID
+from utils.user_copy import NOT_READY
 
 API=shared.API
 LABELS={'schedule':'Schedule return reminders','save':'Save current clan members','replace':'Replace saved lists','send':'Send return reminders','start':'Start return reminders now','pause':'Pause reminders','resume':'Resume reminders','clear':'Close saved lists','away':'Check who is away'}
@@ -54,7 +55,7 @@ def request_id(body):
 
 async def ready(db):
     row=await db.bot_config.find_one({'_id':WORKER_ID}) or {}
-    if time.time()-row.get('checked_at',0)>60:raise web.HTTPServiceUnavailable(text='The bot is not ready. Nothing was queued.')
+    if time.time()-row.get('checked_at',0)>60:raise web.HTTPServiceUnavailable(text=NOT_READY)
 
 
 def response(key):

@@ -35,7 +35,7 @@ def catalog():
     for key in ('main', 'fwa'):
         add('staff', key, f'{key.upper()} staff messages', 'recruitment_staff_thread', 'Recruitment staff', 'Changes apply to new tickets. Existing threads keep their messages.')
     for key in war.VARIANTS:
-        add('war', key, f'{key.title()} war message', 'fwa_war_messages', 'FWA war messages', 'Changes apply the next time the bot sends this war plan.')
+        add('war', key, f'{key.title()} war message', 'fwa_war_messages', 'FWA war messages', 'Changes apply to the next war plan post.')
     return result
 
 
@@ -115,7 +115,7 @@ def schema(item, template):
     if prefix == 'gauntlet' and not gauntlet.is_template_only(key):
         actions.append(dict(id='load-published', label='Copy from Discord', advanced=True, description='Copy the current Discord post into this draft. Save to keep it.', confirm='Replace the editor draft with the published copy? Nothing is saved yet.', endpoint=API + '/manage/content/' + item['id'] + '/load-published'))
     if prefix != 'destination':
-        actions.append(dict(id='reset', label='Reset to default', advanced=True, description='Replace saved text and artwork with the bot’s default message.', confirm='Reset saved text and artwork to the default message? Your saved edits will be replaced. This does not update the Discord post.', endpoint=API + '/manage/content/' + item['id'] + '/reset'))
+        actions.append(dict(id='reset', label='Reset to default', advanced=True, description='Replace saved text and artwork with the default message.', confirm='Reset saved text and artwork to the default message? Your saved edits will be replaced. This does not update the Discord post.', endpoint=API + '/manage/content/' + item['id'] + '/reset'))
     if prefix == 'staff':
         actions.append(dict(id='add', label='Add staff message', endpoint=API + '/manage/content/' + item['id'] + '/add'))
         for slot, section in template['sections'].items():

@@ -372,7 +372,7 @@ async def prepare_post_update(
         raise ValueError("That published post belongs to another server.")
     message = await bot.rest.fetch_message(channel_id, message_id)
     if int(message.author.id) != await _bot_id(bot):
-        raise ValueError("Only this bot's CWL posts can be updated.")
+        raise ValueError("Only WU Wizard's CWL posts can be updated.")
     target = {
         "channel_id": channel_id,
         "message_id": message_id,

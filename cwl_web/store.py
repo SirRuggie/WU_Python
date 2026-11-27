@@ -691,7 +691,7 @@ class Store:
                     "SELECT progress_version,last_backup_version FROM cwl_pool_role_clock WHERE id=1"
                 ).fetchone()
                 self.role_dirty = clock[0] > clock[1]
-            self.role_recovery_error = "The bot could not finish the role work. 1. Check the roles. 2. Turn both settings off. 3. Save the settings again. Signups do not change."
+            self.role_recovery_error = "Role work did not finish. 1. Check the roles. 2. Turn both settings off. 3. Save the settings again. Signups do not change."
             logging.getLogger(__name__).warning(
                 "Role progress recovery unavailable; role work paused"
             )

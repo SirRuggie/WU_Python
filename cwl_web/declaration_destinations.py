@@ -4,6 +4,7 @@ import asyncio
 from aiohttp import web
 from hikari import Permissions
 from utils.member_events import effective_permissions
+from utils.user_copy import needs_permissions
 from utils.declaration_ping_store import identity
 from .server_management import discord, GUILD_ID
 
@@ -57,7 +58,7 @@ def issue(channel, actor):
     )
     needed = Permissions.VIEW_CHANNEL | Permissions.SEND_MESSAGES
     if not rights & Permissions.ADMINISTRATOR and rights & needed != needed:
-        return "The bot needs View Channel and Send Messages here"
+        return needs_permissions("View Channel", "Send Messages", where="here")
     return None
 
 
