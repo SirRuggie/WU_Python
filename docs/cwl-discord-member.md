@@ -72,6 +72,11 @@ did not reread production service environments.
 
 ### Public-proxy boundary
 
+The gateway log filter deletes `request>headers>X-Cwl-Discord-Secret` from every
+Caddy log (added 2026-11-27). Keep it when the Caddyfile changes. Old journal
+entries from before that date can still hold the current secret; rotation is
+not yet done (Ruggie's choice, 2026-11-27).
+
 The Part J gateway configuration must block `/api/cwl/discord/*` only when the
 request also has a `Cf-Connecting-IP` header. Apply this AND matcher before the
 backend proxy in **both** host paths: the legacy `cwl.ruggie.zone` handle and the
