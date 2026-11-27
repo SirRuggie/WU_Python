@@ -820,3 +820,61 @@ def test_1401_receipt_failure_before_commit_blocks_replay(monkeypatch):
     assert bot.rest.add_role_to_member.await_count==1
     panel.insert_state.assert_not_awaited()
     assert panel.UNCERTAIN_ROLES in response_text(ctx)
+
+
+@pytest.mark.parametrize('disappearance', ['expired', 'missing_receipt'])
+def test_1401_claim_without_receipt_never_claims_saved(monkeypatch,disappearance):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('19',))
+    async def lose(*_args,**_kwargs):
+        if disappearance=='expired':ctx.sessions.clear()
+        return SimpleNamespace(matched_count=0)
+    monkeypatch.setattr(panel,'update_state',AsyncMock(side_effect=lose))
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert panel.STALE_ROLES in response_text(ctx)
+    assert panel.ALREADY_SAVED not in response_text(ctx)
+    assert ctx.respond.call_args.kwargs['components'][0].accent_color==panel.WU_RED
+    bot.rest.add_role_to_member.assert_not_awaited()
+    bot.rest.remove_role_from_member.assert_not_awaited()
+    panel.insert_state.assert_not_awaited()
+
+
+def test_1401_other_menu_retirement_is_stale_not_saved(monkeypatch):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('19',))
+    ctx.session['active']=False
+    ctx.session['submissions']['server']={'status':'done'}
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    assert panel.STALE_ROLES in response_text(ctx)
+    bot.rest.add_role_to_member.assert_not_awaited()
+    bot.rest.remove_role_from_member.assert_not_awaited()
+    panel.insert_state.assert_not_awaited()
+
+
+@pytest.mark.parametrize('outcome', ['success','noop','uncertain','partial'])
+def test_d2_role_result_accents(monkeypatch,outcome):
+    panel,ctx,bot,member=transport(monkeypatch,held=(17,),selected=('17','19'))
+    if outcome=='noop':ctx.interaction.values=('17',)
+    elif outcome=='uncertain':
+        bot.rest.add_role_to_member.side_effect=TimeoutError('private upstream')
+    elif outcome=='partial':
+        ctx.interaction.values=('18','19')
+        async def add(*args,**kwargs):
+            if args[2]==19:raise hikari.ForbiddenError(url='',headers={},raw_body=b'',code=50013)
+            member.role_ids.add(args[2])
+        bot.rest.add_role_to_member.side_effect=add
+    run(panel.select_roles(ctx,object(),bot,'th'))
+    expected=panel.WU_RED if outcome in ('uncertain','partial') else panel.WU_GOLD
+    assert ctx.respond.call_args.kwargs['components'][0].accent_color==expected
+    if outcome=='uncertain':panel.insert_state.assert_not_awaited()
+    else:panel.insert_state.assert_awaited_once()
+
+
+@pytest.mark.parametrize('emoji,expected',[('🎯','🎯'),('invalid','🎮')])
+def test_c5_current_clan_uses_registry_or_type_emoji(monkeypatch,emoji,expected):
+    from extensions.commands import family_links as panel
+    groups={name:[] for name in ('Tactical','Flexible Fun','FWA','CWL')}
+    groups['Flexible Fun']=[{'name':'Fixture clan','tag':'#P0Y','emoji':emoji}]
+    monkeypatch.setattr(panel,'load_family_clans',AsyncMock(return_value=groups))
+    ctx=SimpleNamespace(interaction=SimpleNamespace(values=['#P0Y']),respond=AsyncMock())
+    run(panel.current_clan(ctx,object()))
+    links=[child for row in ctx.respond.call_args.kwargs['components'][0].components if hasattr(row,'components') for child in row.components if isinstance(child,hikari.impl.LinkButtonBuilder)]
+    assert len(links)==1 and str(links[0].emoji)==expected

@@ -66,7 +66,7 @@ async def choices(mongo, guild_id, kind):
     return await server_roles.panel_roles(mongo, guild_id)
 
 
-async def private_roles(ctx, mongo, bot, *, edit=False, result=None):
+async def private_roles(ctx, mongo, bot, *, edit=False, result=None, error=False):
     guild_id, user_id = ctx.interaction.guild_id, ctx.user.id
     guild, roles, member = await fresh_context(bot, guild_id, user_id)
     protected = await dashboard_role_grants(mongo)
@@ -101,7 +101,7 @@ async def private_roles(ctx, mongo, bot, *, edit=False, result=None):
         components.append(Text(content='No roles to show right now.'))
     components.append(Media(items=[MediaItem(media='assets/Gold_Footer.png')]))
     response_id = await ctx.respond(
-        components=[Container(accent_color=WU_GOLD, components=components)],
+        components=[Container(accent_color=WU_RED if error else WU_GOLD, components=components)],
         **({"edit": True} if edit else {"ephemeral": True}), **NO_MENTIONS)
     # Public custom IDs stay restart-safe. Bind the immutable displayed options to
     # this actual private Discord message, never a mutable per-user latest panel.
@@ -173,8 +173,25 @@ UNCERTAIN_ROLES = "Your roles may have changed. Select My roles again to check."
 ALREADY_SAVED = "These roles were already saved."
 
 
-async def role_result(ctx, text, *, edit=False):
-    await ctx.respond(components=[Container(accent_color=WU_GOLD, components=[
+STALE_ROLES = "Open My roles again before changing your roles."
+
+
+def submission_result(session, kind):
+    if not isinstance(session, dict):
+        return STALE_ROLES
+    submissions = session.get("submissions", {})
+    receipt = submissions.get(kind) if isinstance(submissions, dict) else None
+    if session.get("uncertain"):
+        return UNCERTAIN_ROLES
+    if receipt is None:
+        return STALE_ROLES
+    if not isinstance(receipt, dict) or receipt.get("status") != "done":
+        return UNCERTAIN_ROLES
+    return ALREADY_SAVED
+
+
+async def role_result(ctx, text, *, edit=False, error=False):
+    await ctx.respond(components=[Container(accent_color=WU_RED if error else WU_GOLD, components=[
         Text(content='## My roles'), Text(content=text),
         Media(items=[MediaItem(media='assets/Gold_Footer.png')]),
     ])], **({'edit': True} if edit else {'ephemeral': True}), **NO_MENTIONS)
@@ -187,13 +204,13 @@ async def select_roles(ctx, mongo, bot, kind):
         try:
             session = await role_session(ctx, mongo)
             if session is None or session['route_kind'] != kind:
-                await private_message(ctx, 'Open My roles again before changing your roles.', error=True)
+                await private_message(ctx, STALE_ROLES, error=True)
                 return
             previous = session['submissions'].get(kind)
             if previous is not None or not session['active']:
                 # A delayed old interaction must never overwrite its successor.
-                uncertain = previous is not None and previous.get('status') != 'done'
-                await role_result(ctx, UNCERTAIN_ROLES if uncertain or session.get('uncertain') else ALREADY_SAVED)
+                text = submission_result(session, kind)
+                await role_result(ctx, text, error=text != ALREADY_SAVED)
                 return
             offered_ids = set(map(int, session['offered'][kind]))
             selected = {int(value) for value in ctx.interaction.values
@@ -212,13 +229,13 @@ async def select_roles(ctx, mongo, bot, kind):
             claimed = await update_state(mongo, claim_filter, {'$set': {f'submissions.{kind}': claim}})
             if getattr(claimed, 'matched_count', 0) != 1:
                 current = await get_state(mongo, session['_id'])
-                receipt = (current or {}).get('submissions', {}).get(kind)
-                await role_result(ctx, UNCERTAIN_ROLES if receipt and receipt.get('status') != 'done' else ALREADY_SAVED)
+                text = submission_result(current, kind)
+                await role_result(ctx, text, error=text != ALREADY_SAVED)
                 return
         except Exception as error:
             # An uncertain claim can exist durably. No provider write is sent.
             log_failure(_log, 'Roles and clan links claim unavailable', error)
-            await role_result(ctx, UNCERTAIN_ROLES)
+            await role_result(ctx, UNCERTAIN_ROLES, error=True)
             return
         added, removed = [], []
         failed, uncertain = False, False
@@ -274,14 +291,14 @@ async def select_roles(ctx, mongo, bot, kind):
             log_failure(_log, 'Roles and clan links receipt unconfirmed', error)
             uncertain = True
         if uncertain:
-            await role_result(ctx, UNCERTAIN_ROLES, edit=True)
+            await role_result(ctx, UNCERTAIN_ROLES, edit=True, error=True)
             return
         try:
             # Same message, fresh private instance and fresh displayed baseline.
-            await private_roles(ctx, mongo, bot, edit=True, result=result)
+            await private_roles(ctx, mongo, bot, edit=True, result=result, error=failed)
         except Exception as error:
             log_failure(_log, 'Roles and clan links successor unavailable', error)
-            await role_result(ctx, result + ' Select My roles again to check.', edit=True)
+            await role_result(ctx, result + ' Select My roles again to check.', edit=True, error=True)
 
 
 @register_action('family_links_select_th', no_return=True, preload_state=False)
@@ -311,6 +328,11 @@ def clan_emoji(value, fallback):
     return fallback
 
 
+def clan_entries(groups, names):
+    emojis = {'Tactical': '⚔️', 'Flexible Fun': '🎮', 'FWA': '🏳️', 'CWL': '🏆'}
+    return [{**row, 'type_emoji': emojis[name]} for name in names for row in groups[name]]
+
+
 async def clan_links(ctx, mongo, kind, page=0):
     descriptions = {'war': ('War clans', 'Tactical and Flexible Fun clans.'),
                     'fwa': ('FWA clans', 'Farm War Alliance clans.'),
@@ -321,7 +343,7 @@ async def clan_links(ctx, mongo, kind, page=0):
     except InfoContentUnavailable:
         await private_message(ctx, 'Clan links are not available right now. Try again in a minute.', error=True)
         return
-    rows = groups['Tactical'] + groups['Flexible Fun'] if kind == 'war' else groups[kind.upper()]
+    rows = clan_entries(groups, ('Tactical', 'Flexible Fun') if kind == 'war' else (kind.upper(),))
     components = [Text(content=f'## {title}'), Text(content=description)]
     if not rows:
         components.append(Text(content='No clans to show right now.'))
@@ -335,7 +357,7 @@ async def clan_links(ctx, mongo, kind, page=0):
         for start in range(0, len(rows), 5):
             components.append(ActionRow(components=[Link(label=('Join ' + row['name'])[:80],
                 url='https://link.clashofclans.com/en/?action=OpenClanProfile&tag=' + quote(row['tag']),
-                emoji=clan_emoji(row.get('emoji'), {'war':'⚔️','fwa':'🏳️','cwl':'🏆'}[kind])) for row in rows[start:start + 5]]))
+                emoji=clan_emoji(row.get('emoji'), row['type_emoji'])) for row in rows[start:start + 5]]))
     components.append(Media(items=[MediaItem(media='assets/Gold_Footer.png')]))
     await ctx.respond(components=[Container(accent_color=WU_GOLD, components=components)], ephemeral=True, **NO_MENTIONS)
 
@@ -377,7 +399,7 @@ async def clan_page(ctx, action_id, mongo: MongoClient = lightbulb.di.INJECTED, 
 async def current_clan(ctx, mongo: MongoClient = lightbulb.di.INJECTED, **_kwargs):
     try:
         groups = await load_family_clans(mongo, include_cwl=True, require_nonempty=False)
-        rows = [row for group in groups.values() for row in group]
+        rows = clan_entries(groups, groups)
         values = ctx.interaction.values
         chosen = values[0] if len(values) == 1 else ''
         # Legacy values may have a clan tag prefix; the current active reader is authority.
@@ -386,7 +408,7 @@ async def current_clan(ctx, mongo: MongoClient = lightbulb.di.INJECTED, **_kwarg
         if row is None:
             await private_message(ctx, 'No clans to show right now.')
             return
-        link = Link(label=('Join ' + row['name'])[:80], url='https://link.clashofclans.com/en/?action=OpenClanProfile&tag=' + quote(row['tag']), emoji='⚔️')
+        link = Link(label=('Join ' + row['name'])[:80], url='https://link.clashofclans.com/en/?action=OpenClanProfile&tag=' + quote(row['tag']), emoji=clan_emoji(row.get('emoji'), row['type_emoji']))
         await ctx.respond(components=[Container(accent_color=WU_GOLD, components=[Text(content='## Join a clan'), ActionRow(components=[link]), Media(items=[MediaItem(media='assets/Gold_Footer.png')])])], ephemeral=True, **NO_MENTIONS)
     except InfoContentUnavailable:
         await private_message(ctx, 'Clan links are not available right now. Try again in a minute.', error=True)

@@ -82,11 +82,19 @@ def test_each_custom_emoji_fallback_is_narrow(monkeypatch,panel,default,kind):
         if kind=='expected':raise ValueError('synthetic-malformed-emoji')
         raise error(kind)
     monkeypatch.setattr(hikari.Emoji,'parse',parse)
+    groups={name:[] for name in ('Tactical','Flexible Fun','FWA','CWL')}
+    group={'tactical':'Tactical','flexible':'Flexible Fun','fwa':'FWA','cwl':'CWL'}[panel]
+    groups[group]=[{'name':'Fixture clan','tag':'#P0Y','emoji':'<:fixture:123456789012345678>'}]
+    monkeypatch.setattr(family_links,'load_family_clans',AsyncMock(return_value=groups))
+    ctx=NS(respond=AsyncMock())
+    operation=family_links.clan_links(ctx,object(),'war' if panel in ('tactical','flexible') else panel)
     if kind=='expected':
-        assert family_links.clan_emoji('<:fixture:123456789012345678>',default)==default
+        asyncio.run(operation)
+        links=[child for row in ctx.respond.call_args.kwargs['components'][0].components if hasattr(row,'components') for child in row.components if isinstance(child,hikari.impl.LinkButtonBuilder)]
+        assert len(links)==1 and str(links[0].emoji)==default
     else:
         with pytest.raises(asyncio.CancelledError if kind=='cancel' else RuntimeError):
-            family_links.clan_emoji('<:fixture:123456789012345678>',default)
+            asyncio.run(operation)
 
 
 @pytest.mark.parametrize('kind',['expected','cancel','unexpected','partial'])

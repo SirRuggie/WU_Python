@@ -20,14 +20,18 @@ roles still in the current list. Fresh authority and target-state checks precede
 each single-role Discord call. Roles already at the intended target are no-ops;
 staff additions and removals never become a new delta baseline. A durable atomic
 per-menu claim prevents duplicate or restarted submissions from replaying writes.
-Prior instance claims remain until expiry. A delayed old submit receives “These
-roles were already saved.” without replacing the current successor panel.
+Prior instance claims remain until expiry. A delayed old submit with a confirmed same-menu receipt receives “These roles
+were already saved.” without replacing the current successor panel. An expired
+instance or a menu retired by the other menu receives the stale reopen message,
+never an unsupported success claim.
 
 After a certain result, including a known partial failure, the same private reply
 shows the C4 result first and fresh menus with a new instance and current holdings
 as their baseline. An uncertain claim, Discord call or receipt produces “Your
 roles may have changed. Select My roles again to check.” with no successor or
-automatic retry. Provider exception details are never printed.
+automatic retry. Provider exception details are never printed. Known failures and uncertain
+results use the existing red error accent; successful and unchanged results stay
+gold.
 
 Cross-list assignments are rejected at save with “This role is already used for
 a Town Hall.” or “This role is already a server role.” before any write. If legacy
@@ -63,7 +67,9 @@ retrying. Role changes use the existing Town Halls history with action `role`.
 Clan links use the shared active-clan reader, opting into CWL only for this
 panel. War clans retain Tactical then Flexible Fun order. Archived and removed
 clans are excluded. Large lists use private selects and paging, without changing
-About Us or WU FAQ behavior.
+About Us or WU FAQ behavior. Join buttons, including selected or legacy clan
+replies, use the valid registry emoji or that clan’s type fallback (Tactical ⚔️,
+Flexible Fun 🎮, FWA 🏳️, CWL 🏆).
 
 ## Release
 
