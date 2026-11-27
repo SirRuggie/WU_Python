@@ -148,3 +148,11 @@
     padding-left: 0;
   }
 }
+
+.town-hall-role-name {
+  display: block;
+  color: var(--wu-text-muted);
+  font-size: 0.8125rem;
+  font-weight: 400;
+  margin-top: 0.25rem;
+}

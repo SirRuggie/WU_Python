@@ -7,6 +7,11 @@ import pytest
 from extensions.commands import warrior as ui
 from extensions.warrior import core, walkthrough
 
+@pytest.fixture(autouse=True)
+def registry_roles_fixture(monkeypatch):
+    monkeypatch.setattr(core, 'role_map', AsyncMock(return_value={'15':60}))
+
+
 P = hikari.Permissions
 
 

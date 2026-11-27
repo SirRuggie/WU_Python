@@ -396,9 +396,9 @@ async def item_handler(request):
                 if key in gauntlet.BOXES:
                     sections = gauntlet.merge_public(key, loaded['sections'], sections)
                 urls = gauntlet.media_snapshot(components)
-                if len(urls) != len(gauntlet.MEDIA_SLOTS[key]):
+                if len(urls) not in gauntlet.accepted_gallery_counts(document):
                     raise ValueError('The published artwork layout changed')
-                media = dict(zip((slot for slot, _ in gauntlet.MEDIA_SLOTS[key]), urls))
+                media = gauntlet.editable_media(document, urls)
                 await gauntlet.render(document, sections, media=media, preview=True, mongo=db, guild_id=GUILD_ID)
                 draft = {f'sections.{index}': value for index, value in enumerate(sections)}
                 draft.update({f'media.{slot}': url for slot, url in media.items()})

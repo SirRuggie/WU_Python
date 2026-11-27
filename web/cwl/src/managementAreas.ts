@@ -27,7 +27,7 @@ export function isManagementArea(value: string): value is ManagementArea {
   return Object.hasOwn(managementAreas, value);
 }
 export function sectionArea(section: ManagementSection): ManagementArea | null {
-  if (section.id === "roles") return "members-settings";
+  if (["roles", "server_roles"].includes(section.id)) return "members-settings";
   if (section.id === "band_monitor") return "connections-settings";
   if (section.id === "cwl_rosters" || section.id.startsWith("cwl-"))
     return "cwl-returns";

@@ -284,6 +284,8 @@ def role_menu(sid, operation):
 
 def th_menu(data, c, cfg):
     sid = data["_id"]
+    if not cfg["townhalls"]:
+        return panel("Town Hall roles", Text(content="No roles to show right now."), *back(sid))
     row = Row()
     menu = row.add_text_menu(
         f"warrior:{sid}:set_th",
@@ -405,7 +407,7 @@ async def settings_page(data, c, mongo, page=0):
     if not c["actor_permissions"] & hikari.Permissions.ADMINISTRATOR:
         raise core.SetupError("Administrator permission is required for settings.")
     cfg = await core.settings(mongo, c["guild"].id)
-    keys = [(group, key) for group in cfg for key in cfg[group]]
+    keys = [(group, key) for group in cfg if group != "townhalls" for key in cfg[group]]
     page = max(0, min(page, (len(keys) - 1) // 25))
     row = Row()
     menu = row.add_text_menu(
@@ -477,6 +479,8 @@ async def action(
         return
     if verb == "setting":
         selected = ctx.interaction.values[0]
+        if selected.startswith("townhalls:"):
+            raise core.SetupError("Set Town Hall roles in the dashboard Town Halls page.")
         await ctx.respond_with_modal(
             title="Warrior server setting",
             custom_id=f"warrior_form:{sid}:setting:{selected}",
@@ -548,11 +552,11 @@ async def action(
                     "Town Hall settings changed. Refresh and select again."
                 )
             # Add first. Do not strip working roles if replacements cannot be added.
-            result = await core.change_roles(bot, mongo, c, add=selected)
+            result = await core.change_roles(bot, mongo, c, add=selected, town_hall_only=True)
             role_result = result
             if not result["failed"]:
                 removed = await core.change_roles(
-                    bot, mongo, c, remove=allowed - selected
+                    bot, mongo, c, remove=allowed - selected, town_hall_only=True
                 )
                 for key in result:
                     result[key] += removed[key]
@@ -648,6 +652,7 @@ async def action(
                     bot,
                     mongo,
                     c,
+                    town_hall_only=operation == "clear_th",
                     **(
                         {"add": roles}
                         if operation == "all_clans"
@@ -815,6 +820,8 @@ async def form(
                 raise core.SetupError("Administrator permission is required.")
             _, group, key = verb.split(":")
             cfg = await core.settings(mongo, c["guild"].id)
+            if group == "townhalls":
+                raise core.SetupError("Set Town Hall roles in the dashboard Town Halls page.")
             if group not in cfg or key not in cfg[group]:
                 raise core.SetupError("Unknown setting.")
             value = int(modal_value(ctx, "id"))

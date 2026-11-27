@@ -122,7 +122,12 @@ async def restore(request):
     proxy=RestoreRequest(request,match,{'revision':body.get('revision'),'values':values,**({'request_id':body['request_id']} if body.get('request_id') else {})},row.get('raw_'+body['side']))
     if kind=='town_halls':
         from utils import town_halls as registry
-        from .town_halls import save
+        from .town_halls import save, save_role
+        if row.get('action') == 'role':
+            if type(body.get('role_revision')) is not int or set(values) != {'role'}:
+                raise web.HTTPConflict(text='Refresh and review the Town Hall role before restoring.')
+            proxy._body['revision'] = body['role_revision']
+            return await save_role(proxy)
         base_keys = {key for key in values if key.startswith('bases.')}
         if base_keys:
             async with mongo(request) as db:

@@ -174,3 +174,7 @@ Administrator flag alone does not bypass that role gate. The dashboard uses
 `mongo.fwa_blacklist`, preserving the war-plan and points integrations.
 
 The CWL and FWA War Message Templates editors automatically save submitted edits. CWL publishing and return-ping behavior follow the [agreed War Operations decisions](war-operations-ux-review.md).
+
+## Roles and clan links
+
+Server roles sits beside Roles in Members settings. Town Hall level editors have one clearable Discord role field. Both use safe Discord choices, explicit Save and revision conflicts; partial Town Hall saves preserve the unsaved role draft. The family-links content document appears in the normal content catalog and `/manage`. See [Roles and clan links](roles-and-clan-links.md).

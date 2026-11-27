@@ -426,3 +426,7 @@ incident remains an inference without its edited-field record.
 
 Send and Update results name the document and link to the Discord message.
 Tests simulate transport; they do not prove a live Discord post or update.
+
+## Roles and clan links
+
+`family-links` uses the existing posting-channel, Send, link-existing and Update flows. It has four editable text fields and one WU banner slot; its gold footer is fixed. Legacy role controls open the new private menus without applying stale selections. See [Roles and clan links](roles-and-clan-links.md).

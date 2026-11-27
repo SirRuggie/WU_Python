@@ -87,9 +87,9 @@ it("puts Add first, retains the setting value, and closes Other levels by defaul
       (node) => node.textContent,
     ),
   ).toEqual([
-    "TH 19Town Hall 19No weight range",
-    "TH 12Town Hall 12111k – 120k",
-    "TH 11Town Hall 11",
+    "TH 19Town Hall 19No roleNo weight range",
+    "TH 12Town Hall 12No role111k – 120k",
+    "TH 11Town Hall 11No role",
   ]);
   expect(host.querySelector("details")!.open).toBe(false);
   expect(host.querySelector("summary")!.textContent).toBe("Other levels (1)");

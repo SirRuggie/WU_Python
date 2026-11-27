@@ -1,0 +1,57 @@
+.server-role-fields {
+  grid-column: 1 / -1;
+  display: grid;
+  gap: 1rem;
+  min-width: 0;
+}
+.server-role-entry {
+  display: grid;
+  gap: 0.5rem;
+  padding-block: 1rem;
+  border-bottom: 1px solid var(--wu-border);
+  min-width: 0;
+}
+.server-role-entry-heading {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+}
+.server-role-entry-heading strong {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  overflow-wrap: anywhere;
+}
+.server-role-entry-actions {
+  display: flex;
+  gap: 0.25rem;
+}
+.server-role-entry-actions button {
+  min-width: 44px;
+  min-height: 44px;
+  display: inline-grid;
+  place-items: center;
+}
+.server-role-entry label {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+.server-role-entry input {
+  width: 100%;
+  min-width: 0;
+}
+
+.server-role-entry-actions button:focus-visible {
+  outline: 2px solid var(--wu-accent);
+  outline-offset: 2px;
+}
+.server-role-entry label .muted {
+  font-variant-numeric: tabular-nums;
+}
+
+.server-role-fields .muted {
+  color: var(--wu-text-muted);
+}

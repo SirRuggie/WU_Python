@@ -78,32 +78,23 @@ def test_goblin_optional_acknowledgements_keep_side_effect_ownership(monkeypatch
 @pytest.mark.parametrize('panel,default',[('tactical','⚔️'),('flexible','🎮'),('fwa','🏳️'),('cwl','🏆')])
 @pytest.mark.parametrize('kind',['expected','cancel','unexpected'])
 def test_each_custom_emoji_fallback_is_narrow(monkeypatch,panel,default,kind):
-    class BadEmoji:
-        def __init__(self,value):pass
-        @property
-        def partial_emoji(self):
-            if kind=='expected':raise ValueError('synthetic-malformed-emoji')
-            raise error(kind)
-    import utils.emoji
-    monkeypatch.setattr(utils.emoji,'EmojiType',BadEmoji)
-    async def run():
-        clan={'tag':'#P2Y','name':'Synthetic clan','emoji':'<:malformed:value>'}
-        lists=([clan],[]) if panel=='tactical' else (([],[clan]) if panel=='flexible' else ([clan],))
-        queries=iter(lists)
-        mongo=NS(clans=NS(find=lambda q:NS(to_list=AsyncMock(return_value=next(queries)))))
-        ctx=NS(respond=AsyncMock());captured=[];original=family_links.SelectOption
-        def option(**kwargs):captured.append(kwargs);return original(**kwargs)
-        monkeypatch.setattr(family_links,'SelectOption',option)
-        fn=(family_links.family_links_war_clans_handler if panel in ('tactical','flexible') else
-            family_links.family_links_fwa_clans_handler if panel=='fwa' else family_links.family_links_cwl_clans_handler)
-        if kind=='expected':
-            await fn(ctx,'synthetic',mongo=mongo,bot=object())
-            ctx.respond.assert_awaited_once();assert captured[0]['emoji']==default
-        else:
-            with pytest.raises(asyncio.CancelledError if kind=='cancel' else RuntimeError):
-                await fn(ctx,'synthetic',mongo=mongo,bot=object())
-            ctx.respond.assert_not_awaited()
-    asyncio.run(run())
+    def parse(value):
+        if kind=='expected':raise ValueError('synthetic-malformed-emoji')
+        raise error(kind)
+    monkeypatch.setattr(hikari.Emoji,'parse',parse)
+    groups={name:[] for name in ('Tactical','Flexible Fun','FWA','CWL')}
+    group={'tactical':'Tactical','flexible':'Flexible Fun','fwa':'FWA','cwl':'CWL'}[panel]
+    groups[group]=[{'name':'Fixture clan','tag':'#P0Y','emoji':'<:fixture:123456789012345678>'}]
+    monkeypatch.setattr(family_links,'load_family_clans',AsyncMock(return_value=groups))
+    ctx=NS(respond=AsyncMock())
+    operation=family_links.clan_links(ctx,object(),'war' if panel in ('tactical','flexible') else panel)
+    if kind=='expected':
+        asyncio.run(operation)
+        links=[child for row in ctx.respond.call_args.kwargs['components'][0].components if hasattr(row,'components') for child in row.components if isinstance(child,hikari.impl.LinkButtonBuilder)]
+        assert len(links)==1 and str(links[0].emoji)==default
+    else:
+        with pytest.raises(asyncio.CancelledError if kind=='cancel' else RuntimeError):
+            asyncio.run(operation)
 
 
 @pytest.mark.parametrize('kind',['expected','cancel','unexpected','partial'])

@@ -59,12 +59,14 @@ DOCUMENTS = {
     "warrior_desk": Document("warrior_desk", "Warrior Desk", "ticket_v2_create"),
     "rite-of-passage": Document("rite-of-passage", "Rite of Passage", "ticket_v2_rite_choose"),
     "family-rules": Document("family-rules", "Family Rules", None),
+    "family-links": Document("family-links", "Roles and clan links", None),
     "wu-faq": Document("wu-faq", "WU FAQ", None),
 }
 from utils.gauntlet_content import BOXES, LENGTHS, LEGACY_LENGTHS, sections_for as box_sections, validate_sections, project_public, merge_public, layout_for, layout_notice, logical_sections, require_writable, save_sections, LAYOUT_VERSION
 from utils.gauntlet_content import AMBIGUOUS_NOTICE
 
 BLOCK_LABELS = {
+    "family-links": ("Heading", "Introduction", "Clan heading", "Privacy note"),
     "join-family": ("Heading", "Welcome", "What happens next", "Call to action"),
     "about-us": ("Welcome heading", "Welcome overview", "Tactical heading", "Tactical details", "Flexible Fun heading", "Flexible Fun details", "FWA heading", "FWA details", "Disclaimer heading", "Disclaimer", "Next step heading", "Next step"),
     "strike-system": ("How strikes work heading", "How strikes work", "At 4 strikes heading", "At 4 strikes", "Main clan heading", "Main clan note", "FWA heading", "FWA note", "Terms heading", "Terms", "Acknowledgement heading", "Acknowledgement"),
@@ -76,6 +78,7 @@ BLOCK_LABELS = {
     "wu-faq": ("Questions heading", "Questions", "Who we are heading", "Who we are", "Our Clans heading", "Tactical description", "Flexible Fun description", "FWA description", "Clans footer"),
 }
 MEDIA_SLOTS = {
+    "family-links": (("banner", "Welcome banner"),),
     "join-family": (("welcome", "Welcome banner"),),
     "about-us": (("welcome", "Welcome banner"),),
     "strike-system": (
@@ -168,12 +171,28 @@ def media_slots(document: Document):
     return MEDIA_SLOTS[document.key]
 
 
+def gallery_count(document):
+    return len(media_slots(document)) + (1 if document.key == "family-links" else 0)
+
+
+def accepted_gallery_counts(document):
+    return {1, 2} if document.key == "family-links" else {gallery_count(document)}
+
+
+def editable_media(document, urls):
+    if document.key == "family-links":
+        return {"banner": urls[0]} if len(urls) == 2 else {}
+    return dict(zip((slot for slot, _ in media_slots(document)), urls, strict=True))
+
+
 async def baseline(document: Document):
     if document.key in _baselines:
         return copy.deepcopy(_baselines[document.key])
     from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family, recruit_wu_faq
     from extensions.commands.tickets import setup as ticket_setup, rite
+    from utils.family_links_content import panel_components
     build = {
+        "family-links": panel_components,
         "join-family": recruit_join_family.build_join_family,
         "about-us": recruit_aboutus.build_aboutus,
         "family-rules": recruit_wu_faq.build_family_rules,
@@ -191,7 +210,9 @@ async def baseline(document: Document):
 def document_renderer(document: Document):
     from extensions.commands.setup import recruit_aboutus, recruit_familyparticulars, recruit_strikesystem, recruit_join_family, recruit_wu_faq
     from extensions.commands.tickets import setup as ticket_setup, rite
+    from utils.family_links_content import panel_components
     return {
+        "family-links": panel_components,
         "join-family": recruit_join_family.build_join_family,
         "about-us": recruit_aboutus.build_aboutus,
         "family-rules": recruit_wu_faq.build_family_rules,
@@ -206,6 +227,10 @@ def document_renderer(document: Document):
 
 def editable_text_nodes(document, components):
     nodes = text_nodes(components)
+    if document.key == "family-links" and len(nodes) != 4:
+        from utils.family_links_content import DEFAULT_SECTIONS
+        from hikari.impl import TextDisplayComponentBuilder
+        return [TextDisplayComponentBuilder(content=value) for value in DEFAULT_SECTIONS]
     if document.key in {"about-us", "strike-system", "family-particulars"}:
         texts = [node.content for node in nodes]
         new_layout = ((document.key == "about-us" and len(components) == 5 and len(texts) == 11)
@@ -267,7 +292,7 @@ async def render(document: Document, sections, *, media=None, action_id="preview
     if component_count(components) > 40:
         raise ValueError("This document exceeds Discord's 40-component message limit.")
     validate_rendered_text([node.content for node in text_nodes(components)])
-    if len(media_galleries(components)) != len(media_slots(document)):
+    if len(media_galleries(components)) != gallery_count(document):
         raise ValueError("This document's media layout is not supported by the content dashboard.")
     return components
 
@@ -491,7 +516,7 @@ async def loaded_published_target(bot, guild_id: int, document: Document, coordi
             raise ValueError(f"The saved message is not supported now. {recovery}")
         sections = [node.content for node in text_nodes(message.components)]
         original_media = media_snapshot(message.components)
-        if len(original_media) != len(media_slots(document)):
+        if len(original_media) not in accepted_gallery_counts(document):
             raise ValueError("The saved post's images changed. Check the channel. If you need a new post, select Send to channel.")
         await validate_template(document, [node.content for node in editable_text_nodes(document, message.components)])
     except (hikari.NotFoundError, hikari.ForbiddenError):
@@ -526,6 +551,7 @@ async def supported_post_shape(document, components):
     text, separator, image, row = (10, ()), (14, ()), (12, ()), (1, ((2, ()),))
     box = lambda *children: (17, tuple(children))
     legacy = {
+        "family-links": (box((9, (text,)), separator, text, text, (1, ((3, ()),)), separator, text, text, (1, ((3, ()),)), separator, text, (1, ((2, ()), (2, ()), (2, ()))), image),),
         "about-us": (
             image, box(text,separator,text,separator,text,text), box(text,text),
             box(text,text,separator,text,text), box(text,text), box(text,text,row)),
@@ -966,7 +992,7 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
                 if not await supported_post_shape(document, message.components):
                     raise ValueError("The content dashboard does not support the layout of that post.")
                 original_media = media_snapshot(message.components)
-                if len(original_media) != len(media_slots(document)):
+                if len(original_media) not in accepted_gallery_counts(document):
                     raise ValueError("The content dashboard does not support the image layout of that post.")
                 await validate_template(document, sections)
             except ValueError:
@@ -978,7 +1004,7 @@ async def open_dashboard(ctx, mongo: MongoClient, *, bot: hikari.GatewayBot | No
                        if document.key != "family-rules" else None)
             state.update(
                 view="document", document=document.key, sections=sections, revision=revision,
-                media=dict(zip((slot for slot, _label in media_slots(document)), original_media, strict=True)),
+                media=editable_media(document, original_media),
                 target={
                     "channel_id": int(match[2]), "message_id": int(match[3]),
                     "original": original_sections, "original_media": original_media,
@@ -1089,7 +1115,7 @@ async def load_published_copy(ctx, action_id, mongo: MongoClient = lightbulb.di.
     sections = list(target.get("editable_original", target["original"]))
     if document.key in BOXES:
         sections = merge_public(document.key, state["sections"], sections)
-    media = dict(zip((slot for slot, _ in media_slots(document)), target["original_media"], strict=True))
+    media = editable_media(document, target["original_media"])
     try:
         await validate_template(document, sections, media=media)
     except ValueError as exc:

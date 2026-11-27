@@ -5,6 +5,7 @@ import TownHallEmojiPicker from "./TownHallEmojiPicker";
 import MemberPicker, { type MemberOption } from "./MemberPicker";
 import ChannelCombobox from "./ChannelCombobox";
 import RoleSelect from "./RoleSelect";
+import ServerRolesFields from "./ServerRolesFields";
 import RolePicker from "./RolePicker";
 import { X } from "lucide-react";
 import { previewUrl } from "./previewFormatting";
@@ -50,6 +51,15 @@ export default function Field({
     !!field.source ||
     ["role", "channel", "member", "multiselect"].includes(field.type);
   const multiple = field.type === "multiselect" || Array.isArray(value);
+  if (field.type === "server_roles")
+    return (
+      <ServerRolesFields
+        field={field}
+        value={String(value || "[]")}
+        onChange={onChange}
+        disabled={disabled}
+      />
+    );
   if (field.type === "emoji")
     return (
       <TownHallEmojiPicker
@@ -81,10 +91,14 @@ export default function Field({
   if ((!multiple && channelField) || roleField) {
     const label = field.label + (field.required ? " *" : "");
     const locked = disabled || !!field.readonly;
-    const describedBy = field.description ? `${id}-help` : undefined;
+    const describedBy =
+      [field.description && `${id}-help`, field.error && `${id}-error`]
+        .filter(Boolean)
+        .join(" ") || undefined;
     const roles = options.map((option) => ({
       id: option.value,
       name: option.label,
+      color: option.color,
     }));
     const selected = Array.isArray(value) ? value : [];
     return (
@@ -154,7 +168,12 @@ export default function Field({
           </>
         )}
         {field.description && (
-          <small id={describedBy}>{field.description}</small>
+          <small id={`${id}-help`}>{field.description}</small>
+        )}
+        {field.error && (
+          <small id={`${id}-error`} role="alert">
+            {field.error}
+          </small>
         )}
       </div>
     );

@@ -156,3 +156,65 @@ it("explicit Add sends every displayed field and opens the saved level", async (
   expect(host.querySelector("h1")?.textContent).toBe("Town Hall 20");
   expect(host.textContent).toContain("Saved.");
 });
+
+it("keeps the role draft after an unknown second CAS outcome without retrying", async () => {
+  const { pickerByLabel, openPicker, clickOption, pickerValue } =
+    await import("./searchPickerTestUtils");
+  const original = {
+    ...level(19),
+    role_revision: 0,
+    fields: [
+      level(19).fields[0],
+      {
+        key: "role",
+        label: "Discord role",
+        type: "role",
+        value: "17",
+        group: "Town Hall",
+        options: [
+          { value: "17", label: "TH17" },
+          { value: "19", label: "TH19" },
+        ],
+      },
+      ...level(19).fields.slice(1),
+    ],
+  };
+  transport.mockImplementation(async (path, method) => {
+    if (path === "/manage") return { sections: [section] };
+    if (path === "/manage/town-halls/19") {
+      if (method === "PATCH")
+        return {
+          ...original,
+          revision: 8,
+          saved: true,
+          partial_result: {
+            registry_saved: true,
+            role_saved: null,
+            role_outcome: "unknown",
+            role_error:
+              "Town Hall fields saved. The role save could not be confirmed. Refresh and review your role edit.",
+          },
+        };
+      return original;
+    }
+    return { emojis: [], errors: {} };
+  });
+  await act(async () =>
+    root.render(<Fixture initial="/manage/town-halls/19" />),
+  );
+  const picker = pickerByLabel(host, "Discord role");
+  await openPicker(picker);
+  await clickOption(picker, "TH19");
+  await act(async () =>
+    host.querySelector<HTMLButtonElement>('button[type="submit"]')!.click(),
+  );
+  expect(
+    transport.mock.calls.filter(([, method]) => method === "PATCH"),
+  ).toHaveLength(1);
+  expect(pickerValue(pickerByLabel(host, "Discord role"))).toContain("TH19");
+  expect(host.textContent).toContain("could not be confirmed");
+  expect(host.textContent).not.toContain("Saved.");
+  expect(
+    host.querySelector<HTMLButtonElement>('button[type="submit"]')!.disabled,
+  ).toBe(true);
+});

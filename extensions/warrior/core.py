@@ -3,12 +3,16 @@
 import asyncio
 from datetime import datetime, timezone
 import logging
+from types import SimpleNamespace
 import hikari
 from extensions.commands.recruit import perms
 from extensions.commands.tickets import store, testing_service, schema as ticket_schema
 from utils.component_state import get_state
 from utils.role_hierarchy import RolePositions
 from .schema import SCHEMA_VERSION
+from utils.town_halls import role_map
+from utils.role_permissions import role_is_self_selectable
+from utils.dashboard_access import dashboard_role_grants
 from .timing import read, span
 
 log = logging.getLogger(__name__)
@@ -18,30 +22,6 @@ STANDARD = {
     "strike_accepted": 1003797283348946944,
     "visitor": 1003796476750745751,
 }
-TOWNHALLS = dict(
-    zip(
-        range(18, 1, -1),
-        [
-            1439244282392215552,
-            1315835882435121152,
-            1186343231303200848,
-            1029879502484025474,
-            1003796205630914630,
-            1003796042317316166,
-            1003796143630712943,
-            1003796173993287690,
-            1003796340578471977,
-            1003795980052873276,
-            1003796008121143436,
-            1006456898616311808,
-            1006457868037410887,
-            1006458029597798420,
-            1006458193418924062,
-            1006458298842746890,
-            1148951648484474951,
-        ],
-    )
-)
 CHANNELS = {"help": 1005916813378465832, "lounge": 671836698371424256}
 
 
@@ -68,8 +48,7 @@ async def settings(mongo, guild_id):
     )
     return {
         "roles": STANDARD | saved.get("roles", {}),
-        "townhalls": {str(k): v for k, v in TOWNHALLS.items()}
-        | saved.get("townhalls", {}),
+        "townhalls": await role_map(mongo, guild_id),
         "channels": CHANNELS | saved.get("channels", {}),
     }
 
@@ -241,7 +220,7 @@ def role_allowed(c, role):
     )
 
 
-async def change_roles(bot, mongo, c, *, add=(), remove=()):
+async def change_roles(bot, mongo, c, *, add=(), remove=(), town_hall_only=False):
     result = {"added": [], "removed": [], "unchanged": [], "failed": []}
     try:
         c = await context(bot, mongo, c["guild"].id, c["actor"].id, c["member"].id)
@@ -265,7 +244,17 @@ async def change_roles(bot, mongo, c, *, add=(), remove=()):
                 manageable_target(c)
                 role = next((r for r in c["roles"] if int(r.id) == rid), None)
                 name = role.name if role else f"Missing role {rid}"
-                if not role_allowed(c, role):
+                self_safe = True
+                if town_hall_only:
+                    available = set((await role_map(mongo, c["guild"].id)).values())
+                    protected = await dashboard_role_grants(mongo)
+                    roles_by_id = {int(item.id): item for item in c["roles"]}
+                    adapted = SimpleNamespace(id=c["guild"].id, owner_id=c["guild"].owner_id,
+                        get_role=lambda identifier: roles_by_id.get(int(identifier)),
+                        get_member=lambda identifier: c["me"] if int(identifier) == int(c["me"].id) else None)
+                    self_safe = (rid in available and str(rid) not in protected
+                                 and role_is_self_selectable(adapted, bot, role))
+                if not self_safe or not role_allowed(c, role):
                     result["failed"].append(f"{name} (missing or not permitted)")
                     continue
                 if (rid in observed_roles) == wants_role:

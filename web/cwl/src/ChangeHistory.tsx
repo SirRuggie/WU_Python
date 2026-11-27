@@ -47,6 +47,7 @@ const display = (value: unknown) =>
 export default function ChangeHistory({
   target,
   revision,
+  roleRevision,
   labels = {},
   disabled,
   onRestored,
@@ -54,6 +55,7 @@ export default function ChangeHistory({
 }: {
   target: string;
   revision: string | number;
+  roleRevision?: number;
   labels?: Record<string, string>;
   disabled: boolean;
   onRestored: () => Promise<void>;
@@ -140,7 +142,15 @@ export default function ChangeHistory({
       const result = await api<{ status_url?: string }>(
         "/manage/history/restore" + query,
         "POST",
-        { id: entry.id, side, revision, request_id: requestId.current },
+        {
+          id: entry.id,
+          side,
+          revision,
+          ...(roleRevision === undefined
+            ? {}
+            : { role_revision: roleRevision }),
+          request_id: requestId.current,
+        },
       );
       if (result.status_url) {
         queued = true;
