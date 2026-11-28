@@ -1178,7 +1178,7 @@ async def roster(request):
         result = {"revision": _revision(db, sid), "accounts": _roster_rows(db, sid),
                   "clans": _rule_rows(db, sid),
                   "undo": _current_undo(db, sid, session["user_id"]) if season["status"] == "draft" else None}
-        placements, blocked = _auto_plan(db, sid)
+        placements, blocked, _ = _auto_plan(db, sid)
         reasons = {item["tag"]: item["reason"] for item in blocked}
         reasons.update({item["tag"]: "ready" for item in placements})
         for account in result["accounts"]:
@@ -1696,45 +1696,113 @@ def _auto_plan(db, sid, pool=None):
     clans = _rule_rows(db, sid)
     counts = {clan["tag"]: clan["assigned_count"] for clan in clans}
     totals = {clan["tag"]: 0 for clan in clans}
+    presence = {}
+    original_clans = {}
     for account in accounts:
-        if account["assigned_clan_tag"] in totals and account["effective_weight"] is not None:
-            totals[account["assigned_clan_tag"]] += account["effective_weight"]
-    candidates = sorted((a for a in accounts if not a.get("roster_filler") and a["assigned_clan_tag"] is None and (pool is None or a["pool"] == pool)),
+        destination = account["assigned_clan_tag"]
+        if destination in totals and account["effective_weight"] is not None:
+            totals[destination] += account["effective_weight"]
+        if destination:
+            key = (account["user_id"], account["pool"])
+            member = presence.setdefault(key, {})
+            locked, assigned = member.get(destination, (0, 0))
+            member[destination] = (locked + bool(account["kept"]), assigned + 1)
+            original_clans.setdefault(key, set()).add(destination)
+
+    def eligible(account, clan):
+        weight = account["effective_weight"]
+        return (not clan["archived"] and clan["pool"] == account["pool"]
+                and clan["capacity"] in (15, 30)
+                and (clan["min_weight"] is None or weight >= clan["min_weight"])
+                and (clan["max_weight"] is None or weight <= clan["max_weight"]))
+
+    candidates = sorted((a for a in accounts if not a.get("roster_filler")
+                         and a["assigned_clan_tag"] is None
+                         and (pool is None or a["pool"] == pool)),
                         key=lambda a: (-(a["effective_weight"] or 0), a["tag"]))
-    placements = []
-    unassigned = []
+    placements, unassigned, groups = [], [], {}
     for account in candidates:
+        reason = None
         if account["kept"]:
-            unassigned.append({"tag": account["tag"], "reason": "kept"})
+            reason = "kept"
+        elif account["manual_weight"] is None and account["source_status"] == "unavailable":
+            reason = "source_unavailable"
+        elif account["effective_weight"] is None:
+            reason = "missing_weight"
+        elif not any(eligible(account, clan) for clan in clans):
+            reason = "no_eligible_rule"
+        if reason:
+            unassigned.append({"tag": account["tag"], "reason": reason})
+        else:
+            groups.setdefault((account["user_id"], account["pool"]), []).append(account)
+
+    ordered_groups = sorted(groups.items(), key=lambda item: (
+        -max(a["effective_weight"] for a in item[1]), min(a["tag"] for a in item[1])))
+    for key, group in ordered_groups:
+        member = presence.setdefault(key, {})
+
+        def rank(clan, fit=None):
+            destination = clan["tag"]
+            locked, assigned = member.get(destination, (0, 0))
+            return (-locked, -assigned, *((-fit,) if fit is not None else ()),
+                    counts[destination], totals[destination], destination)
+
+        def place(account, clan):
+            destination = clan["tag"]
+            counts[destination] += 1
+            totals[destination] += account["effective_weight"]
+            locked, assigned = member.get(destination, (0, 0))
+            member[destination] = (locked, assigned + 1)
+            placements.append({"tag": account["tag"], "assigned_clan_tag": destination})
+
+        whole = [clan for clan in clans if clan["capacity"] in (15, 30)
+                 and clan["capacity"] - counts[clan["tag"]] >= len(group)
+                 and all(eligible(a, clan) for a in group)]
+        if whole:
+            chosen = min(whole, key=rank)
+            for account in group:
+                place(account, chosen)
+            continue
+        remaining = list(group)
+        while remaining:
+            fits = []
+            for clan in clans:
+                if clan["capacity"] not in (15, 30):
+                    continue
+                room = max(0, clan["capacity"] - counts[clan["tag"]])
+                fitting = [a for a in remaining if eligible(a, clan)][:room]
+                if fitting:
+                    fits.append((clan, fitting))
+            if not fits:
+                unassigned.extend({"tag": a["tag"], "reason": "full"} for a in remaining)
+                break
+            chosen, fitting = min(fits, key=lambda item: rank(item[0], len(item[1])))
+            for account in fitting:
+                place(account, chosen)
+                remaining.remove(account)
+
+    by_tag = {a["tag"]: a for a in accounts}
+    by_clan = {clan["tag"]: clan for clan in clans}
+    split = []
+    for placement in placements:
+        account = by_tag[placement["tag"]]
+        key = (account["user_id"], account["pool"])
+        others = set(presence[key]) - {placement["assigned_clan_tag"]}
+        if not others:
             continue
         weight = account["effective_weight"]
-        if account["manual_weight"] is None and account["source_status"] == "unavailable":
-            unassigned.append({"tag": account["tag"], "reason": "source_unavailable"})
-            continue
-        if weight is None:
-            unassigned.append({"tag": account["tag"], "reason": "missing_weight"})
-            continue
-        eligible = []
-        for clan in clans:
-            if clan["archived"] or clan["pool"] != account["pool"] or clan["capacity"] not in (15, 30):
-                continue
-            if clan["min_weight"] is not None and weight < clan["min_weight"]:
-                continue
-            if clan["max_weight"] is not None and weight > clan["max_weight"]:
-                continue
-            eligible.append(clan)
-        if not eligible:
-            unassigned.append({"tag": account["tag"], "reason": "no_eligible_rule"})
-            continue
-        available = [clan for clan in eligible if counts[clan["tag"]] < clan["capacity"]]
-        if not available:
-            unassigned.append({"tag": account["tag"], "reason": "full"})
-            continue
-        chosen = min(available, key=lambda clan: (counts[clan["tag"]], totals[clan["tag"]], clan["tag"]))
-        counts[chosen["tag"]] += 1
-        totals[chosen["tag"]] += weight
-        placements.append({"tag": account["tag"], "assigned_clan_tag": chosen["tag"]})
-    return placements, unassigned
+        if len(original_clans.get(key, ())) > 1:
+            reason = "locked_split"
+        elif any((by_clan[c]["min_weight"] is not None and weight < by_clan[c]["min_weight"])
+                 or (by_clan[c]["max_weight"] is not None and weight > by_clan[c]["max_weight"])
+                 for c in others if c in by_clan):
+            reason = "weight_rule"
+        else:
+            reason = "full"
+        split.append({"tag": account["tag"], "reason": reason})
+    candidate_order = {account["tag"]: index for index, account in enumerate(candidates)}
+    unassigned.sort(key=lambda item: candidate_order[item["tag"]])
+    return placements, unassigned, sorted(split, key=lambda item: item["tag"])
 
 
 def _requested_plan(db, sid, body, pool):
@@ -1762,7 +1830,8 @@ def _requested_plan(db, sid, body, pool):
         _fail(409, "Selected accounts changed. Refresh the roster.")
     if not set(destinations) <= {c['tag'] for c in clans if not c['archived']}:
         _fail(409, "Selected hosting clans changed. Refresh the roster.")
-    return balance_accounts(accounts, clans, selected, destinations, body.get("include_locked", False))
+    placements, unassigned = balance_accounts(accounts, clans, selected, destinations, body.get("include_locked", False))
+    return placements, unassigned, []
 
 
 async def auto_preview(request):
@@ -1775,16 +1844,17 @@ async def auto_preview(request):
     placements: object
     revision: object
     unassigned: object
+    split: object
     def _auto_preview_transaction_1(db):
-        nonlocal placements, revision, unassigned
+        nonlocal placements, revision, unassigned, split
         season = _season(db, sid)
         if season["status"] != "draft":
             _fail(423, "Season is archived")
         _check_revision(db, sid, body.get("revision"))
-        placements, unassigned = _requested_plan(db, sid, body, pool)
+        placements, unassigned, split = _requested_plan(db, sid, body, pool)
         revision = _revision(db, sid)
     await _store(request).run_tx(_auto_preview_transaction_1)
-    return web.json_response({"revision": revision, "placements": placements, "unassigned": unassigned})
+    return web.json_response({"revision": revision, "placements": placements, "unassigned": unassigned, "split": split})
 
 
 async def auto_apply(request):
@@ -1805,7 +1875,7 @@ async def auto_apply(request):
         if season["status"] != "draft":
             _fail(423, "Season is archived")
         _check_revision(db, sid, body.get("revision"))
-        placements, _ = _requested_plan(db, sid, body, pool)
+        placements, _, _ = _requested_plan(db, sid, body, pool)
         if submitted != placements:
             _fail(409, "The preview changed. Refresh before you apply.")
         changes = []

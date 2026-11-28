@@ -965,7 +965,18 @@ export default function RosterWorkspace({
           roster={roster}
           seasonId={seasonId}
           tags={selectedTags}
-          hiddenTags={hiddenTags}
+          hiddenTags={
+            panel === "auto"
+              ? roster.accounts
+                  .filter(
+                    (account) =>
+                      !pageAccounts.some(
+                        (visible) => visible.tag === account.tag,
+                      ),
+                  )
+                  .map((account) => account.tag)
+              : hiddenTags
+          }
           trigger={panelTrigger}
           automatic={panel === "auto"}
           pool={viewPool}
