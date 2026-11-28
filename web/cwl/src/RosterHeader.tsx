@@ -1,6 +1,7 @@
 import { formatNumber } from "./format";
 import RefreshControl from "./RefreshControl";
 import { monthSeasons, seasonMonthLabel } from "./seasonLabels";
+import RosterHelp from "./RosterHelp";
 import CwlPageHeader from "./CwlPageHeader";
 import { useEffect, useRef, useState } from "react";
 import { ChevronDown, WandSparkles } from "lucide-react";
@@ -185,6 +186,7 @@ export default function RosterHeader({
     <header className="roster-header roster-ui" aria-label="Roster overview">
       <CwlPageHeader
         className="roster-header-title-row"
+        help={<RosterHelp />}
         title={
           <h1 data-roster-heading tabIndex={-1}>
             Build roster

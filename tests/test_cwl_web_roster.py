@@ -212,6 +212,37 @@ class RosterTests(unittest.IsolatedAsyncioTestCase):
         response = await self.call("DELETE", f"/seasons/{self.sid}/staff-signups/%23P2Y", self.owner, json={"revision":revision})
         self.assertEqual(response.status, 423)
 
+    async def test_auto_place_member_group_round_trip_revision_and_undo(self):
+        await self.signup("main", "#P2Y")
+        await self.signup("main", "#Q2Y")
+        await self.host("#C2Y", "main")
+        await self.host("#R2Y", "main")
+        with self.app["store"].tx() as db:
+            for player_tag in ("#P2Y", "#Q2Y"):
+                db.execute("INSERT OR REPLACE INTO roster_entries(season_id,tag,manual_weight) VALUES (?,?,170000)", (self.sid, player_tag))
+        revision = await self.revision()
+        path = f"/seasons/{self.sid}/roster"
+        body = {"revision": revision, "pool": "main"}
+        preview = await (await self.call("POST", path + "/auto-preview", self.owner, json=body)).json()
+        repeated = await (await self.call("POST", path + "/auto-preview", self.owner, json=body)).json()
+        self.assertEqual(preview, repeated)
+        self.assertEqual(preview["split"], [])
+        self.assertEqual(len(preview["placements"]), 2)
+        self.assertEqual(len({p["assigned_clan_tag"] for p in preview["placements"]}), 1)
+        self.assertEqual(await self.revision(), revision)
+        response = await self.call("POST", path + "/auto-apply", self.owner,
+                                   json={**body, "placements": preview["placements"]})
+        self.assertEqual(response.status, 200)
+        response = await self.call("POST", path + "/auto-apply", self.owner,
+                                   json={**body, "placements": preview["placements"]})
+        self.assertEqual(response.status, 409)
+        snapshot = await (await self.call("GET", path, self.owner)).json()
+        response = await self.call("POST", path + "/undo", self.owner,
+                                   json={"revision": snapshot["revision"], "undo_id": snapshot["undo"]["id"]})
+        self.assertEqual(response.status, 200)
+        restored = await (await self.call("GET", path, self.owner)).json()
+        self.assertTrue(all(a["assigned_clan_tag"] is None and not a["kept"] for a in restored["accounts"]))
+
     async def test_auto_place_selected_pool_leaves_other_pool_unchanged(self):
         await self.signup("main", "#P2Y")
         await self.signup("lazy", "#Q2Y")

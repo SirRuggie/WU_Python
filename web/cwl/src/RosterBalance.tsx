@@ -27,6 +27,11 @@ type Props = {
   onBusy: (busy: boolean) => void;
   onPermissionError?: (error: ApiError) => void;
 };
+const splitReasons: Record<string, string> = {
+  full: "Clan full",
+  weight_rule: "Weight rule",
+  locked_split: "Already split by locks",
+};
 const reasons: Record<string, string> = {
   filler_manual_only: "Filler · manual only",
   locked: "Locked placement",
@@ -110,6 +115,9 @@ export default function RosterBalance({
         .filter((a) => !a.assigned_clan_tag && a.pool === chosenPool)
         .map((a) => a.tag)
     : tags;
+  const hiddenCandidates = automatic
+    ? hiddenTags.filter((tag) => candidates.includes(tag))
+    : hiddenTags;
   const pools = new Set(
     roster.accounts
       .filter((a) => candidates.includes(a.tag))
@@ -276,14 +284,16 @@ export default function RosterBalance({
                 ? "Place unplaced accounts using the current clan rules."
                 : `${tags.length} selected · Select at least 2 hosting clans.`}
             </p>
-            {!!hiddenTags.length && (
+            {!!hiddenCandidates.length && (
               <details>
                 <summary>
-                  {hiddenTags.length} selected accounts not visible in the list
+                  {hiddenCandidates.length}{" "}
+                  {automatic ? "accounts" : "selected accounts"} not visible in
+                  the list
                 </summary>
                 <ul>
                   {roster.accounts
-                    .filter((a) => hiddenTags.includes(a.tag))
+                    .filter((a) => hiddenCandidates.includes(a.tag))
                     .map((a) => (
                       <li key={a.tag}>
                         {a.player_name} · {a.tag}
@@ -412,6 +422,9 @@ export default function RosterBalance({
               {countLabel(preview.placements.length, "move")} ·{" "}
               {formatNumber(preview.unassigned.length)} skipped ·{" "}
               {summary ? formatNumber(summary.unchanged.length) : ""} unchanged
+              {automatic &&
+                !!preview.split?.length &&
+                ` · ${formatNumber(preview.split.length)} split`}
             </p>
             {publicationStatus === "published" && published && (
               <p className="notice warning">
@@ -456,6 +469,9 @@ export default function RosterBalance({
               <ul>
                 {preview.placements.map((p) => {
                   const a = roster.accounts.find((a) => a.tag === p.tag);
+                  const split =
+                    automatic &&
+                    preview.split?.find((item) => item.tag === p.tag);
                   return (
                     <li key={p.tag}>
                       <strong>{a?.player_name || p.tag}</strong>
@@ -463,6 +479,12 @@ export default function RosterBalance({
                         {clanName(a?.assigned_clan_tag ?? null)} →{" "}
                         {clanName(p.assigned_clan_tag)}
                       </span>
+                      {split && (
+                        <small>
+                          Split from other accounts ·{" "}
+                          {splitReasons[split.reason] || split.reason}
+                        </small>
+                      )}
                       {hiddenTags.includes(p.tag) && (
                         <small>Not visible in list</small>
                       )}

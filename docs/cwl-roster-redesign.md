@@ -287,7 +287,7 @@ Released frontend-only via PR #25 at `e6353fb9ef77244a6b366550f030d7fd8e75daf7`,
 
 ## Behavior contracts (apply to all releases)
 
-- **Balance algorithm:** KEEP the current `cwl_balance.py` behavior (spreads identical weights across clans, then evens out lower total weight). Release 3 only adds an opt-in overflow step. Auto-place keeps `_auto_plan` (unassigned only, heaviest first, eligible non-full clan with the lowest assigned count, then lowest total weight, then tag).
+- **Balance algorithm:** KEEP the current `cwl_balance.py` behavior (spreads identical weights across clans, then evens out lower total weight). Release 3 only adds an opt-in overflow step. Auto-place keeps `_auto_plan` (unassigned only, heaviest first, eligible non-full clan with the lowest assigned count, then lowest total weight, then tag) and keeps one member's accounts (same `signups.user_id` and pool) in one clan where capacity and weight rules allow: anchor on the clan with the most locked, then assigned, accounts of that member; otherwise fewest clans. Preview lists splits (`full`, `weight_rule`, `locked_split`). Approved 2026-11-28.
 - **Overfill (Release 3):**
   - Manual Assign may overfill, with a red warning (`15/15 → 17/15 (+2 over)`).
   - Balance and Auto-place fill to capacity first; leftovers appear in the preview with an opt-in "Allow overfill".
@@ -428,6 +428,8 @@ Compare additions X1/X2: phone rail selection follows the snapped card only afte
   - Review the Declaration readiness check (defaults to source=draft, ArrivalCheck.tsx:29) against the Not in assigned clan contract.
 
 ## Later
+
+- Keep a member's accounts together in Balance.
 
 - Linked-account request cadence predates Member signup: `accountDisplay.ts` already polls every 750 ms while updating (up to 135 seconds), with separate loads for each page visit. Home and Signup retained their original calls; MemberAssignments adds one necessary load for its new remaining-account summary. MemberSignupStatus makes zero fetches, and App's signup load is gated to the signup view, so there is no summary/page duplicate to combine. Consider shared page-transition snapshots separately.
 
@@ -2225,3 +2227,15 @@ refresh does not silently advance to another month or automatically retry a writ
 D10 changes Season menus and defaults only. Existing date-range exports still
 require a backend-resolved CWL month or ISO month label; the English month-name
 default does not add date-range export availability.
+
+## Auto-place member groups (2026-11-28)
+
+D1: Member grouping takes priority over even counts and totals. Capacity and weight rules come first; Main and Lazy stay separate.
+D2: Existing assignments anchor the member, ordered by most locked accounts, then most assigned accounts, then normal clan order. Assigned accounts and held unassigned accounts never move.
+D3: Prefer one clan that fits the whole group; otherwise place as many accounts as possible in the best clan and use as few other clans as possible.
+D4: Balance remains unchanged.
+D5: Grouping is always on, with no schema, endpoint, or apply-contract change.
+
+Auto-preview adds `split: [{tag, reason}]`, sorted by tag; Balance returns an empty list. Reasons are `locked_split`, `weight_rule`, or `full`, in that priority. The exact per-account split rule marks every newly placed account whose member also occupies another clan in that pool, including accounts in the first clan. Placements and apply payloads remain unchanged.
+
+Validation scope: isolated backend grouping, anchors, capacity/weight splits, existing locks, pools, determinism, preview/apply revision checks and undo; frontend split labels and Build roster help. Narrow/wide fixture review and full regression evidence are recorded in the batch review artifact. No live notification delivery is tested.

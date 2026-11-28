@@ -155,6 +155,7 @@ it("renders before and projected clan totals in Balance preview", async () => {
           revision: 7,
           placements: [{ tag: "#MOVE", assigned_clan_tag: "#Y" }],
           unassigned: [],
+          split: [{ tag: "#MOVE", reason: "full" }],
         }
       : { published: null },
   );
@@ -196,6 +197,8 @@ it("renders before and projected clan totals in Balance preview", async () => {
     });
     await act(async () => button("Preview placements").click());
     const preview = host.querySelector(".roster-plan-totals")!;
+    expect(host.textContent).not.toContain("Split from other accounts");
+    expect(host.textContent).not.toContain(" · 1 split");
     expect(preview.textContent).toContain("Total 3,000k → 2,000k");
     expect(preview.textContent).toContain("Total 3,512.5k → 4,512.5k");
     expect(preview.textContent).toContain("1 of 2 weighed");
@@ -209,6 +212,58 @@ it("renders before and projected clan totals in Balance preview", async () => {
       clan_tags: ["#X", "#Y"],
       include_locked: false,
     });
+  } finally {
+    await act(async () => root.unmount());
+    host.remove();
+  }
+});
+
+it("shows split reasons and counts only in Auto-place, including hidden moves", async () => {
+  Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
+  state.api.mockImplementation(async (path: string, method?: string) =>
+    method === "POST" && path.endsWith("/auto-preview")
+      ? {
+          revision: 7,
+          placements: [{ tag: "#MOVE", assigned_clan_tag: "#Y" }],
+          unassigned: [],
+          split: [{ tag: "#MOVE", reason: "weight_rule" }],
+        }
+      : { published: null },
+  );
+  const host = document.createElement("div");
+  document.body.append(host);
+  const root = createRoot(host);
+  try {
+    await act(async () =>
+      root.render(
+        <RosterBalance
+          roster={{
+            ...roster,
+            accounts: accounts.map((a) =>
+              a.tag === "#MOVE" ? { ...a, assigned_clan_tag: null } : a,
+            ),
+          }}
+          seasonId="1"
+          tags={[]}
+          hiddenTags={["#MOVE"]}
+          automatic
+          pool="main"
+          trigger={null}
+          onClose={() => {}}
+          onSaved={async () => {}}
+          onBusy={() => {}}
+        />,
+      ),
+    );
+    const preview = [
+      ...host.querySelectorAll<HTMLButtonElement>("button"),
+    ].find((b) => b.textContent?.includes("Preview placements"))!;
+    await act(async () => preview.click());
+    expect(host.textContent).toContain(
+      "Split from other accounts · Weight rule",
+    );
+    expect(host.textContent).toContain(" · 1 split");
+    expect(host.textContent).toContain("Not visible in list");
   } finally {
     await act(async () => root.unmount());
     host.remove();

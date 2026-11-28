@@ -1156,3 +1156,5 @@ Hints use muted 14px text with an info icon, without a box. Pending progress is 
 status text; preview-only feedback remains a notice. Each completed action has one
 success box with its message, details and links, without a duplicate notice or Result heading.
 Moderation selection styles and the unused roster selection surface are unchanged.
+
+Build roster uses the header's HelpButton sheet, ‘How Auto-place works’, for Auto-place, member grouping, order and Balance rules. Auto-place preview lists ‘Split from other accounts · {reason}’ under each split move and includes its split count in the status; Balance omits these lines.

@@ -64,6 +64,7 @@ export type RosterSnapshot = {
   undo: RosterUndo | null;
 };
 export type AutoPreview = {
+  split?: { tag: string; reason: string }[];
   revision: number;
   placements: { tag: string; assigned_clan_tag: string }[];
   unassigned: { tag: string; reason: string }[];

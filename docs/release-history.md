@@ -1,5 +1,61 @@
 # Release and rollback history
 
+## Wording, shared Lazy rule and bridge startup race (284) — November 28, 2026
+
+Shaka reported release of PR [#434](https://github.com/SirRuggie/WU_Python/pull/434),
+merged revision `644b10c0f2d63ecfa147e8705c017e5a16cbce90`, in handoff 1406
+(`2026-11-28T14:06:07-05:00`). Ruggie's authorization, quoted there from the
+thread at `2026-11-28T18:56:53Z`, was: “Shaka releases 284”. Shaka performed the
+release; the previous Codex release hold is closed. Do not release 284 again.
+Deployment, service/runtime and smoke facts below are attributed solely to
+Shaka's handoff. Codex separately checked the public static assets read-only at
+`2026-11-28T19:10:15.737986+00:00` and compared the saved count files; these
+checks did not deploy or inspect the runtime.
+
+Shaka recorded an online SQLite backup at `.local/release-284/before.sqlite3`
+with integrity check OK and mode `0400`, plus gzip Mongo backups at
+`.local/release-284/mongo` covering four databases and 85 collections. The pushed
+tag is `bot-wording-lazy-bridge-284-1`. The frontend was staged by
+`stage-release.py` from a clean clone; backend directory `backend/644b10c0` was
+created from `git archive`.
+
+The switch ran from `19:05:11` to `19:05:26 UTC`: bot stop/checkout/start;
+`release.conf` changed to `backend/644b10c0`, followed by daemon-reload and
+restart; config returned 200 after about 15 seconds;
+`switch-release.py 644b10c0` switched the frontend. Afterwards, `current` pointed to
+`releases/644b10c0`. The public entry was `assets/index-wbnHvPeK.js`, matching
+the release index. Public page and config returned 200; signed-out seasons
+returned 401. Codex's read-only public manifest comparison, retained in
+`.local/285-evidence/public-static285.json`, independently matched release
+`644b10c0f2d63ecfa147e8705c017e5a16cbce90` for:
+
+- Entry `assets/index-wbnHvPeK.js`, SHA256
+  `e663c9309cd171b83b1b45c414d5003cc7067c943abbc1406fdcbf86ec7a0514`.
+- Affected roster asset `assets/RosterWorkspace-DOK0ShZr.js`, SHA256
+  `339ac72fa8f07e4af62bccbdc368793978f0eb9bf6168b354f046d2eaf76f94d`.
+
+Shaka reported `wu-bot` active at PID `297465`, HEAD `644b10c0`, and web PID
+`297485`, cwd `backend/644b10c0`. Bot and web traceback counts were both zero;
+“No schedule load completed” occurred zero times. Before/after counts matched
+for all ten season/pool rows across signups, assigned accounts, locks and
+publications. Codex separately verified that the saved
+`.local/release-284/counts-before.json`
+and `counts-after.json` files are byte-identical, both SHA256
+`6d1698bda3328005b1783272c44bc1b96c27f2de3a9ea00aa5e7760357bdfc56`.
+This is a comparison of retained files, not a new database read.
+
+A separate pre-existing `coc.py` `KeyError: 'districts'` on clan fetch
+(clan-history and strikes scan) was recorded as unrelated to 284: present since
+November 25 at 13:54 local, with 339 lines on release day before the switch.
+Handoff 1406 is a DONE record; no separate subsequent SMOKE result is asserted
+here.
+
+Retained rollback targets, only if needed: bot checkout `20455ef3`,
+`release.conf` pointing to `backend/20455ef3`, and `switch-release.py 20455ef3`
+for the frontend. Roll back code and assets; never restore a database to roll
+back code. Any later rollback requires fresh current-state guards and the
+applicable documented procedure; do not replay the completed release.
+
 ## Official WU crest and list toolbars — November 20, 2026
 
 Released PRs [#406](https://github.com/SirRuggie/WU_Python/pull/406) and
