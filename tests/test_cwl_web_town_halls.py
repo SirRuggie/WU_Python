@@ -155,10 +155,80 @@ async def test_member_list_signed_in_only_cached_no_markup():
         assert json.loads((await api.member_list(req)).text)==result
     assert auth.call_count==2;load.assert_awaited_once()
     assert [row['level'] for row in result]==[20,19,12,11,1]
-    assert all(set(row)=={'level','emoji_url'} for row in result)
+    assert [row.get('weight_max') for row in result]==[None,190000,120000,None,None]
+    assert all(set(row)==({'level','emoji_url','weight_max'} if row['level'] in {12,19} else {'level','emoji_url'}) for row in result)
+    assert result[1]['emoji_url']=='https://cdn.discordapp.com/emojis/1571025137896005783.gif?size=64'
     assert '<:' not in json.dumps(result)
     with patch('cwl_web.app._require',side_effect=web.HTTPUnauthorized):
         with pytest.raises(web.HTTPUnauthorized):await api.member_list(req)
+
+
+@run_async
+async def test_member_registry_failure_is_503_and_not_cached():
+    req=request()
+    with patch('cwl_web.app._require',return_value={'user_id':'123'}),patch.object(shared,'mongo',mongo),patch.object(api,'required',AsyncMock(side_effect=web.HTTPServiceUnavailable)):
+        with pytest.raises(web.HTTPServiceUnavailable):await api.member_list(req)
+    assert 'town_halls_member_cache' not in req.app
+
+
+@run_async
+async def test_registry_save_invalidates_member_maximum_cache():
+    req=request(values={'emoji':'','min':181000,'max':200000})
+    saved=fixture();saved['revision']=8;saved['levels']['19']['weight']['max']=200000
+    with patch('cwl_web.app._require',return_value={'user_id':'123'}),patch.object(shared,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(shared,'mongo',mongo),patch.object(api,'required',AsyncMock(side_effect=[fixture(),fixture(),saved])) as load,patch.object(api.registry,'save',AsyncMock(return_value=saved)),patch.object(shared,'queue_action',AsyncMock(return_value=web.json_response({'status':'pending'}))),patch.object(change_history,'record_committed',AsyncMock()):
+        assert json.loads((await api.member_list(req)).text)[1]['weight_max']==190000
+        assert (await api.save(req)).status==200
+        assert 'town_halls_member_cache' not in req.app
+        assert json.loads((await api.member_list(req)).text)[1]['weight_max']==200000
+    assert load.await_count==3
+
+
+@run_async
+@pytest.mark.parametrize('phase', ['history', 'queue'])
+async def test_inflight_member_read_cannot_publish_old_maximum_during_saved_followup(phase):
+    current=fixture(); started=asyncio.Event(); release_read=asyncio.Event()
+    followup=asyncio.Event(); release_save=asyncio.Event(); reads=0
+    req=request(values={'emoji':'','min':181000,'max':200000})
+    async def read(_):
+        nonlocal reads
+        snapshot=deepcopy(current);reads+=1
+        if reads==1:
+            started.set();await release_read.wait()
+        return snapshot
+    async def persist(db,guild,doc,user,revision):
+        current.update(deepcopy(doc),revision=revision+1)
+        return deepcopy(current)
+    async def history(*args,**kwargs):
+        if phase=='history':
+            followup.set();await release_save.wait()
+    async def queue(*args):
+        if phase=='queue':
+            followup.set();await release_save.wait()
+        return web.json_response({'status':'pending'})
+    with patch('cwl_web.app._require',return_value={'user_id':'123'}),patch.object(shared,'require_manage',AsyncMock(return_value={'user_id':'123'})),patch.object(shared,'mongo',mongo),patch.object(api,'required',read),patch.object(api.registry,'save',persist),patch.object(shared,'queue_action',queue),patch.object(change_history,'record_committed',history):
+        old_read=asyncio.create_task(api.member_list(req));await started.wait()
+        req.app['town_halls_member_cache']=(time_now(),'old cached response')
+        saving=asyncio.create_task(api.save(req));await followup.wait()
+        assert 'town_halls_member_cache' not in req.app
+        release_read.set()
+        result=json.loads((await old_read).text)
+        assert result[1]['weight_max']==200000
+        assert json.loads((await api.member_list(req)).text)==result
+        release_save.set();assert (await saving).status==200
+        assert json.loads((await api.member_list(req)).text)==result
+    assert reads==3
+
+
+@run_async
+async def test_member_read_bounds_retries_when_registry_keeps_changing():
+    req=request()
+    async def read(_):
+        req.app[api.MEMBER_GENERATION]=req.app.get(api.MEMBER_GENERATION,0)+1
+        return fixture()
+    with patch('cwl_web.app._require',return_value={'user_id':'123'}),patch.object(shared,'mongo',mongo),patch.object(api,'required',AsyncMock(side_effect=read)) as load:
+        with pytest.raises(web.HTTPServiceUnavailable):await api.member_list(req)
+    assert load.await_count==2
+    assert 'town_halls_member_cache' not in req.app
 
 
 def test_emoji_route_is_before_generic_and_history_targets():

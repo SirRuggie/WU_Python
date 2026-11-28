@@ -167,6 +167,8 @@ Later:
 
 ## Linked weights — review pending, October 30, 2026
 
+Batch 286: Clan weights maximum warnings read the highest FWA Town Hall registry maximum; the 42,000 minimum and advisory Save behavior remain unchanged (implementation ready for review).
+
 Prompt 39 reverses the FWA popup link-only rule: roster Details and Clan weights
 share explicit Save/Clear, parsing, history and revision checks. See
 [the weight contract](clan-weight-trial.md). Backend release required for shared

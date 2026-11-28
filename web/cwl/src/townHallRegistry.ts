@@ -1,8 +1,14 @@
 import { api } from "./api";
 
-export type TownHallEntry = { level: number; emoji_url: string | null };
+export type TownHallEntry = {
+  level: number;
+  emoji_url: string | null;
+  weight_max?: number;
+};
 let loaded: ReadonlyMap<number, string | null> | null = null;
 let pending: Promise<ReadonlyMap<number, string | null>> | null = null;
+let highestWeightMax: number | null = null;
+let highestWeightLevel: number | null = null;
 
 /** One member read per page load, shared by every TownHallIcon instance. */
 export function loadTownHallIcons() {
@@ -19,6 +25,17 @@ export function loadTownHallIcons() {
               entry.level > 99
             )
               continue;
+            const maximum = entry.weight_max;
+            if (
+              typeof maximum === "number" &&
+              Number.isInteger(maximum) &&
+              maximum >= 1 &&
+              maximum <= 500000 &&
+              (highestWeightMax === null || maximum > highestWeightMax)
+            ) {
+              highestWeightMax = maximum;
+              highestWeightLevel = entry.level;
+            }
             const url = entry.emoji_url;
             result.set(
               entry.level,
@@ -40,6 +57,16 @@ export function loadTownHallIcons() {
       });
   }
   return pending;
+}
+
+export async function loadTownHallWeightMax(): Promise<{
+  level: number;
+  max: number;
+} | null> {
+  await loadTownHallIcons();
+  return highestWeightMax === null || highestWeightLevel === null
+    ? null
+    : { level: highestWeightLevel, max: highestWeightMax };
 }
 
 export function knownTownHallIcon(level: number | null | undefined) {
