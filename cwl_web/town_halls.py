@@ -16,6 +16,7 @@ from . import town_hall_bases as bases
 API = shared.API + '/town-halls'
 PATH = '/manage/town-halls'
 LOG = logging.getLogger(__name__)
+MEMBER_GENERATION = web.AppKey('town_halls_member_generation', int)
 _MARKUP = re.compile(r'<(a?):([A-Za-z0-9_]{2,32}):([0-9]{15,22})>')
 
 
@@ -200,6 +201,8 @@ async def save(request):
                                             **({'base_level': int(item), 'base_values': base_values, 'base_originals': base_originals, **({'base_restore': restore} if restore is not None else {})} if base_values else {}))
             else:
                 saved = await registry.save_base_fields(db, shared.GUILD_ID, int(item), base_values, base_originals, int(actor['user_id']), **({'restore': restore} if restore is not None else {}))
+            request.app[MEMBER_GENERATION] = request.app.get(MEMBER_GENERATION, 0) + 1
+            request.app.pop('town_halls_member_cache', None)
             target = '/api/cwl' + PATH + '/' + destination
             if base_values or current['lowest_fwa_town_hall'] != saved['lowest_fwa_town_hall']:
                 from .base_bank import invalidate
@@ -237,7 +240,6 @@ async def save(request):
     except Exception:
         LOG.warning('Town Halls saved but bot refresh could not be queued.')
         warnings.append('Town Halls saved. Discord menus update within five minutes.')
-    request.app.pop('town_halls_member_cache', None)
     result['saved'] = True
     if warnings:
         result['warning'] = ' '.join(warnings)
@@ -250,9 +252,21 @@ async def member_list(request):
     cached = request.app.get('town_halls_member_cache')
     if cached and time.monotonic() - cached[0] < 60:
         return web.json_response(cached[1])
-    async with shared.mongo(request) as db:
-        doc = await required(db)
-    values = [dict(level=level, emoji_url=emoji_url(registry.emoji_markup(doc, level))) for level in registry.levels(doc)]
+    for _attempt in range(2):
+        generation = request.app.get(MEMBER_GENERATION, 0)
+        async with shared.mongo(request) as db:
+            doc = await required(db)
+        if request.app.get(MEMBER_GENERATION, 0) == generation:
+            break
+    else:
+        raise web.HTTPServiceUnavailable(text='Town Halls changed. Try again.')
+    fwa_levels = set(registry.fwa_levels(doc))
+    values = []
+    for level in registry.levels(doc):
+        value = dict(level=level, emoji_url=emoji_url(registry.emoji_markup(doc, level)))
+        if level in fwa_levels:
+            value['weight_max'] = doc['levels'][str(level)]['weight']['max']
+        values.append(value)
     request.app['town_halls_member_cache'] = (time.monotonic(), values)
     return web.json_response(values)
 

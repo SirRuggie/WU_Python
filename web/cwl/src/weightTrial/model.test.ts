@@ -79,7 +79,7 @@ it("shows war map order before non-war members regardless of clan rank", () => {
 });
 
 import { sheetWeightWarning } from "./model";
-it("matches sheet limits and thousand checks without changing weights", () => {
+it("uses the registry maximum and keeps minimum and thousand checks advisory", () => {
   const row = {
     tag: "#P2Y",
     name: "Test",
@@ -87,12 +87,17 @@ it("matches sheet limits and thousand checks without changing weights", () => {
     weight: 149000,
     revision: 1,
   };
-  const check = (weight: number | null) =>
-    sheetWeightWarning(row.tag, [{ ...row, weight }], {}, null);
+  const check = (
+    weight: number | null,
+    maximum: { level: number; max: number } | null = { level: 19, max: 200000 },
+  ) => sheetWeightWarning(row.tag, [{ ...row, weight }], {}, null, maximum);
   expect(check(1000)).toContain("42,000");
-  expect(check(181000)).toContain("180,000");
+  expect(check(201000)).toBe("Weight is above the TH19 maximum of 200,000.");
+  expect(check(999000, null)).toBe("");
+  expect(check(41000, null)).toContain("42,000");
+  expect(check(201005)).toContain("000");
   expect(check(149005)).toContain("000");
-  for (const weight of [null, 42000, 149000, 180000])
+  for (const weight of [null, 42000, 149000, 187000, 200000])
     expect(check(weight)).toBe("");
   expect(row.weight).toBe(149000);
 });
@@ -103,11 +108,13 @@ it("compares adjacent actual war positions and reacts to unsaved edits", () => {
   ];
   const order = { A: 1, B: 2 };
   const drafts = { A: { storages: "5", loot: "200", full: "1000" } };
-  expect(sheetWeightWarning("B", rows, drafts, order)).toContain("player 1");
-  expect(sheetWeightWarning("B", rows, {}, order)).toBe("");
-  expect(sheetWeightWarning("B", rows, drafts, null)).toBe("");
-  expect(sheetWeightWarning("B", rows, drafts, { A: 1, B: 3 })).toBe("");
-  expect(sheetWeightWarning("B", rows, drafts, { A: 1 })).toBe("");
+  expect(sheetWeightWarning("B", rows, drafts, order, null)).toContain(
+    "player 1",
+  );
+  expect(sheetWeightWarning("B", rows, {}, order, null)).toBe("");
+  expect(sheetWeightWarning("B", rows, drafts, null, null)).toBe("");
+  expect(sheetWeightWarning("B", rows, drafts, { A: 1, B: 3 }, null)).toBe("");
+  expect(sheetWeightWarning("B", rows, drafts, { A: 1 }, null)).toBe("");
   for (const full of ["", "=123", "abc"])
     expect(
       sheetWeightWarning(
@@ -115,6 +122,7 @@ it("compares adjacent actual war positions and reacts to unsaved edits", () => {
         rows,
         { A: { storages: "5", loot: "", full } },
         order,
+        null,
       ),
     ).toBe("");
   expect(rows[0].weight).toBe(150000);

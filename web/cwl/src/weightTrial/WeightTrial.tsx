@@ -11,6 +11,7 @@ import RosterMenu from "../rosterUi/Menu";
 import { fetchReadWithRetry } from "../readRetry";
 import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { api, ApiError } from "../api";
+import { loadTownHallWeightMax } from "../townHallRegistry";
 import ConfirmDialog from "../ConfirmDialog";
 import WeightRow from "./WeightRow";
 import SavedPlayers from "./SavedPlayers";
@@ -79,6 +80,19 @@ export default function WeightTrial({
   seasonId?: string;
   onRoster?: () => void;
 }) {
+  const [maximum, setMaximum] = useState<{
+    level: number;
+    max: number;
+  } | null>(null);
+  useEffect(() => {
+    let active = true;
+    void loadTownHallWeightMax().then((value) => {
+      if (active) setMaximum(value);
+    });
+    return () => {
+      active = false;
+    };
+  }, []);
   const [savedReset, setSavedReset] = useState(0);
   const [showMissingLoot, setShowMissingLoot] = useState(false);
   const [filter, setFilter] = useState<"all" | "missing" | "check">("all");
@@ -154,7 +168,7 @@ export default function WeightTrial({
     (row) => warOrder?.[row.tag] && !values[row.tag]?.loot.trim(),
   );
   const checks = members.filter((row) =>
-    sheetWeightWarning(row.tag, members, values, warOrder),
+    sheetWeightWarning(row.tag, members, values, warOrder, maximum),
   );
   const visible = members.filter((row) =>
     filter === "missing"
@@ -162,7 +176,7 @@ export default function WeightTrial({
       : filter === "check"
         ? checks.includes(row) ||
           (changed.includes(row) &&
-            !!sheetWeightWarning(row.tag, members, {}, warOrder))
+            !!sheetWeightWarning(row.tag, members, {}, warOrder, maximum))
         : true,
   );
   const placeholders = viewRoster ? gaps(viewRoster) : [];
@@ -767,6 +781,7 @@ export default function WeightTrial({
                           members,
                           values,
                           warOrder,
+                          maximum,
                         )}
                         busy={anyBusy}
                         last={index === visible.length - 1}

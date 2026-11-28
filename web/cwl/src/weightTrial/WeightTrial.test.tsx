@@ -5,6 +5,12 @@ import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import WeightTrial from "./WeightTrial";
 import type { Roster } from "./model";
 import { api } from "../api";
+import { loadTownHallWeightMax } from "../townHallRegistry";
+vi.mock("../townHallRegistry", () => ({
+  loadTownHallWeightMax: vi.fn(),
+  loadTownHallIcons: vi.fn(async () => new Map()),
+  knownTownHallIcon: vi.fn(() => null),
+}));
 import { readFileSync, readdirSync } from "node:fs";
 vi.mock("../api", () => ({
   api: vi.fn(),
@@ -39,7 +45,53 @@ const roster = {
   war_source: { state: "inWar", names: { "#J2Y": "Departed" } },
 };
 const onDirty = vi.fn();
+it("keeps Check count and inline warnings aligned as the registry maximum loads", async () => {
+  let finish!: (value: { level: number; max: number } | null) => void;
+  vi.mocked(loadTownHallWeightMax).mockReturnValue(
+    new Promise((resolve) => {
+      finish = resolve;
+    }),
+  );
+  const original = vi.mocked(api).getMockImplementation()!;
+  vi.mocked(api).mockImplementation((path, ...args) =>
+    path.includes("/clans/")
+      ? Promise.resolve({
+          ...roster,
+          war_order: null,
+          members: [
+            { ...rows[0], town_hall: 19, weight: 187000 },
+            { ...rows[3], town_hall: 19, weight: 201000 },
+          ],
+        })
+      : original(path, ...args),
+  );
+  await render();
+  await click("Needs work");
+  expect(host.textContent).toContain("Check 0");
+  expect(host.querySelectorAll(".weight-trial-row-warning")).toHaveLength(0);
+  await act(async () => finish({ level: 19, max: 200000 }));
+  expect(host.textContent).toContain("Check 1");
+  expect(host.querySelectorAll(".weight-trial-row-warning")).toHaveLength(1);
+  expect(
+    host.querySelector(".weight-trial-row-warning")?.textContent,
+  ).toContain("Weight is above the TH19 maximum of 200,000.");
+  await click("Check 1");
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(1);
+  const loot = host.querySelector<HTMLInputElement>(
+    ".weight-trial-loot input",
+  )!;
+  await input(loot, "40000");
+  expect(host.textContent).toContain("Check 0");
+  expect(host.querySelectorAll(".weight-trial-row-warning")).toHaveLength(0);
+  expect(host.querySelectorAll(".weight-trial-row")).toHaveLength(1);
+  expect(
+    vi.mocked(api).mock.calls.filter(([, method]) => method === "PUT"),
+  ).toHaveLength(0);
+  expect(loadTownHallWeightMax).toHaveBeenCalledTimes(1);
+});
+
 beforeEach(() => {
+  vi.mocked(loadTownHallWeightMax).mockResolvedValue(null);
   Object.assign(globalThis, { IS_REACT_ACT_ENVIRONMENT: true });
   HTMLDialogElement.prototype.showModal = function () {
     this.open = true;

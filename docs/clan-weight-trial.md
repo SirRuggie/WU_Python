@@ -135,7 +135,10 @@ reclassification. This changes the existing selector's data only; no controls,
 layout or keyboard behavior changed.
 
 Inline destination-sheet checks are advisory: full weights must end in 000 and
-fall between 42,000 and 180,000 inclusive. A valid weight higher than the preceding
+have a minimum of 42,000. The maximum is the highest FWA Town Hall maximum in the
+Town Halls registry, read from `GET /api/cwl/town-halls` (`weight_max`). If that
+read fails or has no valid range, no maximum warning shows. A valid weight higher
+than the preceding
 actual war position gets a double-check warning. Missing, invalid, unavailable or
 non-adjacent war rows are not used for comparisons. These mirror the inspected
 FWA sheet, not independently verified FWA policy; the editor still supports its

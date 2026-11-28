@@ -328,6 +328,7 @@ export function sheetWeightWarning(
   rows: Member[],
   drafts: Record<string, Draft>,
   order: Roster["war_order"],
+  maximum: { level: number; max: number } | null,
 ): string {
   const weightFor = (row: Member) => {
     try {
@@ -347,8 +348,8 @@ export function sheetWeightWarning(
   if (weight % 1000 !== 0) return "Weight must end in 000 for the FWA sheet.";
   if (weight < 42000)
     return "Weight is below the FWA sheet’s minimum of 42,000.";
-  if (weight > 180000)
-    return "Weight exceeds the FWA sheet’s maximum of 180,000.";
+  if (maximum !== null && weight > maximum.max)
+    return `Weight is above the TH${maximum.level} maximum of ${formatNumber(maximum.max)}.`;
   const position = order?.[tag];
   if (!position || position <= 1) return "";
   const previous = rows.find((member) => order?.[member.tag] === position - 1);
